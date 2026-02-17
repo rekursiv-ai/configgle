@@ -1,6 +1,6 @@
 [project]
 name = "configgle"
-version = "1.1.4"
+version = "1.1.5"
 description = "Hierarchical experiment configuration and dependency injection using pure Python dataclass factories."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "ty-extensions",
     "wrapt",
 ]
 
@@ -190,7 +191,7 @@ section-order = [
 
 [tool.basedpyright]
 typeCheckingMode = "recommended"
-extraPaths = [".", "typings"]
+extraPaths = ["."]
 exclude = [".venv", "*.egg-info", ".pytest_cache", "build", "dist"]
 ignore = [".venv", "*.egg-info", ".pytest_cache", "build", "dist"]
 pythonPlatform = "Linux"
@@ -240,3 +241,6 @@ package = true
 
 [tool.uv.pip]
 compile-bytecode = true
+
+[tool.uv.sources]
+ty-extensions = { path = "packages/ty-extensions" }

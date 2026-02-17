@@ -27,8 +27,6 @@ import dataclasses
 
 
 if TYPE_CHECKING:
-    # ty_extensions is a phantom module built into the ty type checker.
-    # typings/ty_extensions/ provides a local stub so basedpyright can resolve it too.
     from ty_extensions import Intersection
 
 
