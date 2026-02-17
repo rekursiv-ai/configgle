@@ -150,7 +150,7 @@ class Foo3:
 
 
 reveal_type(Foo3.Config)
-reveal_type(Foo3.Config().x)  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]  # ty: ignore[possibly-missing-attribute]
+reveal_type(Foo3.Config().x)  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]  # ty: ignore[unresolved-attribute]
 reveal_type(Foo3.Config().make())
 
 

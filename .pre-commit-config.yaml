@@ -37,6 +37,18 @@ repos:
       - id: basedpyright
         exclude: ^\.typings/
 
+  # No official ty pre-commit hook yet (https://github.com/astral-sh/ty/issues/269).
+  # Use a local hook pointing at the venv-installed binary.
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty check
+        entry: .venv/bin/ty check .
+        language: system
+        types: [python]
+        pass_filenames: false
+        exclude: ^\.typings/
+
   - repo: https://github.com/astral-sh/uv-pre-commit
     # https://docs.astral.sh/uv/guides/integration/pre-commit/
     rev: 0.10.3

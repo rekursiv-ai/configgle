@@ -24,7 +24,7 @@ class B:
 
 
 def foo(
-    val: Intersection[A, B],  # pyright: ignore[reportGeneralTypeIssues,reportUnknownParameterType]
+    val: Intersection[A, B],  # pyright: ignore[reportGeneralTypeIssues,reportUnknownParameterType]  # ty: ignore[invalid-type-form]
 ) -> None:
     reveal_type(val)  # Unknown
     reveal_type(val.x)  # pyright: ignore[reportUnknownMemberType]  # Unknown

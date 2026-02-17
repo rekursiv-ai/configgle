@@ -100,7 +100,13 @@ class RelaxedConfigurable(Makeable[_T], Protocol):
     dynamic field access without requiring suppressions in user code.
     """
 
-    parent_class: ClassVar[type[_T] | None]  # pyright: ignore[reportGeneralTypeIssues]
+    # Semantically correct but spec-illegal: PEP 526 forbids type variables
+    # inside ClassVar. We need a class-level attribute whose type varies per
+    # parameterization — a concept the type system can't express. Alternatives:
+    #   - Drop ClassVar: loses the "class attribute" semantic in the Protocol.
+    #   - @property: covariant but instance-only (no Cls.parent_class access).
+    # Suppressed in both checkers as a deliberate design choice.
+    parent_class: ClassVar[type[_T] | None]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form]
 
     def __init__(self, *args: object, **kwargs: object) -> None: ...
     def __getattr__(self, name: str) -> object: ...
