@@ -1,4 +1,4 @@
-"""Utilities for recursively traversing nested object structures.
+"""DEPRECATED Utilities for recursively traversing nested object structures.
 
 This module provides tools for walking through complex nested data structures
 including sequences, mappings, sets, and objects with __slots__ or __dict__.
