@@ -29,6 +29,11 @@ from typing_extensions import TypeAliasType, TypeVar, override
 
 if TYPE_CHECKING:
     # Dummy code until ty_extensions and basedpyright have a working Intersection.
+    # If we switch to ty we could use `from ty_extensions import Intersection`
+    # but ty (still alpha) has other shortcomings that basedpyright doesn't. In
+    # short: there's no good answer...yet.
+    # https://docs.astral.sh/ty/features/type-system/
+    # https://docs.basedpyright.com/latest/usage/type-concepts-advanced/
     _First = TypeVar("_First")
     _Second = TypeVar("_Second")
     Intersection = TypeAliasType(
@@ -40,7 +45,6 @@ if TYPE_CHECKING:
 
 from configgle.custom_types import DataclassLike, Makeable
 from configgle.pprinting import pformat
-from configgle.traverse import recursively_iterate_over_object_descendants
 
 
 @runtime_checkable
@@ -86,6 +90,12 @@ class _MakerParentClassDescriptor:
 
 class MakerMeta(type):
     """Metaclass for the nested Config pattern.
+
+    This metaclass (when combined with _MakerParentClassDescriptor) uses
+    descriptor protocol to automatically bind the Config's parent class (when
+    Config is defined as a nested class). The binding uses MethodType dynamic
+    binding rather than an attribute to prevent infinite recursion sometimes
+    seen in broken pickling implementations.
 
     __set_name__ captures the parent class when a Maker is defined as a nested
     class attribute (e.g., `class Config(Fig):` inside `MyClass`).
@@ -326,7 +336,7 @@ class _DataclassParams:
             for s in slots:
                 if s in seen:
                     continue
-                seen.update(s)
+                seen.add(s)
                 yield s
 
     keys = __iter__
@@ -515,20 +525,26 @@ class Makes(Generic[_ParentT]):
 _ValueT = TypeVar("_ValueT")  # Used internally for _finalize_value
 
 
+_SKIP_ATTRS = frozenset(("__weakref__", "__dict__", "_finalized"))
+
+
 def _get_object_attribute_names(obj: object) -> Iterator[str]:
     """Yield attribute names, excluding __weakref__, __dict__, and _finalized."""
-    for path, _ in recursively_iterate_over_object_descendants(
-        obj,
-        recurse=lambda path, _: len(path) <= 1,
-    ):
-        # Filter to string attribute names only (not integer indices from sequences)
-        # Skip the root (empty path)
-        if (
-            len(path) == 1
-            and isinstance(path[0], str)
-            and path[0] not in ("__weakref__", "__dict__", "_finalized")
-        ):
-            yield path[0]
+    seen = set[str]()
+    if hasattr(type(obj), "__slots__"):
+        for cls in type(obj).__mro__:
+            slots = getattr(cls, "__slots__", ())
+            if isinstance(slots, str):
+                slots = (slots,)
+            for slot in slots:
+                if slot not in seen and slot not in _SKIP_ATTRS:
+                    seen.add(slot)
+                    yield slot
+    if hasattr(obj, "__dict__"):
+        for key in sorted(vars(obj)):
+            if key not in seen and key not in _SKIP_ATTRS:
+                seen.add(key)
+                yield key
 
 
 def _finalize_value(value: _ValueT) -> _ValueT:
@@ -547,8 +563,8 @@ def _finalize_value(value: _ValueT) -> _ValueT:
     if isinstance(value, _HasFinalize) and not getattr(value, "_finalized", False):
         return value.finalize()  # ty: ignore[invalid-return-type]
 
-    # Skip classes and types - they don't need finalization
-    if isinstance(value, type):
+    # Skip classes, types, and primitives - they don't need finalization
+    if isinstance(value, (type, int, float, str, bytes, bool, type(None))):
         return value
 
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
