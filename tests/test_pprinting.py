@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from io import StringIO
 from typing import Self
+from typing_extensions import override
 
 import copy
 import warnings
-
-from typing_extensions import override
 
 from configgle import Fig
 from configgle.pprinting import FigPrinter, pformat, pprint

@@ -9,10 +9,9 @@ from typing import (
     TypeAlias,
     runtime_checkable,
 )
+from typing_extensions import TypeVar
 
 import dataclasses
-
-from typing_extensions import TypeVar
 
 
 __all__ = [

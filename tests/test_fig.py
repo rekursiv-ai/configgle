@@ -3,10 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import field
 from typing import Self
+from typing_extensions import override
 
 import pickle
-
-from typing_extensions import override
 
 import cloudpickle
 import pytest

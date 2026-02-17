@@ -20,7 +20,7 @@ repos:
     - id: check-toml
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.14
+    rev: v0.15.1
     hooks:
       # Run the linter (first).
       - id: ruff-check
@@ -32,14 +32,14 @@ repos:
         exclude: ^\.typings/
 
   - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
-    rev: 1.37.3
+    rev: 1.38.0
     hooks:
       - id: basedpyright
         exclude: ^\.typings/
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     # https://docs.astral.sh/uv/guides/integration/pre-commit/
-    rev: 0.9.28
+    rev: 0.10.3
     hooks:
       - id: uv-lock
         name: uv lock

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Generic, Protocol, Self, TypeVar, runtime_checkable
+from typing_extensions import override
 
 import copy
 import dataclasses
 import functools
 import reprlib
-
-from typing_extensions import override
 
 
 if TYPE_CHECKING:

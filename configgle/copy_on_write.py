@@ -22,10 +22,9 @@ Example:
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar, cast
+from typing_extensions import override
 
 import copy
-
-from typing_extensions import override
 
 import wrapt
 

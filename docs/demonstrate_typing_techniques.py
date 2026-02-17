@@ -21,7 +21,6 @@ from typing import (
     overload,
     reveal_type,
 )
-
 from typing_extensions import TypeIs, TypeVar, override
 
 

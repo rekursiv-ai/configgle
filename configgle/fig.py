@@ -20,27 +20,16 @@ from typing import (
     dataclass_transform,
     runtime_checkable,
 )
+from typing_extensions import TypeVar, override
 
 import copy
 import dataclasses
 
-from typing_extensions import TypeAliasType, TypeVar, override
-
 
 if TYPE_CHECKING:
-    # Dummy code until ty_extensions and basedpyright have a working Intersection.
-    # If we switch to ty we could use `from ty_extensions import Intersection`
-    # but ty (still alpha) has other shortcomings that basedpyright doesn't. In
-    # short: there's no good answer...yet.
-    # https://docs.astral.sh/ty/features/type-system/
-    # https://docs.basedpyright.com/latest/usage/type-concepts-advanced/
-    _First = TypeVar("_First")
-    _Second = TypeVar("_Second")
-    Intersection = TypeAliasType(
-        "Intersection",
-        _First,
-        type_params=(_First, _Second),
-    )
+    # ty_extensions is a phantom module built into the ty type checker.
+    # typings/ty_extensions/ provides a local stub so basedpyright can resolve it too.
+    from ty_extensions import Intersection
 
 
 from configgle.custom_types import DataclassLike, Makeable
@@ -85,7 +74,7 @@ class _MakerParentClassDescriptor:
         obj: Makeable[_ParentT] | None,
         owner: type[Makeable[_ParentT]],
     ) -> type[_ParentT]:
-        return owner._parent_class()  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType]  # ty: ignore[missing-argument]
+        return owner._parent_class()  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType]
 
 
 class MakerMeta(type):
