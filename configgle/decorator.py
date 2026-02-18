@@ -1,4 +1,9 @@
-"""Decorator to auto-generate a Config dataclass from __init__ parameters."""
+"""Decorator to auto-generate a Config dataclass from __init__ parameters.
+
+Note: ty does not yet support class decorator return types, so accessing
+.Config on @autofig-decorated classes requires ``# ty: ignore[unresolved-attribute]``.
+Tracked upstream: https://github.com/astral-sh/ty/issues/143
+"""
 
 from __future__ import annotations
 

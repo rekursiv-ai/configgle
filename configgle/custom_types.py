@@ -1,5 +1,7 @@
 """Custom types for config module."""
 
+# ty type system feature overview: https://github.com/astral-sh/ty/issues/1889
+
 from __future__ import annotations
 
 from typing import (
@@ -103,6 +105,7 @@ Configurable = Makeable
 class HasConfig(Protocol[_T]):
     """Protocol for classes with a typed Config nested class."""
 
+    # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.
     Config: ClassVar[type[Makeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]
 
 
@@ -133,4 +136,5 @@ RelaxedConfigurable = RelaxedMakeable
 class HasRelaxedConfig(Protocol[_T]):
     """Protocol for classes decorated with @autofig."""
 
+    # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.
     Config: ClassVar[type[RelaxedMakeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]
