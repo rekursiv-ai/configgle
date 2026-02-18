@@ -91,6 +91,21 @@ def test_require_defaults():
     assert instance.x == 42
 
 
+def test_autofig_with_broken_type_hints():
+    """Test autofig when get_type_hints fails (e.g., unresolvable forward refs)."""
+    # exec creates a class whose annotations reference 'Nonexistent' —
+    # a name absent from the exec namespace — so get_type_hints will raise.
+    ns: dict[str, object] = {}
+    exec(  # noqa: S102
+        "class B:\n    def __init__(self, x: 'Nonexistent' = 0):\n        self.x = x\n",
+        ns,
+    )
+    Cls = ns["B"]
+    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType]  # type: ignore[no-matching-overload]
+    config = decorated.Config(x=42)
+    assert config.make().x == 42
+
+
 if __name__ == "__main__":
     import pytest
 

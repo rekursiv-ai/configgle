@@ -16,6 +16,8 @@ import dataclasses
 import functools
 import reprlib
 
+from configgle.custom_types import Finalizeable
+
 
 if TYPE_CHECKING:
     from configgle.custom_types import DataclassLike, Makeable
@@ -26,12 +28,11 @@ class _HasMake(Protocol):
     def make(self) -> object: ...
 
 
-@runtime_checkable
-class _HasFinalize(Protocol):
-    def finalize(self) -> Self: ...
-
-
 __all__ = ["InlineConfig", "PartialConfig"]
+
+_INLINE_CONFIG_SLOTS = frozenset(
+    ("parent_class", "func", "_finalized", "_args", "_kwargs")
+)
 
 
 @dataclasses.dataclass(slots=True, init=False, repr=True, weakref_slot=True)
@@ -55,7 +56,6 @@ class InlineConfig[T]:
         init=False,
         repr=False,
     )
-    # This must be last or else you need to manually define __deepcopy__ and __copy__.
     _kwargs: MutableMapping[str, object] = dataclasses.field(
         default_factory=dict[str, object],
         init=False,
@@ -72,7 +72,7 @@ class InlineConfig[T]:
         self.func = func
         self._finalized = False
         self._args = list(args)
-        self._kwargs = kwargs  # Must be last.
+        self._kwargs = kwargs
 
     def make(self) -> T:
         """Finalize and invoke the wrapped function.
@@ -99,9 +99,9 @@ class InlineConfig[T]:
         """
         r = copy.copy(self)
         # Dynamic dispatch to finalize() on args that may have it
-        r._args = [v.finalize() if isinstance(v, _HasFinalize) else v for v in r._args]  # noqa: SLF001
+        r._args = [v.finalize() if isinstance(v, Finalizeable) else v for v in r._args]  # noqa: SLF001
         r._kwargs = {  # noqa: SLF001
-            k: v.finalize() if isinstance(v, _HasFinalize) else v
+            k: v.finalize() if isinstance(v, Finalizeable) else v
             for k, v in r._kwargs.items()  # noqa: SLF001
         }
         r._finalized = True  # noqa: SLF001
@@ -131,13 +131,17 @@ class InlineConfig[T]:
                 for field in dataclasses.fields(source):
                     self._kwargs[field.name] = getattr(source, field.name)
             else:
-                # Try to copy attributes from non-dataclass source
+                # Copy data attributes from non-dataclass source,
+                # skipping private attrs and callables (methods, classmethods, etc.)
                 for key in dir(source):
-                    if not key.startswith("_"):
-                        try:
-                            self._kwargs[key] = getattr(source, key)
-                        except (AttributeError, TypeError):
-                            continue
+                    if key.startswith("_"):
+                        continue
+                    try:
+                        val = getattr(source, key)
+                    except (AttributeError, TypeError):
+                        continue
+                    if not callable(val):
+                        self._kwargs[key] = val
 
         for key, value in kwargs.items():
             self._kwargs[key] = value
@@ -162,14 +166,7 @@ class InlineConfig[T]:
 
     @override
     def __setattr__(self, key: str, value: object) -> None:
-        try:
-            _ = object.__getattribute__(self, key)
-            hasattr_ = True
-        except (TypeError, AttributeError):
-            hasattr_ = False
-        if hasattr_:
-            # This is the reason kwargs must come last--we're relying on the
-            # non passthroughs already being set.
+        if key in _INLINE_CONFIG_SLOTS:
             object.__setattr__(self, key, value)
             return
         try:

@@ -16,12 +16,26 @@ import dataclasses
 __all__ = [
     "Configurable",
     "DataclassLike",
+    "Finalizeable",
     "HasConfig",
     "HasRelaxedConfig",
     "Makeable",
     "RelaxedConfigurable",
     "RelaxedMakeable",
 ]
+
+
+@runtime_checkable
+class Finalizeable(Protocol):
+    """Non-generic protocol for isinstance checks in _finalize_value.
+
+    Using the generic Makeable protocol in isinstance causes basedpyright to
+    leak Unknown into the negative branch. This simple non-generic protocol
+    avoids that issue.
+    """
+
+    def finalize(self) -> Self: ...
+
 
 _T_co = TypeVar("_T_co", covariant=True, default=object)
 _T = TypeVar("_T")

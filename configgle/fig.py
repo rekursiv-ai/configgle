@@ -19,7 +19,6 @@ from typing import (
     cast,
     dataclass_transform,
     override,
-    runtime_checkable,
 )
 from typing_extensions import TypeVar
 
@@ -31,20 +30,12 @@ if TYPE_CHECKING:
     from ty_extensions import Intersection
 
 
-from configgle.custom_types import DataclassLike, Makeable
+from configgle.custom_types import (
+    DataclassLike,
+    Finalizeable,
+    Makeable,
+)
 from configgle.pprinting import pformat
-
-
-@runtime_checkable
-class _HasFinalize(Protocol):
-    """Non-generic protocol for isinstance checks in _finalize_value.
-
-    Using the generic Makeable protocol in isinstance causes basedpyright to
-    leak Unknown into the negative branch. This simple non-generic protocol
-    avoids that issue.
-    """
-
-    def finalize(self) -> Self: ...
 
 
 __all__ = [
@@ -409,8 +400,8 @@ class _DataclassMeta(type):
                     and field.default_factory is dataclasses.MISSING
                 ):
                     raise TypeError(
-                        f"{name}.{field.name} must have a default value. "
-                        f"Use require_defaults=False to disable this check.",
+                        f"{name}.{field.name} has no default value. "
+                        f"Add a default or use require_defaults=False to disable this check.",
                     )
 
         cls.__dataclass_params__ = kwargs
@@ -503,8 +494,8 @@ class Makes(Generic[_ParentT]):
             __origin__ = cls
             __args__ = (params,)
 
-            @staticmethod
-            def __mro_entries__(bases: object) -> tuple[()]:
+            @classmethod
+            def __mro_entries__(cls, bases: object) -> tuple[()]:
                 return ()
 
         return _NoMroAlias()
@@ -532,7 +523,7 @@ def _get_object_attribute_names(obj: object) -> Iterator[str]:
                 yield key
 
 
-def _finalize_value[ValueT](value: ValueT) -> ValueT:
+def _finalize_value[ValueT](value: ValueT) -> ValueT:  # noqa: PLR0911
     """Recursively finalize nested Fig instances, preserving container types.
 
     Traverses sequences, mappings, sets, and objects with __slots__/__dict__
@@ -545,7 +536,7 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
       finalized_value: Finalized copy with all nested configs finalized.
 
     """
-    if isinstance(value, _HasFinalize) and not getattr(value, "_finalized", False):
+    if isinstance(value, Finalizeable) and not getattr(value, "_finalized", False):
         return value.finalize()  # ty: ignore[invalid-return-type]
 
     # Skip classes, types, and primitives - they don't need finalization
@@ -566,6 +557,15 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
     elif isinstance(value, AbstractSet):
         finalized = {_finalize_value(v) for v in value}
     else:
+        # Only recurse into data containers (dataclasses or classes with their
+        # own __slots__). Skip plain objects like loggers, file handles, etc.
+        obj_type = type(value)
+        if not (
+            hasattr(obj_type, "__dataclass_fields__")
+            or "__slots__" in obj_type.__dict__
+        ):
+            return value
+
         r = copy.copy(value)
 
         for name in _get_object_attribute_names(r):

@@ -111,9 +111,15 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
         for child in self._self_children.values():
             child.__exit__(exc_type, exc_value, exc_traceback)
 
-        # Call finalize if present and not already finalized
+        # Call finalize if present and not already finalized. For children
+        # (objects with parents), only finalize if a copy was made — otherwise
+        # read-only access would finalize and mutate the original parent.
         finalize_fn = getattr(self.__wrapped__, "finalize", None)
-        if not self._self_is_finalized and callable(finalize_fn):
+        if (
+            not self._self_is_finalized
+            and callable(finalize_fn)
+            and (self._self_is_copy or not self._self_parents)
+        ):
             finalized = finalize_fn()
             # Update parent references to point to finalized value
             for parent, key in self._self_parents:

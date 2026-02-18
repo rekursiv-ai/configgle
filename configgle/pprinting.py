@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pprint import PrettyPrinter as _PrettyPrinter
-from typing import IO, Protocol, Self, TypeVar, override, runtime_checkable
+from typing import IO, Protocol, TypeVar, override
 
 import copy
 import dataclasses
@@ -12,10 +12,7 @@ import io
 import re
 import warnings
 
-
-@runtime_checkable
-class _HasFinalize(Protocol):
-    def finalize(self) -> Self: ...
+from configgle.custom_types import Finalizeable
 
 
 __all__ = [
@@ -231,10 +228,10 @@ class FigPrinter(_PrettyPrinter):
         return repr_, readable, recursive
 
     def _try_to_finalize(self, obj: _T) -> _T:
-        """Deep-copy and finalize obj if it is an unfinalized _HasFinalize."""
+        """Deep-copy and finalize obj if it is an unfinalized Finalizeable."""
         if (
             self._finalize
-            and isinstance(obj, _HasFinalize)
+            and isinstance(obj, Finalizeable)
             and not getattr(obj, "_finalized", False)
         ):
             try:

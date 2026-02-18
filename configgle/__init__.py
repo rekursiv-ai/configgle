@@ -98,6 +98,7 @@ from configgle.copy_on_write import CopyOnWrite
 from configgle.custom_types import (
     Configurable,
     DataclassLike,
+    Finalizeable,
     HasConfig,
     HasRelaxedConfig,
     Makeable,
@@ -116,6 +117,7 @@ __all__ = [
     "Dataclass",
     "DataclassLike",
     "Fig",
+    "Finalizeable",
     "HasConfig",
     "HasRelaxedConfig",
     "InlineConfig",

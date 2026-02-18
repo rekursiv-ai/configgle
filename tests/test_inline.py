@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Self
 
 import copy
+import dataclasses
 
 import pytest
 
@@ -153,7 +154,83 @@ def test_partial_config():
     assert result == 60  # 2 * 3 * 10
 
 
-if __name__ == "__main__":
-    import pytest
+def test_inline_config_update_from_dataclass():
+    """Test InlineConfig.update from a dataclass source."""
 
+    @dataclasses.dataclass
+    class Source:
+        a: int = 10
+        b: str = "hello"
+
+    cfg = InlineConfig(lambda a, b: f"{a}-{b}")  # pyright: ignore[reportUnknownLambdaType]
+    cfg.update(Source())
+    assert cfg.a == 10
+    assert cfg.b == "hello"
+    assert cfg.make() == "10-hello"
+
+
+def test_inline_config_update_from_non_dataclass():
+    """Test InlineConfig.update from a non-dataclass source (skips callables)."""
+
+    class Source:
+        def __init__(self):
+            self.x = 42
+            self.y = "data"
+
+        def method(self) -> None:
+            pass
+
+    cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType]
+    cfg.update(Source())  # pyright: ignore[reportArgumentType]  # type: ignore[invalid-argument-type]
+    assert cfg.x == 42
+    assert cfg.y == "data"
+    # Methods should NOT be copied
+    assert "method" not in cfg._kwargs
+
+
+def test_inline_config_update_with_kwargs():
+    """Test InlineConfig.update with kwargs."""
+    cfg = InlineConfig(lambda a, b: a + b)  # pyright: ignore[reportUnknownLambdaType]
+    cfg.update(a=5, b=10)
+    assert cfg.make() == 15
+
+
+def test_inline_config_update_skip_missing_ignored():
+    """Test InlineConfig.update ignores skip_missing (by design)."""
+    cfg = InlineConfig(lambda a: a)  # pyright: ignore[reportUnknownLambdaType]
+    # skip_missing is silently ignored for InlineConfig
+    cfg.update(skip_missing=True, a=99)
+    assert cfg.a == 99
+
+
+def test_inline_config_update_non_dataclass_with_property():
+    """Test InlineConfig.update from source with property that raises."""
+
+    class TrickySource:
+        @property
+        def broken(self) -> object:
+            raise AttributeError("can't get this")
+
+        @property
+        def data(self) -> int:
+            return 42
+
+    cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType]
+    cfg.update(TrickySource())  # pyright: ignore[reportArgumentType]  # type: ignore[invalid-argument-type]
+    # broken should be skipped (AttributeError), data should be skipped (callable check)
+    # Actually properties return their values, not the property object itself
+    assert cfg.data == 42
+    assert "broken" not in cfg._kwargs
+
+
+def test_inline_config_recursive_repr():
+    """Test InlineConfig.__repr__ with self-referencing kwargs."""
+    cfg = InlineConfig(lambda x: x)  # pyright: ignore[reportUnknownLambdaType]
+    cfg.self_ref = cfg  # Create self-reference
+    # Should not infinitely recurse — @reprlib.recursive_repr handles it
+    repr_str = repr(cfg)
+    assert "..." in repr_str or "InlineConfig" in repr_str
+
+
+if __name__ == "__main__":
     pytest.main([__file__, "-v"])

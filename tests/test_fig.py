@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import field
-from typing import Self, override
+from typing import NamedTuple, Self, override
 
+import dataclasses
+import logging
 import pickle
 
 import cloudpickle
@@ -479,7 +481,262 @@ def test_inline_config_satisfies_makeable():
     assert partial_cfg.make()() == 42
 
 
-if __name__ == "__main__":
-    import pytest
+def test_require_defaults_error_message():
+    """Test that missing default raises TypeError with helpful message."""
+    with pytest.raises(TypeError, match="has no default value"):
 
+        class Bad(Fig, require_defaults=True):  # pyright: ignore[reportUnusedClass]
+            x: int  # No default
+
+
+def test_finalize_with_nested_dict():
+    """Test finalize recursively walks mapping values."""
+
+    class Inner(Fig):
+        v: int = 0
+
+    class Outer(Fig):
+        d: dict[str, Inner] = field(default_factory=lambda: {"a": Inner(v=1)})
+
+    cfg = Outer()
+    finalized = cfg.finalize()
+    inner = finalized.d["a"]
+    assert getattr(inner, "_finalized", False) is True
+
+
+def test_finalize_with_nested_set():
+    """Test finalize recursively walks set values."""
+
+    class Container(Fig):
+        s: frozenset[int] = frozenset({1, 2, 3})
+
+    cfg = Container()
+    finalized = cfg.finalize()
+    assert finalized.s == frozenset({1, 2, 3})
+
+
+def test_finalize_with_namedtuple():
+    """Test finalize recursively walks namedtuple elements."""
+
+    class Point(NamedTuple):
+        x: int
+        y: int
+
+    class Config(Fig):
+        p: Point = Point(1, 2)
+
+    cfg = Config()
+    finalized = cfg.finalize()
+    assert finalized.p == Point(1, 2)
+
+
+def test_finalize_with_plain_tuple():
+    """Test finalize recursively walks plain tuples."""
+
+    class Inner(Fig):
+        v: int = 0
+
+    class Config(Fig):
+        t: tuple[Inner, ...] = (Inner(),)
+
+    cfg = Config()
+    finalized = cfg.finalize()
+    assert getattr(finalized.t[0], "_finalized", False) is True
+
+
+def test_finalize_skips_non_data_objects():
+    """Test finalize skips objects without __dataclass_fields__ or own __slots__."""
+
+    class Config(Fig):
+        logger: logging.Logger = logging.getLogger("test")
+
+    cfg = Config()
+    # Should not crash when encountering a logger
+    finalized = cfg.finalize()
+    assert finalized.logger is not None
+
+
+def test_finalize_recurses_into_dataclass_objects():
+    """Test finalize recurses into nested dataclass objects."""
+
+    @dataclasses.dataclass
+    class PlainDC:
+        value: int = 0
+
+    class Config(Fig):
+        nested: PlainDC = field(default_factory=PlainDC)
+
+    cfg = Config()
+    finalized = cfg.finalize()
+    assert finalized.nested.value == 0
+
+
+def test_update_source_with_attribute_error():
+    """Test update handles source where getattr raises AttributeError."""
+
+    class BadSource:
+        __slots__ = ("x", "y")  # pyright: ignore[reportUninitializedInstanceVariable]
+
+        def __init__(self):
+            self.x = 1
+            # y is intentionally uninitialized
+
+    class Config(Fig):
+        x: int = 0
+        y: int = 0
+
+    cfg = Config()
+    source = BadSource()
+    # Should skip y since it raises AttributeError
+    cfg.update(source, skip_missing=True)  # pyright: ignore[reportArgumentType]  # type: ignore[invalid-argument-type]
+    assert cfg.x == 1
+
+
+def test_repr_pretty_normal():
+    """Test _repr_pretty_ IPython hook normal path."""
+
+    class Config(Fig):
+        x: int = 42
+
+    class MockPrinter:
+        def __init__(self):
+            self.text_calls: list[str] = []
+
+        def text(self, text: str) -> None:
+            self.text_calls.append(text)
+
+    cfg = Config()
+    p = MockPrinter()
+    cfg._repr_pretty_(p, cycle=False)
+    assert len(p.text_calls) == 1
+    assert "Config" in p.text_calls[0]
+
+
+def test_repr_pretty_cycle():
+    """Test _repr_pretty_ IPython hook cycle path."""
+
+    class Config(Fig):
+        x: int = 42
+
+    class MockPrinter:
+        def __init__(self):
+            self.text_calls: list[str] = []
+
+        def text(self, text: str) -> None:
+            self.text_calls.append(text)
+
+    cfg = Config()
+    p = MockPrinter()
+    cfg._repr_pretty_(p, cycle=True)
+    assert len(p.text_calls) == 1
+    assert "..." in p.text_calls[0]
+
+
+def test_get_object_attribute_names_with_string_slots():
+    """Test _get_object_attribute_names with __slots__ as a string."""
+
+    class StringSlots:
+        __slots__ = "value"  # noqa: PLC0205  # intentionally string for branch test
+
+        def __init__(self):
+            self.value = 42
+
+    obj = StringSlots()
+    names = list(_get_object_attribute_names(obj))
+    assert "value" in names
+
+
+def test_dataclass_params_iter_with_string_slots():
+    """Test _DataclassParams.__iter__ handles string __slots__."""
+
+    class StringSlotParams(_DataclassParams):
+        __slots__ = "extra"  # pyright: ignore[reportAssignmentType]  # noqa: PLC0205  # intentionally string for branch test
+
+    params = StringSlotParams()
+    params.extra = True
+    keys = list(params)
+    assert "extra" in keys
+
+
+def test_finalize_with_uninitialized_slot():
+    """Test finalize handles uninitialized slots gracefully."""
+
+    class Config(Fig, slots=False):
+        __slots__ = ("_lazy",)
+        x: int = 1
+
+    cfg = Config()
+    # _lazy slot is not initialized — finalize should skip it
+    finalized = cfg.finalize()
+    assert finalized.x == 1
+
+
+def test_update_source_skip_missing_filters_source_fields():
+    """Test update with skip_missing filters source fields not in target."""
+
+    class SmallConfig(Fig):
+        x: int = 0
+
+    class BigSource(Fig):
+        x: int = 99
+        extra: str = "not in target"
+
+    cfg = SmallConfig()
+    source = BigSource()
+    cfg.update(source, skip_missing=True)
+    assert cfg.x == 99
+    assert not hasattr(cfg, "extra")
+
+
+def test_dataclass_params_create_missing_from_both():
+    """Test _DataclassParams.create when field missing from both existing and kwargs."""
+
+    class SparseParams(_DataclassParams):
+        __slots__ = ("custom_field",)  # pyright: ignore[reportUninitializedInstanceVariable]
+
+    existing = SparseParams()
+    # custom_field is NOT set on existing → getattr returns missing → continue
+    new = _DataclassParams.create(existing)
+    assert new.init is True  # Standard fields still work
+
+
+def test_finalize_value_recurses_into_slotted_object_with_nested_config():
+    """Test _finalize_value recurses into objects with own __slots__ containing configs."""
+
+    class Inner(Fig):
+        v: int = 0
+
+    class Wrapper:
+        __slots__ = ("child",)
+
+        def __init__(self, child: object):
+            self.child = child
+
+    class Config(Fig):
+        w: Wrapper = field(default_factory=lambda: Wrapper(Inner()))
+
+    cfg = Config()
+    finalized = cfg.finalize()
+    assert getattr(finalized.w.child, "_finalized", False) is True
+
+
+def test_finalize_value_slotted_object_with_uninitialized_slot():
+    """Test _finalize_value skips uninitialized slots on non-dataclass objects."""
+
+    class Wrapper:
+        __slots__ = ("initialized", "uninitialized")  # pyright: ignore[reportUninitializedInstanceVariable]
+
+        def __init__(self):
+            self.initialized = 42
+            # uninitialized is intentionally not set
+
+    class Config(Fig):
+        w: Wrapper = field(default_factory=Wrapper)
+
+    cfg = Config()
+    finalized = cfg.finalize()
+    assert finalized.w.initialized == 42
+
+
+if __name__ == "__main__":
     pytest.main([__file__, "-v"])
