@@ -23,7 +23,7 @@ class B:
     y: str = "hi"
 
 
-def foo(val: Intersection[A, B]) -> None:  # ty: ignore[invalid-type-form]
+def foo(val: Intersection[A, B]) -> None:
     reveal_type(val)  # Unknown
     reveal_type(val.x)  # Unknown
     reveal_type(val.y)  # Unknown

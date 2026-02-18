@@ -51,7 +51,7 @@ class MakerMeta2(type):
         obj: object,
         owner: type[_ParentT],
     ) -> type[Maker[_ParentT]]:
-        return cls  # ty: ignore[invalid-return-type]
+        return cls
 
 
 class MakerMeta3(type):
@@ -133,7 +133,7 @@ class Foo2:
 
 
 reveal_type(Foo2.Config)
-reveal_type(Foo2.Config().x)  # ty: ignore[unresolved-attribute]
+reveal_type(Foo2.Config().x)
 reveal_type(Foo2.Config().make())
 
 
@@ -151,7 +151,7 @@ class Foo3:
 
 
 reveal_type(Foo3.Config)
-reveal_type(Foo3.Config().x)  # ty: ignore[unresolved-attribute]
+reveal_type(Foo3.Config().x)
 reveal_type(Foo3.Config().make())
 
 
@@ -340,7 +340,7 @@ reveal_type(Foo7.Config().make())
 def is_creatable(
     cls: type[_T],
     parent: type[_ParentT],
-) -> TypeIs[type[Maker[_ParentT]]]:  # ty: ignore[invalid-type-guard-definition]
+) -> TypeIs[type[Maker[_ParentT]]]:
     del cls, parent
     return True
 
@@ -374,7 +374,7 @@ if is_creatable(Foo8.Config, Foo8):
 class ConfigFor9(Generic[_T]):
     """Tells type checker make() returns _T."""
 
-    def make(self) -> _T: ...  # ty: ignore[empty-body]
+    def make(self) -> _T: ...
     def __getattr__(self, name: str) -> Any: ...
 
 
@@ -385,7 +385,7 @@ class Configurable9(Generic[_T]):
 
 
 def has_config(cls: type[_T]) -> type[Configurable9[_T]]:
-    return cls  # ty: ignore[invalid-return-type]
+    return cls
 
 
 @has_config

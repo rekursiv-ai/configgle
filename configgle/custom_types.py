@@ -20,6 +20,7 @@ __all__ = [
     "HasRelaxedConfig",
     "Makeable",
     "RelaxedConfigurable",
+    "RelaxedMakeable",
 ]
 
 _T_co = TypeVar("_T_co", covariant=True, default=object)
@@ -81,7 +82,7 @@ class Makeable(Protocol[_T_co]):
     ) -> Self: ...
 
 
-type Configurable = Makeable
+Configurable = Makeable
 
 
 @runtime_checkable
@@ -92,8 +93,8 @@ class HasConfig(Protocol[_T]):
 
 
 @runtime_checkable
-class RelaxedConfigurable(Makeable[_T], Protocol):
-    """Protocol for auto-generated Config classes.
+class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInvalidTypeVarUse]
+    """Makeable with dynamic field access.
 
     Extends Makeable with __init__ and __getattr__ to support
     dynamic field access without requiring suppressions in user code.
@@ -105,14 +106,17 @@ class RelaxedConfigurable(Makeable[_T], Protocol):
     #   - Drop ClassVar: loses the "class attribute" semantic in the Protocol.
     #   - @property: covariant but instance-only (no Cls.parent_class access).
     # Suppressed in both checkers as a deliberate design choice.
-    parent_class: ClassVar[type[_T] | None]  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleMethodOverride]  # ty: ignore[invalid-type-form]
+    parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleMethodOverride]  # ty: ignore[invalid-type-form]
 
     def __init__(self, *args: object, **kwargs: object) -> None: ...
     def __getattr__(self, name: str) -> object: ...
+
+
+RelaxedConfigurable = RelaxedMakeable
 
 
 @runtime_checkable
 class HasRelaxedConfig(Protocol[_T]):
     """Protocol for classes decorated with @autofig."""
 
-    Config: ClassVar[type[RelaxedConfigurable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]
+    Config: ClassVar[type[RelaxedMakeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]

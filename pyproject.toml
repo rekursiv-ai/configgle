@@ -238,6 +238,17 @@ reportIncompatibleMethodOverride = false
 [tool.ty.environment]
 python-version = "3.12"
 
+# docs/ files are exploratory typing demos — relax strict checks
+[[tool.ty.overrides]]
+include = ["docs/**"]
+
+[tool.ty.overrides.rules]
+empty-body = "ignore"
+invalid-return-type = "ignore"
+invalid-type-form = "ignore"
+invalid-type-guard-definition = "ignore"
+unresolved-attribute = "ignore"
+
 # Test files have relaxed rules - tests use @autofig decorator which adds
 # .Config dynamically, and intentionally test error paths
 [[tool.ty.overrides]]

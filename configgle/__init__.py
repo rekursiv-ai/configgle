@@ -10,6 +10,7 @@ from configgle.custom_types import (
     HasRelaxedConfig,
     Makeable,
     RelaxedConfigurable,
+    RelaxedMakeable,
 )
 from configgle.decorator import autofig
 from configgle.fig import Dataclass, Fig, Maker, Makes
@@ -31,6 +32,7 @@ __all__ = [
     "Makes",
     "PartialConfig",
     "RelaxedConfigurable",
+    "RelaxedMakeable",
     "autofig",
     "pformat",
     "pprint",
