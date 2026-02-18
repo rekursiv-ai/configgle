@@ -19,9 +19,10 @@ from typing import (
     Generic,
     Protocol,
     overload,
+    override,
     reveal_type,
 )
-from typing_extensions import TypeIs, TypeVar, override
+from typing_extensions import TypeIs, TypeVar
 
 
 _T = TypeVar("_T")
@@ -50,7 +51,7 @@ class MakerMeta2(type):
         obj: object,
         owner: type[_ParentT],
     ) -> type[Maker[_ParentT]]:
-        return cls  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+        return cls  # ty: ignore[invalid-return-type]
 
 
 class MakerMeta3(type):
@@ -132,7 +133,7 @@ class Foo2:
 
 
 reveal_type(Foo2.Config)
-reveal_type(Foo2.Config().x)  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]  # ty: ignore[unresolved-attribute]
+reveal_type(Foo2.Config().x)  # ty: ignore[unresolved-attribute]
 reveal_type(Foo2.Config().make())
 
 
@@ -150,7 +151,7 @@ class Foo3:
 
 
 reveal_type(Foo3.Config)
-reveal_type(Foo3.Config().x)  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]  # ty: ignore[unresolved-attribute]
+reveal_type(Foo3.Config().x)  # ty: ignore[unresolved-attribute]
 reveal_type(Foo3.Config().make())
 
 
@@ -166,7 +167,7 @@ reveal_type(Foo3.Config().make())
 # Type of "Foo4.Config().make()" is "Foo4"
 
 
-class ConfigProtocol4(  # pyright: ignore[reportInvalidTypeVarUse]
+class ConfigProtocol4(
     Protocol[_T, _ParentT],
 ):
     """Protocol that has both Config fields (via __getattr__) and make()."""
@@ -181,7 +182,7 @@ class MakerMeta4(type):
         obj: object,
         owner: type[_ParentT],
     ) -> type[ConfigProtocol4[_T, _ParentT]]:
-        return cls  # pyright: ignore[reportReturnType]
+        return cls
 
 
 class Fig4(Maker[_ParentT], metaclass=MakerMeta4):
@@ -290,7 +291,7 @@ reveal_type(Foo6.Config().make())
 # Type of "Foo7.Config().make()" is "Foo7"
 
 
-class MakerProtocol(Protocol[_ParentT]):  # pyright: ignore[reportInvalidTypeVarUse]
+class MakerProtocol(Protocol[_ParentT]):
     def make(self) -> _ParentT: ...
 
 
@@ -339,7 +340,7 @@ reveal_type(Foo7.Config().make())
 def is_creatable(
     cls: type[_T],
     parent: type[_ParentT],
-) -> TypeIs[type[Maker[_ParentT]]]:  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-guard-definition]
+) -> TypeIs[type[Maker[_ParentT]]]:  # ty: ignore[invalid-type-guard-definition]
     del cls, parent
     return True
 
@@ -380,11 +381,11 @@ class ConfigFor9(Generic[_T]):
 class Configurable9(Generic[_T]):
     """Base class with typed Config."""
 
-    Config: type[ConfigFor9[_T]]  # pyright: ignore[reportUninitializedInstanceVariable]
+    Config: type[ConfigFor9[_T]]
 
 
 def has_config(cls: type[_T]) -> type[Configurable9[_T]]:
-    return cls  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+    return cls  # ty: ignore[invalid-return-type]
 
 
 @has_config
@@ -394,9 +395,9 @@ class Foo9:
 
 
 reveal_type(Foo9)
-reveal_type(Foo9.Config)  # pyright: ignore[reportGeneralTypeIssues]
-reveal_type(Foo9.Config().x)  # pyright: ignore[reportGeneralTypeIssues]
-reveal_type(Foo9.Config().make())  # pyright: ignore[reportGeneralTypeIssues]
+reveal_type(Foo9.Config)
+reveal_type(Foo9.Config().x)
+reveal_type(Foo9.Config().make())
 
 
 # -------------------------------------------------------------------------------
@@ -454,8 +455,8 @@ reveal_type(Foo10.Config().make())
 
 # With TypeIs intersection trick (Maker10 FIRST for method precedence):
 def intersect10(o: object) -> object:
-    assert supports_t(o, Maker10[Foo10])  # noqa: S101
-    assert supports_t(o, Foo10.Config)  # noqa: S101
+    assert supports_t(o, Maker10[Foo10])
+    assert supports_t(o, Foo10.Config)
     reveal_type(o)  # "<subclass of Maker10[Foo10] and Config>"
     reveal_type(o.x)  # "int"
     reveal_type(o.make())  # "Foo10"

@@ -1,9 +1,9 @@
 [project]
 name = "configgle"
-version = "1.1.5"
+version = "1.1.6"
 description = "Hierarchical experiment configuration and dependency injection using pure Python dataclass factories."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [
     { name = "Joshua V. Dillon" },
 ]
@@ -15,7 +15,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -103,7 +102,7 @@ fix = true
 show-fixes = true
 line-length = 88
 output-format = "concise"
-target-version = "py311"
+target-version = "py312"
 exclude = [".venv", "*.egg-info", ".pytest_cache", "build", "dist"]
 extend-include = ["*.ipynb"]
 
@@ -183,6 +182,14 @@ section-order = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"packages/*" = [
+    "PYI018",  # "unused" TypeVars are intentional polyfill exports
+]
+"docs/*" = [
+    "S101",    # use of assert (demo code)
+    "UP046",   # generic class uses Generic subclass (intentional)
+    "UP047",   # generic function should use type params (intentional)
+]
 "tests/*" = [
     "S101",    # use of assert
     "S301",    # pickle unsafe
@@ -195,22 +202,24 @@ extraPaths = ["."]
 exclude = [".venv", "*.egg-info", ".pytest_cache", "build", "dist"]
 ignore = [".venv", "*.egg-info", ".pytest_cache", "build", "dist"]
 pythonPlatform = "Linux"
-pythonVersion = "3.11"
+pythonVersion = "3.12"
 reportAny = false
-reportCallInDefaultInitializer = false
-reportConstantRedefinition = false
 reportExplicitAny = false
-reportImplicitStringConcatenation = false
-reportIncompatibleMethodOverride = false
-reportMissingSuperCall = false
-reportPrivateLocalImportUsage = false
-reportUnannotatedClassAttribute = false
-reportUnsafeMultipleInheritance = false
 reportUnusedCallResult = false
-reportUnusedImport = false
+reportUnannotatedClassAttribute = false
+reportImplicitStringConcatenation = false
 
-# Test files have relaxed rules - tests legitimately access private members
-# and use untyped libraries like cloudpickle
+# docs/ files are exploratory typing demos — relax strict checks
+[[tool.basedpyright.executionEnvironments]]
+root = "docs"
+reportAttributeAccessIssue = false
+reportGeneralTypeIssues = false
+reportInvalidTypeVarUse = false
+reportReturnType = false
+reportUninitializedInstanceVariable = false
+reportUnknownMemberType = false
+reportUnknownParameterType = false
+
 [[tool.basedpyright.executionEnvironments]]
 root = "tests"
 reportPrivateUsage = false
@@ -218,9 +227,16 @@ reportMissingTypeStubs = false
 reportUnknownMemberType = false
 reportUnknownVariableType = false
 reportUnknownArgumentType = false
+reportCallInDefaultInitializer = false
+reportConstantRedefinition = false
+reportMissingSuperCall = false
+reportPrivateLocalImportUsage = false
+reportUnsafeMultipleInheritance = false
+reportUnusedImport = false
+reportIncompatibleMethodOverride = false
 
 [tool.ty.environment]
-python-version = "3.11"
+python-version = "3.12"
 
 # Test files have relaxed rules - tests use @autofig decorator which adds
 # .Config dynamically, and intentionally test error paths

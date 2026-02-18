@@ -18,9 +18,10 @@ from typing import (
     Self,
     cast,
     dataclass_transform,
+    override,
     runtime_checkable,
 )
-from typing_extensions import TypeVar, override
+from typing_extensions import TypeVar
 
 import copy
 import dataclasses
@@ -124,7 +125,7 @@ class MakerMeta(type):
         return cls
 
 
-class Maker(Generic[_ParentT], metaclass=MakerMeta):
+class Maker(Generic[_ParentT], metaclass=MakerMeta):  # noqa: UP046
     """Base class providing make/finalize/update capabilities for configs.
 
     When nested inside a parent class, enables the pattern:
@@ -509,9 +510,6 @@ class Makes(Generic[_ParentT]):
         return _NoMroAlias()
 
 
-_ValueT = TypeVar("_ValueT")  # Used internally for _finalize_value
-
-
 _SKIP_ATTRS = frozenset(("__weakref__", "__dict__", "_finalized"))
 
 
@@ -534,7 +532,7 @@ def _get_object_attribute_names(obj: object) -> Iterator[str]:
                 yield key
 
 
-def _finalize_value(value: _ValueT) -> _ValueT:
+def _finalize_value[ValueT](value: ValueT) -> ValueT:
     """Recursively finalize nested Fig instances, preserving container types.
 
     Traverses sequences, mappings, sets, and objects with __slots__/__dict__

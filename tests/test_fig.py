@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import field
-from typing import Self
-from typing_extensions import override
+from typing import Self, override
 
 import pickle
 

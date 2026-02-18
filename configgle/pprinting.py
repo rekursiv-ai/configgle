@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pprint import PrettyPrinter as _PrettyPrinter
-from typing import IO, Protocol, Self, TypeVar, runtime_checkable
-from typing_extensions import override
+from typing import IO, Protocol, Self, TypeVar, override, runtime_checkable
 
 import copy
 import dataclasses

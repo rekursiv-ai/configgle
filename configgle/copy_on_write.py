@@ -21,8 +21,7 @@ Example:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar, cast
-from typing_extensions import override
+from typing import TYPE_CHECKING, Any, Self, cast, override
 
 import copy
 
@@ -30,9 +29,6 @@ import wrapt
 
 
 __all__ = ["CopyOnWrite"]
-
-_T = TypeVar("_T")
-
 
 # We use Any for parent/children because:
 # 1. They hold CopyOnWrite wrappers of heterogeneous types (Config, int, list, etc.)
@@ -45,7 +41,7 @@ if TYPE_CHECKING:
 
 # Note: wrapt.ObjectProxy is generic in type stubs but not subscriptable at runtime.
 # We use Generic[_T] to provide type parameters and declare __wrapped__: _T.
-class CopyOnWrite(wrapt.ObjectProxy, Generic[_T]):  # pyright: ignore[reportMissingTypeArgument]
+class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArgument]
     """A proxy that copies objects lazily on first mutation.
 
     Wraps an object and intercepts all attribute/item mutations. When a mutation
@@ -58,7 +54,7 @@ class CopyOnWrite(wrapt.ObjectProxy, Generic[_T]):  # pyright: ignore[reportMiss
     """
 
     # Declare __wrapped__ with proper type to help pyright
-    __wrapped__: _T
+    __wrapped__: T
 
     # Use _self_ prefix to avoid conflicts with wrapped object attributes
     # (this is the wrapt convention)
@@ -71,7 +67,7 @@ class CopyOnWrite(wrapt.ObjectProxy, Generic[_T]):  # pyright: ignore[reportMiss
 
     def __init__(
         self,
-        wrapped: _T,
+        wrapped: T,
         parent: CopyOnWrite[Any] | None = None,
         key: str = "",
         debug: bool = False,
@@ -127,7 +123,7 @@ class CopyOnWrite(wrapt.ObjectProxy, Generic[_T]):  # pyright: ignore[reportMiss
             print(
                 f"  exit: {type(self.__wrapped__).__name__} "
                 f"is_copy={self._self_is_copy} "
-                f"is_finalized={self._self_is_finalized}",
+                f"is_finalized={self._self_is_finalized}"
             )
 
     # -------------------------------------------------------------------------
@@ -318,7 +314,7 @@ class CopyOnWrite(wrapt.ObjectProxy, Generic[_T]):  # pyright: ignore[reportMiss
     # -------------------------------------------------------------------------
 
     @property
-    def unwrap(self) -> _T:
+    def unwrap(self) -> T:
         """Return the underlying object.
 
         Returns:

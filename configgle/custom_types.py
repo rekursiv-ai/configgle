@@ -6,7 +6,6 @@ from typing import (
     ClassVar,
     Protocol,
     Self,
-    TypeAlias,
     runtime_checkable,
 )
 from typing_extensions import TypeVar
@@ -82,7 +81,7 @@ class Makeable(Protocol[_T_co]):
     ) -> Self: ...
 
 
-Configurable: TypeAlias = Makeable
+type Configurable = Makeable
 
 
 @runtime_checkable
@@ -106,7 +105,7 @@ class RelaxedConfigurable(Makeable[_T], Protocol):
     #   - Drop ClassVar: loses the "class attribute" semantic in the Protocol.
     #   - @property: covariant but instance-only (no Cls.parent_class access).
     # Suppressed in both checkers as a deliberate design choice.
-    parent_class: ClassVar[type[_T] | None]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form]
+    parent_class: ClassVar[type[_T] | None]  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleMethodOverride]  # ty: ignore[invalid-type-form]
 
     def __init__(self, *args: object, **kwargs: object) -> None: ...
     def __getattr__(self, name: str) -> object: ...

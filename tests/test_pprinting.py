@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from io import StringIO
-from typing import Self
-from typing_extensions import override
+from typing import Self, override
 
 import copy
 import warnings

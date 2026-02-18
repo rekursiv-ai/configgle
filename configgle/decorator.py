@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar, get_type_hints, overload
+from typing import TYPE_CHECKING, get_type_hints, overload
 
 import inspect
 
@@ -16,33 +16,28 @@ if TYPE_CHECKING:
 
 __all__ = ["autofig"]
 
-_T = TypeVar("_T")
+
+@overload
+def autofig[T](cls: type[T], /) -> type[HasRelaxedConfig[T]]: ...
 
 
 @overload
-def autofig(
-    cls: type[_T],
-    /,
-) -> type[HasRelaxedConfig[_T]]: ...
-
-
-@overload
-def autofig(
+def autofig[T](
     cls: None = None,
     /,
     *,
     require_defaults: bool = True,
     kw_only: bool = True,
-) -> Callable[[type[_T]], type[HasRelaxedConfig[_T]]]: ...
+) -> Callable[[type[T]], type[HasRelaxedConfig[T]]]: ...
 
 
-def autofig(
-    cls: type[_T] | None = None,
+def autofig[T](
+    cls: type[T] | None = None,
     /,
     *,
     require_defaults: bool = True,
     kw_only: bool = True,
-) -> type[HasRelaxedConfig[_T]] | Callable[[type[_T]], type[HasRelaxedConfig[_T]]]:
+) -> type[HasRelaxedConfig[T]] | Callable[[type[T]], type[HasRelaxedConfig[T]]]:
     """Create a nested Config dataclass from __init__ parameters.
 
     The Config class gets parent_class (via MakerMeta), make() to instantiate
@@ -70,7 +65,7 @@ def autofig(
 
     """
 
-    def decorator(cls_: type[_T]) -> type[HasRelaxedConfig[_T]]:
+    def decorator(cls_: type[T]) -> type[HasRelaxedConfig[T]]:
         sig = inspect.signature(cls_.__init__)
         try:
             type_hints = get_type_hints(cls_.__init__)

@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable, MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, Generic, Protocol, Self, TypeVar, runtime_checkable
-from typing_extensions import override
+from typing import (
+    TYPE_CHECKING,
+    Protocol,
+    Self,
+    override,
+    runtime_checkable,
+)
 
 import copy
 import dataclasses
@@ -29,11 +34,8 @@ class _HasFinalize(Protocol):
 __all__ = ["InlineConfig", "PartialConfig"]
 
 
-_T = TypeVar("_T")
-
-
 @dataclasses.dataclass(slots=True, init=False, repr=True, weakref_slot=True)
-class InlineConfig(Generic[_T]):
+class InlineConfig[T]:
     """Config wrapper for arbitrary callables with deferred execution.
 
     Stores a function and its arguments, calling them when make() is invoked.
@@ -42,7 +44,7 @@ class InlineConfig(Generic[_T]):
     """
 
     parent_class: None = dataclasses.field(default=None, init=False, repr=False)
-    func: Callable[..., _T]
+    func: Callable[..., T]
     _finalized: bool = dataclasses.field(
         default=False,
         init=False,
@@ -63,7 +65,7 @@ class InlineConfig(Generic[_T]):
     def __init__(
         self,
         /,
-        func: Callable[..., _T],
+        func: Callable[..., T],
         *args: object,
         **kwargs: object,
     ) -> None:
@@ -72,7 +74,7 @@ class InlineConfig(Generic[_T]):
         self._args = list(args)
         self._kwargs = kwargs  # Must be last.
 
-    def make(self) -> _T:
+    def make(self) -> T:
         """Finalize and invoke the wrapped function.
 
         Returns:
@@ -190,13 +192,13 @@ class InlineConfig(Generic[_T]):
         )
 
 
-class PartialConfig(InlineConfig[Callable[..., _T]]):
+class PartialConfig[T](InlineConfig[Callable[..., T]]):
     """InlineConfig that returns a functools.partial instead of calling the function."""
 
     def __init__(
         self,
         /,
-        func: Callable[..., _T],
+        func: Callable[..., T],
         *args: object,
         **kwargs: object,
     ) -> None:
