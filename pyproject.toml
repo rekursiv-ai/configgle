@@ -205,12 +205,18 @@ pythonPlatform = "Linux"
 pythonVersion = "3.12"
 reportAny = false
 reportExplicitAny = false
-reportUnusedCallResult = false
+reportImplicitStringConcatenation = false  # Otherwise conflicts with Ruff ISC003 explicit-string-concatenation.
+reportInvalidCast = false  # cast() is always intentional; double-casting through object is noise.
 reportUnannotatedClassAttribute = false
-reportImplicitStringConcatenation = false
+reportUnusedCallResult = false
 
-# docs/ files are exploratory typing demos — relax strict checks
 [[tool.basedpyright.executionEnvironments]]
+root = "tests"
+reportPrivateUsage = false
+reportPrivateLocalImportUsage = false
+
+[[tool.basedpyright.executionEnvironments]]
+# docs/ files are exploratory typing demos -- relax strict checks
 root = "docs"
 reportAttributeAccessIssue = false
 reportGeneralTypeIssues = false
@@ -220,25 +226,10 @@ reportUninitializedInstanceVariable = false
 reportUnknownMemberType = false
 reportUnknownParameterType = false
 
-[[tool.basedpyright.executionEnvironments]]
-root = "tests"
-reportPrivateUsage = false
-reportMissingTypeStubs = false
-reportUnknownMemberType = false
-reportUnknownVariableType = false
-reportUnknownArgumentType = false
-reportCallInDefaultInitializer = false
-reportConstantRedefinition = false
-reportMissingSuperCall = false
-reportPrivateLocalImportUsage = false
-reportUnsafeMultipleInheritance = false
-reportUnusedImport = false
-reportIncompatibleMethodOverride = false
-
 [tool.ty.environment]
 python-version = "3.12"
 
-# docs/ files are exploratory typing demos — relax strict checks
+# docs/ files are exploratory typing demos -- relax strict checks
 [[tool.ty.overrides]]
 include = ["docs/**"]
 
@@ -247,15 +238,6 @@ empty-body = "ignore"
 invalid-return-type = "ignore"
 invalid-type-form = "ignore"
 invalid-type-guard-definition = "ignore"
-unresolved-attribute = "ignore"
-
-# Test files have relaxed rules - tests use @autofig decorator which adds
-# .Config dynamically, and intentionally test error paths
-[[tool.ty.overrides]]
-include = ["tests/**"]
-
-[tool.ty.overrides.rules]
-# @autofig adds .Config at runtime, invisible to static analysis
 unresolved-attribute = "ignore"
 
 [tool.codespell]

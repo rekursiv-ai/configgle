@@ -227,7 +227,7 @@ class TestCopyOnWriteFinalize:
 
     def test_finalize_called_on_exit(self):
         """Finalize should be called on context exit if object has it."""
-        finalize_called = []
+        finalize_called = list[int]()
 
         class FinalizeTracker:
             def __init__(self, value: int):
@@ -369,7 +369,7 @@ class TestCopyOnWriteContextManager:
 
     def test_read_only_access_does_not_finalize_children(self):
         """Read-only child access should not finalize (would mutate original)."""
-        finalize_called = []
+        finalize_called = list[str]()
 
         class Trackable:
             def __init__(self, name: str):
@@ -396,7 +396,7 @@ class TestCopyOnWriteContextManager:
 
     def test_exits_children_first_on_mutation(self):
         """Children should be finalized before parent when mutations occur."""
-        exit_order = []
+        exit_order = list[str]()
 
         class Trackable:
             def __init__(self, name: str):

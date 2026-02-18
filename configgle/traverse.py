@@ -146,7 +146,7 @@ def path_matches_pattern(
         return True
 
     parts = pattern.split(".")
-    regex_parts: list[str] = []
+    regex_parts = list[str]()
 
     for part in parts:
         if part == "*":

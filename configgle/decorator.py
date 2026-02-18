@@ -87,13 +87,10 @@ def autofig[T](
         Config = FigMeta(
             "Config",
             (Fig,),
-            {
-                "__annotations__": annotations,
-                "make_with_kwargs": True,
-                **defaults_,
-            },
+            {"__annotations__": annotations, **defaults_},
             require_defaults=require_defaults,
             kw_only=kw_only,
+            make_with_kwargs=True,
         )
 
         Config.__set_name__(cls_, "Config")

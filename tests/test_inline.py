@@ -79,14 +79,14 @@ def test_inline_config_finalize():
             new._finalized = True
             return new
 
-    cfg = InlineConfig(lambda c: c.x * 2, SimpleConfig(1))  # pyright: ignore[reportUnknownLambdaType]
+    cfg = InlineConfig(lambda c: c.x * 2, SimpleConfig(1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType, reportUnknownMemberType]
     assert cfg._finalized is False
 
-    finalized = cfg.finalize()
+    finalized = cfg.finalize()  # pyright: ignore[reportUnknownVariableType]  # InlineConfig[Unknown]
 
     assert finalized._finalized is True
     # Should finalize nested configs
-    assert finalized._args[0]._finalized is True  # pyright: ignore[reportAttributeAccessIssue]
+    assert finalized._args[0]._finalized is True  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # ty: ignore[unresolved-attribute]
 
 
 def test_inline_config_attr_access():
@@ -162,7 +162,7 @@ def test_inline_config_update_from_dataclass():
         a: int = 10
         b: str = "hello"
 
-    cfg = InlineConfig(lambda a, b: f"{a}-{b}")  # pyright: ignore[reportUnknownLambdaType]
+    cfg = InlineConfig(lambda a, b: f"{a}-{b}")  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     cfg.update(Source())
     assert cfg.a == 10
     assert cfg.b == "hello"
@@ -180,7 +180,7 @@ def test_inline_config_update_from_non_dataclass():
         def method(self) -> None:
             pass
 
-    cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType]
+    cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
     cfg.update(Source())  # pyright: ignore[reportArgumentType]  # type: ignore[invalid-argument-type]
     assert cfg.x == 42
     assert cfg.y == "data"
@@ -190,14 +190,14 @@ def test_inline_config_update_from_non_dataclass():
 
 def test_inline_config_update_with_kwargs():
     """Test InlineConfig.update with kwargs."""
-    cfg = InlineConfig(lambda a, b: a + b)  # pyright: ignore[reportUnknownLambdaType]
+    cfg = InlineConfig(lambda a, b: a + b)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
     cfg.update(a=5, b=10)
     assert cfg.make() == 15
 
 
 def test_inline_config_update_skip_missing_ignored():
     """Test InlineConfig.update ignores skip_missing (by design)."""
-    cfg = InlineConfig(lambda a: a)  # pyright: ignore[reportUnknownLambdaType]
+    cfg = InlineConfig(lambda a: a)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
     # skip_missing is silently ignored for InlineConfig
     cfg.update(skip_missing=True, a=99)
     assert cfg.a == 99
@@ -215,7 +215,7 @@ def test_inline_config_update_non_dataclass_with_property():
         def data(self) -> int:
             return 42
 
-    cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType]
+    cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
     cfg.update(TrickySource())  # pyright: ignore[reportArgumentType]  # type: ignore[invalid-argument-type]
     # broken should be skipped (AttributeError), data should be skipped (callable check)
     # Actually properties return their values, not the property object itself
@@ -225,10 +225,10 @@ def test_inline_config_update_non_dataclass_with_property():
 
 def test_inline_config_recursive_repr():
     """Test InlineConfig.__repr__ with self-referencing kwargs."""
-    cfg = InlineConfig(lambda x: x)  # pyright: ignore[reportUnknownLambdaType]
+    cfg = InlineConfig(lambda x: x)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
     cfg.self_ref = cfg  # Create self-reference
     # Should not infinitely recurse — @reprlib.recursive_repr handles it
-    repr_str = repr(cfg)
+    repr_str = repr(cfg)  # pyright: ignore[reportUnknownArgumentType]  # InlineConfig[Unknown]
     assert "..." in repr_str or "InlineConfig" in repr_str
 
 

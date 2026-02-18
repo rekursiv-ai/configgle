@@ -4,6 +4,17 @@ from configgle.decorator import autofig
 from configgle.fig import Fig
 
 
+# ty canary: when this suppression becomes unnecessary, ty supports
+# class decorator return types and all @autofig ignores can be removed.
+@autofig
+class _Canary:
+    def __init__(self, x: int = 0):
+        self.x = x
+
+
+_canary_config = _Canary.Config(x=1)  # ty: ignore[unresolved-attribute]
+
+
 def test_basic_decorator():
     @autofig
     class Foo:
@@ -12,10 +23,10 @@ def test_basic_decorator():
             self.y = y
             self.z = z
 
-    assert Foo.Config.__bases__ == (Fig,)
-    assert Foo.Config.parent_class == Foo
+    assert Foo.Config.__bases__ == (Fig,)  # ty: ignore[unresolved-attribute]
+    assert Foo.Config.parent_class == Foo  # ty: ignore[unresolved-attribute]
 
-    config = Foo.Config(x=42, y="hello", z=3.14)
+    config = Foo.Config(x=42, y="hello", z=3.14)  # ty: ignore[unresolved-attribute]
     assert config.x == 42
     assert config.y == "hello"
     assert config.z == 3.14
@@ -33,7 +44,7 @@ def test_config_update():
             self.x = x
             self.y = y
 
-    config = Foo.Config(x=1, y="a")
+    config = Foo.Config(x=1, y="a")  # ty: ignore[unresolved-attribute]
     config.update(x=99)
     assert config.x == 99
     assert config.y == "a"
@@ -52,9 +63,9 @@ def test_with_defaults():
             self.name = name
             self.count = count
 
-    assert Bar.Config.parent_class == Bar
+    assert Bar.Config.parent_class == Bar  # ty: ignore[unresolved-attribute]
 
-    config = Bar.Config(items=[1, 2, 3], name="test")
+    config = Bar.Config(items=[1, 2, 3], name="test")  # ty: ignore[unresolved-attribute]
     assert config.items == [1, 2, 3]
     assert config.name == "test"
     assert config.count == 5
@@ -73,8 +84,8 @@ def test_original_init_preserved():
             self.b = b
 
     baz = Baz(a=10, b="direct")  # pyright: ignore[reportCallIssue]
-    assert baz.a == 10  # pyright: ignore[reportAttributeAccessIssue]
-    assert baz.b == "direct"  # pyright: ignore[reportAttributeAccessIssue]
+    assert baz.a == 10  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    assert baz.b == "direct"  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
 
 
 def test_require_defaults():
@@ -86,7 +97,7 @@ def test_require_defaults():
             self.x = x
 
     # Should work - require_defaults=False allows parameters without defaults
-    config = NoDefaults.Config(x=42)
+    config = NoDefaults.Config(x=42)  # ty: ignore[unresolved-attribute]
     instance = config.make()
     assert instance.x == 42
 
@@ -101,9 +112,9 @@ def test_autofig_with_broken_type_hints():
         ns,
     )
     Cls = ns["B"]
-    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType]  # type: ignore[no-matching-overload]
-    config = decorated.Config(x=42)
-    assert config.make().x == 42
+    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType, reportUnknownVariableType]  # type: ignore[no-matching-overload]
+    config = decorated.Config(x=42)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    assert config.make().x == 42  # pyright: ignore[reportUnknownMemberType]
 
 
 if __name__ == "__main__":

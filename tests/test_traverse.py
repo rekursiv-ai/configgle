@@ -539,7 +539,7 @@ def test_property_attribute_error():
 
 def test_empty_sequence():
     """Test traversal of empty sequence."""
-    data: list[int] = []
+    data = list[int]()
     results = [
         (p, v)
         for p, v in recursively_iterate_over_object_descendants(data)

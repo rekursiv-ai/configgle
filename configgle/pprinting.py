@@ -561,7 +561,7 @@ def _filter_non_default_items(
         default_obj = cls()
 
         # Filter items - keep only non-default values
-        filtered: list[tuple[str, object]] = []
+        filtered = list[tuple[str, object]]()
         for name, value in items:
             default_value = getattr(default_obj, name)
             if value != default_value:

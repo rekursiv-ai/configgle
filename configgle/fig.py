@@ -125,7 +125,6 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):  # noqa: UP046
     """
 
     __slots__: ClassVar[tuple[str, ...]] = ("_finalized",)
-    make_with_kwargs: ClassVar[bool] = False
     if TYPE_CHECKING:
 
         @property
@@ -347,6 +346,7 @@ _False = _Default(False)
 class _DataclassMeta(type):
     __classcell__: CellType | None = None
     __dataclass_params__: _DataclassParams = _DataclassParams()
+    make_with_kwargs: ClassVar[bool]
 
     def __new__(
         mcls: type[_DataclassMeta],
@@ -366,6 +366,7 @@ class _DataclassMeta(type):
         slots: bool | _Default = _True,
         weakref_slot: bool | _Default | None = None,
         require_defaults: bool = True,
+        make_with_kwargs: bool | None = None,
     ) -> _DataclassMeta:
         cls = super().__new__(mcls, name, bases, attrs)
         if classcell := attrs.get("__classcell__"):
@@ -403,6 +404,9 @@ class _DataclassMeta(type):
                         f"{name}.{field.name} has no default value. "
                         f"Add a default or use require_defaults=False to disable this check.",
                     )
+
+        if make_with_kwargs is not None:
+            cls.make_with_kwargs = make_with_kwargs  # type: ignore[attr-defined]
 
         cls.__dataclass_params__ = kwargs
         cls = cast(_DataclassMeta, cls)

@@ -8,7 +8,7 @@ import dataclasses
 import logging
 import pickle
 
-import cloudpickle
+import cloudpickle  # pyright: ignore[reportMissingTypeStubs]
 import pytest
 
 from configgle import InlineConfig, Makeable, PartialConfig
@@ -76,7 +76,7 @@ def test_cant_set_unknown_field():
 
 def test_cloudpickle():
     cfg = Child.Config()
-    cfg_ = pickle.loads(cloudpickle.dumps(cfg))
+    cfg_ = pickle.loads(cloudpickle.dumps(cfg))  # pyright: ignore[reportUnknownMemberType]  # no stubs
     assert cfg == cfg_
     assert cfg.a == cfg_.a
     assert cfg.b == cfg_.b
@@ -96,7 +96,7 @@ def test_pickle_parent_class_restored():
     cfg_ = pickle.loads(pickle.dumps(cfg))
 
     # Verify parent_class is restored after unpickling
-    assert type(cfg_).parent_class is Parent
+    assert type(cfg_).parent_class is Parent  # pyright: ignore[reportUnknownMemberType]  # parent_class untyped
     assert cfg_.make().__class__ is Parent
 
 
@@ -108,10 +108,10 @@ def test_cloudpickle_parent_class_restored():
     assert Child.Config.parent_class is Child
 
     # Cloudpickle and unpickle
-    cfg_ = pickle.loads(cloudpickle.dumps(cfg))
+    cfg_ = pickle.loads(cloudpickle.dumps(cfg))  # pyright: ignore[reportUnknownMemberType]  # no stubs
 
     # Verify parent_class is restored after unpickling
-    assert type(cfg_).parent_class is Child
+    assert type(cfg_).parent_class is Child  # pyright: ignore[reportUnknownMemberType]  # parent_class untyped
     assert cfg_.make().__class__ is Child
 
 
@@ -136,7 +136,7 @@ def test_pickle_nested_class_with_parent():
 def test_cloudpickle_nested_class_with_parent():
     """Test cloudpickling the parent class that contains the nested Config."""
     # When we cloudpickle the parent class itself, Config should be preserved
-    Child_pickled = pickle.loads(cloudpickle.dumps(Child))
+    Child_pickled = pickle.loads(cloudpickle.dumps(Child))  # pyright: ignore[reportUnknownMemberType]  # no stubs
 
     # Verify the Config class is accessible
     assert hasattr(Child_pickled, "Config")
@@ -653,7 +653,7 @@ def test_dataclass_params_iter_with_string_slots():
         __slots__ = "extra"  # pyright: ignore[reportAssignmentType]  # noqa: PLC0205  # intentionally string for branch test
 
     params = StringSlotParams()
-    params.extra = True
+    params.extra = True  # ty: ignore[unresolved-attribute]
     keys = list(params)
     assert "extra" in keys
 
