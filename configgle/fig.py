@@ -406,7 +406,7 @@ class _DataclassMeta(type):
                     )
 
         if make_with_kwargs is not None:
-            cls.make_with_kwargs = make_with_kwargs  # type: ignore[attr-defined]
+            cls.make_with_kwargs = make_with_kwargs
 
         cls.__dataclass_params__ = kwargs
         cls = cast(_DataclassMeta, cls)
