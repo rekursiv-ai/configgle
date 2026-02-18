@@ -557,9 +557,11 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:  # noqa: PLR0911
         finalized = finalized_items
     elif isinstance(value, Mapping):
         # Mapping key type is unknown at runtime
-        finalized = {k: _finalize_value(v) for k, v in value.items()}  # pyright: ignore[reportUnknownVariableType]
+        finalized = {
+            k: _finalize_value(v) for k, v in cast(Mapping[str, object], value).items()
+        }
     elif isinstance(value, AbstractSet):
-        finalized = {_finalize_value(v) for v in value}
+        finalized = {_finalize_value(v) for v in cast(AbstractSet[object], value)}
     else:
         # Only recurse into data containers (dataclasses or classes with their
         # own __slots__). Skip plain objects like loggers, file handles, etc.

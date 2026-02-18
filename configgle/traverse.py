@@ -13,6 +13,7 @@ from collections.abc import (
     Sequence,
     Set as AbstractSet,
 )
+from typing import cast
 
 import re
 
@@ -72,13 +73,12 @@ def recursively_iterate_over_object_descendants(
                 path=(*path, i),
             )
     elif isinstance(value, Mapping):
-        # Mapping key type is unknown at runtime
-        for k, v in value.items():  # pyright: ignore[reportUnknownVariableType]
+        for k, v in cast(Mapping[str, object], value).items():
             yield from recursively_iterate_over_object_descendants(
                 v,
                 recurse=recurse,
                 seen=seen,
-                path=(*path, k),  # pyright: ignore[reportUnknownArgumentType]  # ty: ignore[invalid-argument-type]
+                path=(*path, k),
             )
     elif isinstance(value, AbstractSet):
         for i, item in enumerate(value):
