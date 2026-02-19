@@ -108,8 +108,8 @@ picture (including [`Makes`](#inheritance-with-makes), introduced next):
 | | `ty` | `basedpyright` |
 |---|:---:|:---:|
 | Bare `Fig` infers parent type | ✅ | 🟡 (`Any` fallback) |
-| `Fig["Parent"]` | ✅ | ✅ |
-| `Makes["Child"]` needed for inheritance | ❌ | ✅ |
+| Inheritance infers parent type | ✅ | 🟡 (Needs `Makes["Child"]`) |
+| Explict `Fig["Parent"]` | ✅ | ✅ |
 | `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
 
 `ty` gets full inference from `Intersection` -- bare `Fig` and inherited
