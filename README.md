@@ -49,6 +49,7 @@ Or use `@autofig` to auto-generate the Config from `__init__`:
 
 ```python
 from configgle import autofig
+from torch import nn
 
 @autofig
 class Model(nn.Module):
@@ -178,8 +179,8 @@ Override `finalize()` to compute derived fields before instantiation. Nested
 configs are finalized recursively:
 
 ```python
-from dataclasses import field
 from configgle import Configurable  # Just an alias to Makeable.
+from dataclasses import field
 
 class Encoder:
     class Config(Fig):
