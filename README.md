@@ -1,6 +1,6 @@
 # configgle🤭
-Hierarchical configuration using pure Python dataclasses, with typed factory
-methods, covariant protocols, inheritance support, and tooling for
+Hierarchical experiment configuration using pure Python dataclasses with typed
+factory methods, covariant protocols, inheritance support, and tooling for
 copy-on-write semantics.
 
 ## Installation
