@@ -178,6 +178,9 @@ Override `finalize()` to compute derived fields before instantiation. Nested
 configs are finalized recursively:
 
 ```python
+from dataclasses import field
+from configgle import Configurable  # Just an alias to Makeable.
+
 class Encoder:
     class Config(Fig):
         c_in: int = 256
@@ -268,7 +271,6 @@ printing, and scrubs memory addresses:
 
 ```python
 from configgle import Configurable, Fig, pformat
-from dataclasses import field
 
 class MLP:
     class Config(Fig):
