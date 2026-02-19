@@ -426,7 +426,7 @@ If you find our work useful, please consider citing:
 
 ```bibtex
 @misc{dillon2026configgle,
-      title={Configgle - Hierarchical experiment configuration using pure Python dataclass factories and dependency injection.},
+      title={Configgle - Type-safe hierarchical experiment configuration using pure Python dataclass factories and dependency injection.},
       author={Joshua V. Dillon},
       year={2026},
       howpublished={Github},
