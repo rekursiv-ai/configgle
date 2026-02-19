@@ -75,7 +75,7 @@ Unfortunately neither is perfect:
 | Bare `Fig` infers parent type | ✅ | ❌ (`Any` fallback) |
 | Explict `Fig["Parent"]` specifies parent type | ✅ | ✅ |
 | Inheritance infers parent type | ✅ | ❌ |
-| Explicit `Makes["Child"]` narrows infered parent type | ✅ | ✅ |
+| Explicit `Makes["Child"]` narrows infered inherited parent type | ✅ | ✅ |
 | `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
 
 **Details:**
