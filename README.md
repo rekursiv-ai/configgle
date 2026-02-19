@@ -175,7 +175,7 @@ configs are finalized recursively:
 class Encoder:
     class Config(Fig["Encoder"]):
         c_in: int = 256
-        mlp: Configurable[ModuleLike] = field(default_factory=MLP.Config)
+        mlp: Configurable[nn.Module] = field(default_factory=MLP.Config)
 
         def finalize(self) -> Self:
             self = super().finalize()
@@ -185,7 +185,7 @@ class Encoder:
 
 ### `update()` for bulk mutation
 
-Configs support bulk updates from another config, a dict, or keyword arguments:
+Configs support bulk updates from another config or keyword arguments:
 
 ```python
 cfg = Model.Config(hidden_size=256)
@@ -239,8 +239,8 @@ from configgle import CopyOnWrite, Fig
 class Encoder:
     class Config(Fig["Encoder"]):
         hidden_size: int = 256
-        encoder: Configurable[ModuleLike] = field(default_factory=MLP.Config)
-        decoder: Configurable[ModuleLike] = field(default_factory=MLP.Config)
+        encoder: Configurable[nn.Module] = field(default_factory=MLP.Config)
+        decoder: Configurable[nn.Module] = field(default_factory=MLP.Config)
 
         def finalize(self) -> Self:
             self = super().finalize()
