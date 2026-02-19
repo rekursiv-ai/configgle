@@ -133,6 +133,7 @@ class Animal:
         name: str = "animal"
 
     def __init__(self, config: Config):
+        self.config = config
         self.name = config.name
 
 class Dog(Animal):
