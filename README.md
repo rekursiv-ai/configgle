@@ -67,6 +67,18 @@ print(model.hidden_size)  # 512
 
 ### Type-safe `make()`
 
+_tl;dr_: Both `ty` and `basedpyright` are first-class supported.
+Unfortunately neither is perfect:
+
+| | `ty` | `basedpyright` |
+|---|:---:|:---:|
+| Bare `Fig` infers parent type | ✅ | ❌ (`Any` fallback) |
+| Inheritance infers parent type | ✅ | 🟡 (Needs `Makes["Child"]`) |
+| Explict `Fig["Parent"]` | ✅ | ✅ |
+| `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
+
+
+
 When `Config` is defined as a nested class, `MakerMeta.__get__` uses the
 descriptor protocol to infer the parent class automatically. The return type
 of `__get__` is `Intersection[type[Config], type[Makeable[Parent]]]`, so
@@ -101,16 +113,6 @@ model: Model = Model.Config(hidden_size=512).make()  # returns Model, not object
 
 Without `["Model"]`, non-`ty` checkers fall back to `Any` (so attribute access
 works without typecheck suppressions).
-
-Both `ty` and `basedpyright` are first-class supported.
-Unfortunately neither is perfect:
-
-| | `ty` | `basedpyright` |
-|---|:---:|:---:|
-| Bare `Fig` infers parent type | ✅ | ❌ (`Any` fallback) |
-| Inheritance infers parent type | ✅ | 🟡 (Needs `Makes["Child"]`) |
-| Explict `Fig["Parent"]` | ✅ | ✅ |
-| `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
 
 `ty` gets full inference from `Intersection` -- bare `Fig` and inherited
 configs just work. `basedpyright` doesn't support `Intersection` yet, so it
