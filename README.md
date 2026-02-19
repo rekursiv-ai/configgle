@@ -126,6 +126,8 @@ When a child class inherits a parent's Config, the `make()` return type would
 normally be the parent. Use `Makes` to re-bind it (again, only needed for `basedpyright`):
 
 ```python
+from configgle import Makes
+
 class Animal:
     class Config(Fig["Animal"]):
         name: str = "animal"
