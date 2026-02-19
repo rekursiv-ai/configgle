@@ -78,7 +78,7 @@ Unfortunately neither is perfect:
 | Explicit `Makes["Child"]` enables infer parent type inherited `Fig` | ✅ | ✅ |
 | `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
 
-### Details
+**Details:**
 
 When `Config` is defined as a nested class, `MakerMeta.__get__` uses the
 descriptor protocol to infer the parent class automatically. The return type
