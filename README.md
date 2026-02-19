@@ -22,11 +22,13 @@ class Model:
         self.config = config
 
 # Create and modify config
-config = Model.Config(hidden_size=512)
+cfg = Model.Config()
+cfg.hidden_size = 512
 
 # Instantiate the parent class
-model = config.make()
-print(model.config.hidden_size)  # 512
+model = cfg.make()
+print(model.config)
+assert isinstance(model, Model)
 ```
 
 Configs are plain mutable dataclasses, so experiments are just functions that
@@ -49,8 +51,9 @@ Or use `@autofig` to auto-generate the Config from `__init__`:
 from configgle import autofig
 
 @autofig
-class Model:
+class Model(nn.Module):
     def __init__(self, hidden_size: int = 256, num_layers: int = 4):
+        super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
