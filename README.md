@@ -67,7 +67,7 @@ print(model.hidden_size)  # 512
 
 ### Type-safe `make()`
 
-_tl;dr_: Both `ty` and `basedpyright` are first-class supported.
+**tl;dr:** Both `ty` and `basedpyright` are first-class supported.
 Unfortunately neither is perfect:
 
 | | `ty` | `basedpyright` |
