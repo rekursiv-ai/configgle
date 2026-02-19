@@ -29,6 +29,20 @@ model = config.make()
 print(model.config.hidden_size)  # 512
 ```
 
+Configs are plain mutable dataclasses, so experiments are just functions that
+tweak a baseline:
+
+```python
+def exp000() -> Model.Config:
+    return Model.Config()
+
+def exp001() -> Model.Config:
+    cfg = exp000()
+    cfg.hidden_size = 512
+    cfg.num_layers = 8
+    return cfg
+```
+
 Or use `@autofig` to auto-generate the Config from `__init__`:
 
 ```python
@@ -49,8 +63,10 @@ print(model.hidden_size)  # 512
 
 ### Type-safe `make()`
 
-`Fig` tracks the parent class automatically. You can use bare `Fig` and
-everything works with no type warnings -- the type parameter defaults to `Any`:
+When `Config` is defined as a nested class, `MakerMeta.__get__` uses the
+descriptor protocol to infer the parent class automatically. The return type
+of `__get__` is `Intersection[type[Config], type[Makeable[Parent]]]`, so
+`make()` knows the exact return type with zero annotation effort:
 
 ```python
 class Model:
@@ -60,15 +76,17 @@ class Model:
     def __init__(self, config: Config):
         self.hidden_size = config.hidden_size
 
-model = Model.Config(hidden_size=512).make()
+model = Model.Config(hidden_size=512).make()  # inferred as Model
 ```
 
-For tighter checking, parameterize with the parent class name and `make()`
-returns the exact type:
+Type checkers that support `Intersection` (like `ty`) resolve this fully --
+bare `Fig` is all you need. For type checkers that don't yet support
+`Intersection` (like `basedpyright`), parameterize with the parent class
+name to give the checker the same information explicitly:
 
 ```python
 class Model:
-    class Config(Fig["Model"]):
+    class Config(Fig["Model"]):  # explicit type parameter only for basedpyright
         hidden_size: int = 256
 
     def __init__(self, config: Config):
@@ -76,6 +94,28 @@ class Model:
 
 model: Model = Model.Config(hidden_size=512).make()  # returns Model, not object
 ```
+
+Without `["Model"]`, non-`ty` checkers fall back to `Any` (so attribute access
+works without typecheck suppressions).
+
+Both `ty` and `basedpyright` are first-class supported. Here's the full
+picture (including [`Makes`](#inheritance-with-makes), introduced next):
+
+| | `ty` | `basedpyright` |
+|---|:---:|:---:|
+| Bare `Fig` infers parent type | ✅ | 🟡 (`Any` fallback) |
+| `Fig["Parent"]` | ✅ | ✅ |
+| `Makes["Child"]` needed for inheritance | ❌ | ✅ |
+| `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
+
+`ty` gets full inference from `Intersection` -- bare `Fig` and inherited
+configs just work. `basedpyright` doesn't support `Intersection` yet, so it
+needs explicit `Fig["Parent"]` and `Makes["Child"]` annotations. `ty` doesn't
+yet support class decorator return types, so `@autofig`-decorated classes need
+`# ty: ignore[unresolved-attribute]` to access `.Config`; `basedpyright`
+handles this correctly. When `Intersection` lands in the
+[type spec](https://github.com/python/typing/issues/213), `Makes` becomes
+unnecessary and both checkers will infer everything from bare `Fig`.
 
 ### Inheritance with `Makes`
 
@@ -102,13 +142,9 @@ dog: Dog = Dog.Config(name="Rex", breed="labrador").make()  # returns Dog, not A
 ```
 
 `Makes` contributes nothing to the MRO at runtime -- it exists purely for the
-type checker. It's a workaround for Python's lack of an `Intersection` type:
-`MakerMeta.__get__` already narrows `Dog.Config` to
-`type[Config] & type[Makeable[Dog]]` at runtime, but there's no way to express
-that statically today. When
+type checker (see the [type checker table](#type-safe-make) above). When
 [Intersection](https://github.com/python/typing/issues/213) lands, `Makes`
-will become unnecessary -- configgle is already forward-compatible with that
-change.
+becomes unnecessary.
 
 ### Covariant `Makeable` protocol
 
@@ -139,7 +175,7 @@ configs are finalized recursively:
 class Encoder:
     class Config(Fig["Encoder"]):
         c_in: int = 256
-        mlp: MLP.Config = field(default_factory=MLP.Config)
+        mlp: Configurable[ModuleLike] = field(default_factory=MLP.Config)
 
         def finalize(self) -> Self:
             self = super().finalize()
@@ -158,6 +194,96 @@ cfg.update(hidden_size=512, num_layers=8)
 # Or copy from another config (kwargs take precedence):
 cfg.update(other_cfg, num_layers=12)
 ```
+
+### `InlineConfig` / `PartialConfig`
+
+`InlineConfig` wraps an arbitrary callable and its arguments into a config
+object with deferred execution. Use it for classes where all constructor
+arguments are known at config time:
+
+```python
+from configgle import InlineConfig
+import torch.nn as nn
+
+cfg = InlineConfig(nn.Linear, in_features=256, out_features=128, bias=False)
+cfg.out_features = 64        # attribute-style access to kwargs
+layer = cfg.make()           # calls nn.Linear(in_features=256, out_features=64, bias=False)
+y = layer(x)                 # use the constructed module
+```
+
+`PartialConfig` is shorthand for `InlineConfig(functools.partial, fn, ...)`
+-- use it for functions where some arguments aren't known at config time:
+
+```python
+from configgle import PartialConfig
+import torch.nn.functional as F
+
+cfg = PartialConfig(F.cross_entropy, label_smoothing=0.1)
+loss_fn = cfg.make()         # returns functools.partial(F.cross_entropy, label_smoothing=0.1)
+loss = loss_fn(logits, targets)  # calls F.cross_entropy(logits, targets, label_smoothing=0.1)
+```
+
+Nested configs in args/kwargs are finalized and `make()`-d recursively, so
+both compose naturally with `Fig` configs.
+
+### `CopyOnWrite`
+
+`CopyOnWrite` wraps a config tree and lazily copies objects only when mutations
+occur. Copies propagate up to parents automatically, so the original is never
+touched. This is especially useful inside `finalize()`, where you want to
+derive a variant of a shared sub-config without mutating the original:
+
+```python
+from configgle import CopyOnWrite, Fig
+
+class Encoder:
+    class Config(Fig["Encoder"]):
+        hidden_size: int = 256
+        encoder: Configurable[ModuleLike] = field(default_factory=MLP.Config)
+        decoder: Configurable[ModuleLike] = field(default_factory=MLP.Config)
+
+        def finalize(self) -> Self:
+            self = super().finalize()
+            # encoder and decoder can share the same MLP.Config object.
+            # CopyOnWrite lets us tweak the decoder's copy without
+            # touching the encoder's (or the shared original).
+            with CopyOnWrite(self) as cow:
+                cow.decoder.c_out = self.hidden_size * 2
+            return cow.unwrap
+```
+
+Only the mutated nodes (and their ancestors) are shallow-copied; everything
+else stays shared.
+
+### `pprint` / `pformat`
+
+Config-aware pretty printing that hides default values, auto-finalizes before
+printing, and scrubs memory addresses:
+
+```python
+from configgle import Fig, pformat
+
+class Model:
+    class Config(Fig):
+        hidden_size: int = 256
+        num_layers: int = 4
+        dropout: float = 0.1
+        vocab_size: int = 32_000
+        max_seq_len: int = 2048
+    def __init__(self, config: Config): ...
+
+cfg = Model.Config(hidden_size=512, num_layers=12)
+print(pformat(cfg))
+# Model.Config(
+#                 hidden_size=512,
+#                 num_layers=12
+#         )
+```
+
+Only non-default values are shown -- `dropout`, `vocab_size`, and `max_seq_len`
+are all omitted. Other features: continuation pipes for very long nested
+configs, collapsing of short sequences onto one line, and
+underscore-separated large numbers.
 
 ### `@autofig` for zero-boilerplate configs
 
@@ -187,6 +313,7 @@ model = cfg_.make()  # parent_class is preserved
 | Config inheritance | ✅ | 🟡 | ❌ | 🟡 | ❌ | ❌ | ❌ | 🟡 |
 | Covariant protocol | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Nested finalization | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Copy-on-write | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `pickle`/`cloudpickle` | ✅ | 🟡 | ❌ | ✅ | ❌ | 🟡 | ✅ | ❌ |
 | Auto-generated configs | ✅ | 🟡 | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | GitHub stars | -- | 10.2k | 4.4k | 2.3k | 2.1k | 1.0k | 374 | 21 |

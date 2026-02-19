@@ -117,6 +117,7 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
         finalize_fn = getattr(self.__wrapped__, "finalize", None)
         if (
             not self._self_is_finalized
+            and not getattr(self.__wrapped__, "_finalized", False)
             and callable(finalize_fn)
             and (self._self_is_copy or not self._self_parents)
         ):

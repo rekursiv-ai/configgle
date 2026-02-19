@@ -1,6 +1,6 @@
 [project]
 name = "configgle"
-version = "1.1.8"
+version = "1.1.9"
 description = "Hierarchical experiment configuration using pure Python dataclass factories and dependency injection."
 readme = "README.md"
 requires-python = ">=3.12"

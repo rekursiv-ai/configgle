@@ -269,6 +269,45 @@ class TestCopyOnWriteFinalize:
         # Should only be called once
         assert finalize_count[0] == 1
 
+    def test_no_re_finalize_if_already_finalized(self):
+        """CopyOnWrite should not re-finalize objects that are already finalized."""
+        finalize_count = [0]
+
+        @dataclasses.dataclass
+        class Inner:
+            value: int = 0
+            _finalized: bool = dataclasses.field(default=False, repr=False)
+
+            def finalize(self) -> Self:
+                finalize_count[0] += 1
+                r = copy.copy(self)
+                r._finalized = True
+                return r
+
+        @dataclasses.dataclass
+        class Outer:
+            inner: Inner = dataclasses.field(default_factory=Inner)
+            scale: int = 1
+            _finalized: bool = dataclasses.field(default=False, repr=False)
+
+            def finalize(self) -> Self:
+                r = copy.copy(self)
+                r.inner = r.inner.finalize()
+                r._finalized = True
+                # Use CopyOnWrite inside finalize (the README pattern)
+                with CopyOnWrite(r) as cow:
+                    cow.inner.value = r.scale * 10
+                return cow.unwrap
+
+        original = Outer(scale=5)
+        result = original.finalize()
+
+        assert result.inner.value == 50
+        assert result._finalized is True
+        # Inner.finalize should only be called once (by Outer.finalize),
+        # not again by CopyOnWrite.__exit__
+        assert finalize_count[0] == 1
+
 
 class TestCopyOnWriteMethodCalls:
     """Test COW with method calls."""
