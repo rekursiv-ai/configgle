@@ -206,9 +206,9 @@ from configgle import InlineConfig
 import torch.nn as nn
 
 cfg = InlineConfig(nn.Linear, in_features=256, out_features=128, bias=False)
-cfg.out_features = 64            # attribute-style access to kwargs
-layer = cfg.make()               # calls nn.Linear(in_features=256, out_features=64, bias=False)
-y = layer(x)                     # use the constructed module
+cfg.out_features = 64     # attribute-style access to kwargs
+layer = cfg.make()        # calls nn.Linear(in_features=256, out_features=64, bias=False)
+y = layer(x)              # use the constructed module
 ```
 
 `PartialConfig` is shorthand for `InlineConfig(functools.partial, fn, ...)`
@@ -219,7 +219,7 @@ from configgle import PartialConfig
 import torch.nn.functional as F
 
 cfg = PartialConfig(F.cross_entropy, label_smoothing=0.1)
-loss_fn = cfg.make()             # returns functools.partial(F.cross_entropy, label_smoothing=0.1)
+loss_fn = cfg.make()      # returns functools.partial(F.cross_entropy, label_smoothing=0.1)
 loss = loss_fn(logits, targets)  # calls F.cross_entropy(logits, targets, label_smoothing=0.1)
 ```
 
