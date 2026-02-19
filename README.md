@@ -77,7 +77,7 @@ Unfortunately neither is perfect:
 | Explict `Fig["Parent"]` | ✅ | ✅ |
 | `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
 
-
+### Details
 
 When `Config` is defined as a nested class, `MakerMeta.__get__` uses the
 descriptor protocol to infer the parent class automatically. The return type
