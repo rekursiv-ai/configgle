@@ -261,29 +261,58 @@ Config-aware pretty printing that hides default values, auto-finalizes before
 printing, and scrubs memory addresses:
 
 ```python
-from configgle import Fig, pformat
+from configgle import Configurable, Fig, pformat
+from dataclasses import field
+
+class MLP:
+    class Config(Fig):
+        c_in: int = 256
+        c_out: int = 256
+        num_layers: int = 2
+        dropout: float = 0.1
+        use_bias: bool = True
+    def __init__(self, config: Config): ...
 
 class Model:
     class Config(Fig):
         hidden_size: int = 256
         num_layers: int = 4
-        dropout: float = 0.1
-        vocab_size: int = 32_000
-        max_seq_len: int = 2048
+        mlp: Configurable[nn.Module] = field(default_factory=MLP.Config)
+        output_mlp: Configurable[nn.Module] = field(default_factory=MLP.Config)
     def __init__(self, config: Config): ...
 
-cfg = Model.Config(hidden_size=512, num_layers=12)
-print(pformat(cfg))
+def exp001():
+    cfg = Model.Config()
+    cfg.hidden_size = 512
+    cfg.num_layers = 12
+    cfg.mlp.c_in = 512
+    cfg.mlp.c_out = 1024
+    cfg.mlp.num_layers = 4
+    cfg.mlp.dropout = 0.2
+    cfg.mlp.use_bias = False
+    cfg.output_mlp.c_in = 1024
+    cfg.output_mlp.c_out = 256
+    cfg.output_mlp.dropout = 0.3
+    return cfg
+
+print(pformat(exp001(), continuation_pipe=0))
 # Model.Config(
-#                 hidden_size=512,
-#                 num_layers=12
-#         )
+#    hidden_size=512,
+#    num_layers=12,
+#    mlp=MLP.Config(
+#    │       c_in=512,
+#    │       c_out=1_024,
+#    │       num_layers=4,
+#    │       dropout=0.2,
+#    │       use_bias=False
+#    ),
+#    output_mlp=MLP.Config(c_in=1_024, dropout=0.3)
+# )
 ```
 
-Only non-default values are shown -- `dropout`, `vocab_size`, and `max_seq_len`
-are all omitted. Other features: continuation pipes for very long nested
-configs, collapsing of short sequences onto one line, and
-underscore-separated large numbers.
+Default values are hidden, continuation pipes show where nested blocks belong,
+large numbers get underscores (`1_024`), and short sub-configs collapse onto
+one line.
 
 ### `@autofig` for zero-boilerplate configs
 
