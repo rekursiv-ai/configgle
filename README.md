@@ -102,8 +102,8 @@ model: Model = Model.Config(hidden_size=512).make()  # returns Model, not object
 Without `["Model"]`, non-`ty` checkers fall back to `Any` (so attribute access
 works without typecheck suppressions).
 
-Both `ty` and `basedpyright` are first-class supported. Here's the full
-picture (including [`Makes`](#inheritance-with-makes), introduced next):
+Both `ty` and `basedpyright` are first-class supported.
+Unfortunately neither is perfect:
 
 | | `ty` | `basedpyright` |
 |---|:---:|:---:|
