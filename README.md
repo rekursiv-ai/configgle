@@ -237,7 +237,7 @@ derive a variant of a shared sub-config without mutating the original:
 from configgle import CopyOnWrite, Fig
 
 class Encoder:
-    class Config(Fig["Encoder"]):
+    class Config(Fig):
         hidden_size: int = 256
         encoder: Configurable[nn.Module] = field(default_factory=MLP.Config)
         decoder: Configurable[nn.Module] = field(default_factory=MLP.Config)
