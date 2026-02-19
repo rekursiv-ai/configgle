@@ -14,7 +14,7 @@ python -m pip install configgle
 from configgle import Fig
 
 class Model:
-    class Config(Fig["Model"]):
+    class Config(Fig):
         hidden_size: int = 256
         num_layers: int = 4
 
