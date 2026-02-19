@@ -73,8 +73,9 @@ Unfortunately neither is perfect:
 | | `ty` | `basedpyright` |
 |---|:---:|:---:|
 | Bare `Fig` infers parent type | ✅ | ❌ (`Any` fallback) |
-| Inheritance infers parent type | ✅ | 🟡 (Needs `Makes["Child"]`) |
-| Explict `Fig["Parent"]` | ✅ | ✅ |
+| Explict `Fig["Parent"]` specifies parent type | ✅ | ✅ |
+| Inheritance infers parent type | ✅ | ❌ |
+| Explicit `Makes["Child"]` enables infer parent type inherited `Fig`s | ✅ | ✅ |
 | `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
 
 ### Details
