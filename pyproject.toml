@@ -5,7 +5,7 @@ description = "Type-safe hierarchical experiment configuration using pure Python
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
-    { name = "Joshua V. Dillon" },
+    {name = "Joshua V. Dillon"},
 ]
 license = "Apache-2.0"
 keywords = ["ai", "machine-learning"]
@@ -81,11 +81,16 @@ artifacts = ["configgle/py.typed"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-Werror"
-norecursedirs = [".venv", "__pycache__", "*.egg-info"]
+norecursedirs = [
+    ".venv",
+    "__pycache__",
+    "*.egg-info",
+]
 
 [tool.coverage.run]
 omit = [
-    "tests/*",
+    "*_test.py",
+    "*/tests/*",
     "*/.venv/*",
 ]
 
@@ -103,72 +108,80 @@ show-fixes = true
 line-length = 88
 output-format = "concise"
 target-version = "py312"
-exclude = [".venv", "*.egg-info", ".pytest_cache", "build", "dist"]
+exclude = [
+    ".venv",
+    "*.egg-info",
+    ".pytest_cache",
+    "build",
+    "dist",
+]
 extend-include = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    # Module-level ignores
-    "ANN",     # flake8-annotations - we use pyright for type checking
-    "C90",     # mccabe complexity - one function slightly over threshold
-    "COM812",  # missing trailing comma - conflicts with formatter
+    # Module-level ignores.
+    "ANN",     # Flake8 annotations. (We use pyright for type checking.)
+    "C90",     # McCabe complexity. (One function slightly over threshold.)
+    "COM812",  # Missing trailing comma. (Conflicts with formatter.)
 
-    # Docstring rules - not enforcing strict docstring requirements
-    "D100",    # undocumented public module
-    "D101",    # undocumented public class
-    "D102",    # undocumented public method
-    "D103",    # undocumented public function
-    "D104",    # undocumented public package
-    "D105",    # undocumented public magic method
-    "D106",    # undocumented public nested class
-    "D107",    # undocumented public init
-    "D203",    # incorrect blank line before class (conflicts with D211)
-    "D205",    # blank line required between summary line and description
-    "D213",    # multi-line-summary-second-line (conflicts with D212)
-    "D400",    # docstring should end with period
-    "D401",    # docstring imperative mood
-    "D415",    # docstring should end with period
+    # Relax docstring rules.
+    "D100",    # Undocumented public module.
+    "D101",    # Undocumented public class.
+    "D102",    # Undocumented public method.
+    "D103",    # Undocumented public function.
+    "D104",    # Undocumented public package.
+    "D105",    # Undocumented magic method.
+    "D106",    # Undocumented public nested class.
+    "D107",    # Undocumented public init.
+    "D203",    # Incorrect blank line before class. (Conflicts with D211.)
+    "D205",    # Missing blank line after summary.
+    "D213",    # Multi-line summary second line. (Conflicts with D212.)
+    "D400",    # Missing trailing period.
+    "D401",    # Non-imperative mood.
+    "D415",    # Missing terminal punctuation.
 
-    # Style choices
-    "A002",    # function argument shadowing builtin (we use 'repr' as param name)
-    "E501",    # line too long (formatter handles this)
-    "EM101",   # exception must not use string literal
-    "EM102",   # exception must not use f-string literal
-    "ERA001",  # commented-out code (we have intentional examples)
-    "FBT001",  # boolean positional argument
-    "FBT002",  # boolean default positional argument
-    "FBT003",  # boolean positional value in call
-    "N806",    # variable should be lowercase (we use Config as variable name)
-    "PLR0912", # too many branches
-    "PLR0913", # too many arguments
-    "PLR0915", # too many statements
-    "PLR2004", # magic value in comparison (common in tests)
-    "RET504",  # unnecessary assignment before return
-    "TC001",   # move import to type-checking block
-    "TC003",   # move import to type-checking block
-    "TC006",   # runtime-cast-value
-    "TRY003",  # long exception messages
-    "TRY300",  # consider moving to else block
-
+    # Standard style relaxations.
+    "A002",    # Builtin argument shadowing.
+    "E501",    # Line too long. (Will be fixed by formatter.)
+    "EM101",   # Raw string in exception.
+    "EM102",   # F-string in exception.
+    "ERA001",  # Commented-out code.
+    "FBT001",  # Boolean type hint positional argument.
+    "FBT002",  # Boolean default value positional argument.
+    "FBT003",  # Boolean positional value in call.
+    "FIX002",  # Line contains TODO. (Too verbose descriptions of TODOs.)
+    "N806",    # Non-lowercase variable in function.
+    "PLR0912", # Too many branches.
+    "PLR0913", # Too many arguments.
+    "PLR0915", # Too many statements.
+    "RET504",  # Unnecessary assign.
+    "TC001",   # Typing-only first-party import. (Will be fixed by formatter.)
+    "TC003",   # Typing-only standard library import. (Will be fixed by formatter.)
+    "TC006",   # Runtime cast value.
+    "TRY003",  # Raise vanilla args.
+    "TRY300",  # Try consider else.
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
-"packages/*" = [
-    "PYI018",  # "unused" TypeVars are intentional polyfill exports
+"__init__.py" = [
+    "F401",    # Unused import.
+]
+"{*_test.py,tests/*}" = [
+    "INP001",  # Implicit namespace package. (Tests don't need __init__.py.)
+    "PLR2004", # Magic value comparison.
+    "S101",    # Use of `assert` detected.
+    "S301",    # Suspicious pickle usage.
+    "SLF001",  # Private member access.
 ]
 "docs/*" = [
-    "INP001",  # implicit namespace package (docs don't need __init__.py)
-    "S101",    # use of assert (demo code)
-    "UP046",   # generic class uses Generic subclass (intentional)
-    "UP047",   # generic function should use type params (intentional)
+    "INP001",  # Implicit namespace package. (Docs don't need __init__.py.)
+    "S101",    # Assert. (Demo code.)
+    "UP046",   # Non-PEP695 generic class. (Intentional.)
+    "UP047",   # Non-PEP695 generic function. (Intentional.)
 ]
-"tests/*" = [
-    "INP001",  # implicit namespace package (tests don't need __init__.py)
-    "S101",    # use of assert
-    "S301",    # pickle unsafe
-    "SLF001",  # private member access
+"packages/*" = [
+    "PYI018",  # Unused private type var. (Intentional polyfill exports.)
 ]
 
 [tool.ruff.lint.isort]
@@ -199,16 +212,28 @@ section-order = [
 [tool.basedpyright]
 typeCheckingMode = "recommended"
 extraPaths = ["."]
-exclude = [".venv", "*.egg-info", ".pytest_cache", "build", "dist"]
-ignore = [".venv", "*.egg-info", ".pytest_cache", "build", "dist"]
+exclude = [
+    ".venv",
+    "*.egg-info",
+    ".pytest_cache",
+    "build",
+    "dist",
+]
+ignore = [
+    ".venv",
+    "*.egg-info",
+    ".pytest_cache",
+    "build",
+    "dist",
+]
 pythonPlatform = "Linux"
 pythonVersion = "3.12"
-reportAny = false
-reportExplicitAny = false
-reportImplicitStringConcatenation = false  # Otherwise conflicts with Ruff ISC003 explicit-string-concatenation.
-reportInvalidCast = false  # cast() is always intentional; double-casting through object is noise.
-reportUnannotatedClassAttribute = false
-reportUnusedCallResult = false
+reportAny = false                          # `Any` propagation is pervasive in PyTorch.
+reportExplicitAny = false                  # Explicit `Any` annotations are intentional.
+reportImplicitStringConcatenation = false  # Conflicts with ruff ISC003.
+reportInvalidCast = false                  # All cast() calls are intentional.
+reportUnannotatedClassAttribute = false    # Class attributes don't always need annotations.
+reportUnusedCallResult = false             # Discarding return values is idiomatic Python.
 
 [[tool.basedpyright.executionEnvironments]]
 root = "tests"
@@ -234,7 +259,6 @@ error-on-warning = true
 [tool.ty.rules]
 all = "warn"
 
-# docs/ files are exploratory typing demos -- relax strict checks
 [[tool.ty.overrides]]
 include = ["docs/**"]
 
