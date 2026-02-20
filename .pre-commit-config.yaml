@@ -37,7 +37,8 @@ repos:
     hooks:
       - id: ty
         name: ty check
-        entry: .venv/bin/ty check --error-on-warning .
+        # entry: .venv/bin/ty check --error-on-warning .  # Now in pyproject.toml.
+        entry: .venv/bin/ty check .
         language: system
         types_or: [python, pyi]
         pass_filenames: false

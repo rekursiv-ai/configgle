@@ -129,7 +129,6 @@ ignore = [
     "D400",    # docstring should end with period
     "D401",    # docstring imperative mood
     "D415",    # docstring should end with period
-    "D417",    # missing argument in docstring
 
     # Style choices
     "A002",    # function argument shadowing builtin (we use 'repr' as param name)
@@ -140,19 +139,36 @@ ignore = [
     "FBT001",  # boolean positional argument
     "FBT002",  # boolean default positional argument
     "FBT003",  # boolean positional value in call
-    "INP001",  # implicit namespace package (tests don't need __init__.py)
     "N806",    # variable should be lowercase (we use Config as variable name)
     "PLR0912", # too many branches
     "PLR0913", # too many arguments
     "PLR0915", # too many statements
     "PLR2004", # magic value in comparison (common in tests)
     "RET504",  # unnecessary assignment before return
-    "T201",    # print found (used for debug mode in CopyOnWrite)
     "TC001",   # move import to type-checking block
     "TC003",   # move import to type-checking block
     "TC006",   # runtime-cast-value
     "TRY003",  # long exception messages
     "TRY300",  # consider moving to else block
+
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"packages/*" = [
+    "PYI018",  # "unused" TypeVars are intentional polyfill exports
+]
+"docs/*" = [
+    "INP001",  # implicit namespace package (docs don't need __init__.py)
+    "S101",    # use of assert (demo code)
+    "UP046",   # generic class uses Generic subclass (intentional)
+    "UP047",   # generic function should use type params (intentional)
+]
+"tests/*" = [
+    "INP001",  # implicit namespace package (tests don't need __init__.py)
+    "S101",    # use of assert
+    "S301",    # pickle unsafe
+    "SLF001",  # private member access
 ]
 
 [tool.ruff.lint.isort]
@@ -180,22 +196,6 @@ section-order = [
     "local-folder",
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
-"packages/*" = [
-    "PYI018",  # "unused" TypeVars are intentional polyfill exports
-]
-"docs/*" = [
-    "S101",    # use of assert (demo code)
-    "UP046",   # generic class uses Generic subclass (intentional)
-    "UP047",   # generic function should use type params (intentional)
-]
-"tests/*" = [
-    "S101",    # use of assert
-    "S301",    # pickle unsafe
-    "SLF001",  # private member access
-]
-
 [tool.basedpyright]
 typeCheckingMode = "recommended"
 extraPaths = ["."]
@@ -216,7 +216,6 @@ reportPrivateUsage = false
 reportPrivateLocalImportUsage = false
 
 [[tool.basedpyright.executionEnvironments]]
-# docs/ files are exploratory typing demos -- relax strict checks
 root = "docs"
 reportAttributeAccessIssue = false
 reportGeneralTypeIssues = false
@@ -229,11 +228,18 @@ reportUnknownParameterType = false
 [tool.ty.environment]
 python-version = "3.12"
 
+[tool.ty.terminal]
+error-on-warning = true
+
+[tool.ty.rules]
+all = "warn"
+
 # docs/ files are exploratory typing demos -- relax strict checks
 [[tool.ty.overrides]]
 include = ["docs/**"]
 
 [tool.ty.overrides.rules]
+all = "error"
 empty-body = "ignore"
 invalid-return-type = "ignore"
 invalid-type-form = "ignore"

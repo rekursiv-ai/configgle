@@ -1,3 +1,4 @@
+# ruff: noqa: T201
 """Copy-on-write proxy for safe, efficient counterfactual mutation.
 
 This module provides a CopyOnWrite wrapper that allows mutations to an object
