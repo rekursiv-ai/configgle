@@ -140,6 +140,8 @@ ignore = [
     "D400",    # Missing trailing period.
     "D401",    # Non-imperative mood.
     "D415",    # Missing terminal punctuation.
+    "RUF002",  # Ambiguous unicode character docstring. (Intentional math usage of `α, σ, η, ε, ≝, ½` etc.)
+    "RUF003",  # Ambiguous unicode character comment. (Intentional math usage of `α, σ, η, ε, ≝, ½` etc.)
 
     # Standard style relaxations.
     "A002",    # Builtin argument shadowing.
@@ -155,10 +157,13 @@ ignore = [
     "PLR0912", # Too many branches.
     "PLR0913", # Too many arguments.
     "PLR0915", # Too many statements.
+    "PLR2044", # Empty comment. (Helps to break-up long lists.)
+    "PLW0642", # Self or cls assignment. (Reassignment of name in finalize.)
     "RET504",  # Unnecessary assign.
     "TC001",   # Typing-only first-party import. (Will be fixed by formatter.)
     "TC003",   # Typing-only standard library import. (Will be fixed by formatter.)
     "TC006",   # Runtime cast value.
+    "TD003",   # Missing TODO link.
     "TRY003",  # Raise vanilla args.
     "TRY300",  # Try consider else.
 ]
