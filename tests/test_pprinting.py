@@ -11,7 +11,7 @@ import warnings
 
 from configgle import Fig
 from configgle.pprinting import (
-    _SCRUB_MEMORY_ADDRESS_FN,
+    _MASK_MEMORY_ADDRESSES_FN,
     FigPrinter,
     _add_pipes_to_lines,
     _collapse_multiline_value,
@@ -60,15 +60,14 @@ def test_pformat_with_options():
     assert result is not None
 
 
-def test_pformat_scrub_memory_address():
-    """Test pformat with scrub_memory_address option."""
+def test_pformat_mask_memory_addresses():
+    """Test pformat with mask_memory_addresses option."""
 
     class Obj:
         pass
 
     obj = Obj()
-    result = pformat(obj, scrub_memory_address=True)
-    # Memory addresses should be scrubbed (0x0defaced pattern)
+    result = pformat(obj, mask_memory_addresses=True)
     assert "0x0defaced" in result or repr(obj) in result
 
 
@@ -128,10 +127,10 @@ def test_pretty_printer_init():
         sort_dicts=True,
         underscore_numbers=True,
         finalize=True,
-        scrub_memory_address=True,
+        mask_memory_addresses=True,
     )
     assert pp._finalize is True
-    assert pp._scrub_memory_address is not None
+    assert pp._mask_memory_addresses is not None
 
 
 def test_pretty_printer_pprint():
@@ -176,26 +175,23 @@ def test_pretty_printer_format_with_unfinalized_warning():
         assert "unfinalized" in str(w[0].message).lower()
 
 
-def test_pretty_printer_format_scrub():
-    """Test FigPrinter.format with memory address scrubbing."""
+def test_pretty_printer_format_with_memory_masking():
+    """Test FigPrinter.format with memory address masking."""
 
     class Obj:
         pass
 
-    pp = FigPrinter(scrub_memory_address=True)
+    pp = FigPrinter(mask_memory_addresses=True)
     obj = Obj()
     result, _, _ = pp.format(obj, {}, 0, 0)
-    # Memory address should be scrubbed (0x0defaced pattern)
     assert "0x0defaced" in result
 
 
-def test_scrub_memory_address_function():
-    """Test the memory address scrubbing function."""
-    # Test scrubbing memory addresses
+def test_mask_memory_addresses_function():
+    """Test the memory address masking function."""
     text = "Object at 0x7f8b9c0a1b20"
-    result = _SCRUB_MEMORY_ADDRESS_FN(text)
-    # Should replace the memory address
-    assert "defaced" in result
+    result = _MASK_MEMORY_ADDRESSES_FN(text)
+    assert "0defaced" in result
 
 
 def test_pretty_printer_try_to_finalize():
@@ -207,9 +203,7 @@ def test_pretty_printer_try_to_finalize():
     pp = FigPrinter(finalize=True)
     cfg = FinalizableConfig()
 
-    # Should finalize the config
     finalized = pp._try_to_finalize(cfg)
-    # The finalized version should be a different object
     assert finalized is not cfg or cfg.value == 42
 
 

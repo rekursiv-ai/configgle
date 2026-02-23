@@ -49,7 +49,7 @@ def pformat(
     sort_dicts: bool = False,
     underscore_numbers: bool = True,
     finalize: bool = True,
-    scrub_memory_address: bool = True,
+    mask_memory_addresses: bool = True,
     extra_compact: bool = True,
     continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
     hide_default_values: bool = True,
@@ -66,7 +66,7 @@ def pformat(
       sort_dicts: Sort dictionary keys.
       underscore_numbers: Use underscores in large numbers.
       finalize: Auto-finalize unfinalized configs before printing.
-      scrub_memory_address: Replace memory addresses with placeholder.
+      mask_memory_addresses: Replace memory addresses with placeholder.
       extra_compact: Use extra compact formatting.
       continuation_pipe: Lines threshold for continuation pipes (0=always, -1=never).
       hide_default_values: Omit fields with default values.
@@ -84,7 +84,7 @@ def pformat(
         sort_dicts=sort_dicts,
         underscore_numbers=underscore_numbers,
         finalize=finalize,
-        scrub_memory_address=scrub_memory_address,
+        mask_memory_addresses=mask_memory_addresses,
         extra_compact=extra_compact,
         continuation_pipe=continuation_pipe,
         hide_default_values=hide_default_values,
@@ -105,7 +105,7 @@ def pprint(
     sort_dicts: bool = False,
     underscore_numbers: bool = True,
     finalize: bool = True,
-    scrub_memory_address: bool = True,
+    mask_memory_addresses: bool = True,
     extra_compact: bool = True,
     continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
     hide_default_values: bool = True,
@@ -123,7 +123,7 @@ def pprint(
       sort_dicts: Sort dictionary keys.
       underscore_numbers: Use underscores in large numbers.
       finalize: Auto-finalize unfinalized configs before printing.
-      scrub_memory_address: Replace memory addresses with placeholder.
+      mask_memory_addresses: Replace memory addresses with placeholder.
       extra_compact: Use extra compact formatting.
       continuation_pipe: Lines threshold for continuation pipes (0=always, -1=never).
       hide_default_values: Omit fields with default values.
@@ -139,7 +139,7 @@ def pprint(
         sort_dicts=sort_dicts,
         underscore_numbers=underscore_numbers,
         finalize=finalize,
-        scrub_memory_address=scrub_memory_address,
+        mask_memory_addresses=mask_memory_addresses,
         extra_compact=extra_compact,
         continuation_pipe=continuation_pipe,
         hide_default_values=hide_default_values,
@@ -163,7 +163,7 @@ class FigPrinter(_PrettyPrinter):
         sort_dicts: bool = False,
         underscore_numbers: bool = True,
         finalize: bool = True,
-        scrub_memory_address: bool = True,
+        mask_memory_addresses: bool = True,
         extra_compact: bool = True,
         continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
         hide_default_values: bool = True,
@@ -183,8 +183,8 @@ class FigPrinter(_PrettyPrinter):
         self._indent_per_level: int = indent
         self._width: int = width
         self._finalize = finalize
-        self._scrub_memory_address = (
-            _SCRUB_MEMORY_ADDRESS_FN if scrub_memory_address else None
+        self._mask_memory_addresses = (
+            _MASK_MEMORY_ADDRESSES_FN if mask_memory_addresses else None
         )
         self._extra_compact = extra_compact
         self._continuation_pipe = continuation_pipe
@@ -223,8 +223,8 @@ class FigPrinter(_PrettyPrinter):
             maxlevels,
             level,
         )
-        if self._scrub_memory_address is not None:
-            repr_ = self._scrub_memory_address(repr_)
+        if self._mask_memory_addresses is not None:
+            repr_ = self._mask_memory_addresses(repr_)
         return repr_, readable, recursive
 
     def _try_to_finalize(self, obj: _T) -> _T:
@@ -573,7 +573,7 @@ def _filter_non_default_items(
         return items
 
 
-def _make_scrub() -> Callable[[str], str]:
+def _make_memory_address_masker() -> Callable[[str], str]:
     """Build a function that replaces memory addresses with a fixed placeholder."""
     n = len(str(lambda: None)[:-1].split(" at 0x")[-1])
     pattern = re.compile(rf"0x[a-f0-9]{{{n}}}")
@@ -581,10 +581,10 @@ def _make_scrub() -> Callable[[str], str]:
     replace = "0x0defaced0defaced"
     replace = replace[: min(len(replace), 2 + n)]
 
-    def scrub_memory_address(x: str) -> str:
+    def mask_memory_addresses(x: str) -> str:
         return pattern.sub(replace, x)
 
-    return scrub_memory_address
+    return mask_memory_addresses
 
 
-_SCRUB_MEMORY_ADDRESS_FN = _make_scrub()
+_MASK_MEMORY_ADDRESSES_FN = _make_memory_address_masker()

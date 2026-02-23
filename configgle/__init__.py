@@ -65,7 +65,7 @@ occur, propagating copies up to parents. Useful for "what if I change this one
 field?" without touching the original.
 
 ``pprint`` / ``pformat`` -- A ``PrettyPrinter`` subclass with config-aware
-formatting: hides default values, auto-finalizes before printing, scrubs memory
+formatting: hides default values, auto-finalizes before printing, masks memory
 addresses, adds continuation pipes for long outputs, and collapses short
 sequences.
 
