@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, MutableMapping, MutableSequence
 from typing import (
     TYPE_CHECKING,
+    Any,
     Protocol,
     Self,
     override,
@@ -157,7 +158,7 @@ class InlineConfig[T]:
             pass
         object.__delattr__(self, key)
 
-    def __getattr__(self, key: str) -> object:
+    def __getattr__(self, key: str) -> Any:
         try:
             return object.__getattribute__(self, "_kwargs")[key]
         except (TypeError, AttributeError, KeyError):

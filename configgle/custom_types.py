@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from typing import (
+    Any,
     ClassVar,
     Protocol,
     Self,
@@ -126,7 +127,7 @@ class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInval
     parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleMethodOverride]  # ty: ignore[invalid-type-form]
 
     def __init__(self, *args: object, **kwargs: object) -> None: ...
-    def __getattr__(self, name: str) -> object: ...
+    def __getattr__(self, name: str) -> Any: ...
 
 
 RelaxedConfigurable = RelaxedMakeable
