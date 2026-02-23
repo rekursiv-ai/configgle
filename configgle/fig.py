@@ -97,13 +97,13 @@ class MakerMeta(type):
 
         """
 
-        def _parent_class(cls: MakerMeta) -> type[_ParentT]:
-            del cls
+        def _returns_owner(_: MakerMeta) -> type[_ParentT]:
             return owner
 
-        cls._parent_class = MethodType(_parent_class, cls)  # ty: ignore[invalid-assignment]
-        if owner_name := getattr(owner, "__name__", ""):
-            cls.__name__ = f"{owner_name}.{name}"
+        cls._parent_class = MethodType(_returns_owner, cls)  # ty: ignore[invalid-assignment]
+        # __set_name__ is only called when nested inside a class, so owner
+        # is always a real class with __name__.
+        cls.__name__ = f"{owner.__name__}.{name}"
 
     def __get__(
         cls: type[_T],

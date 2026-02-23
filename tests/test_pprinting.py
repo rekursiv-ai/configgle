@@ -9,10 +9,9 @@ import copy
 import dataclasses
 import warnings
 
-import pytest
-
 from configgle import Fig
 from configgle.pprinting import (
+    _SCRUB_MEMORY_ADDRESS_FN,
     FigPrinter,
     _add_pipes_to_lines,
     _collapse_multiline_value,
@@ -190,6 +189,15 @@ def test_pretty_printer_format_scrub():
     assert "0x0defaced" in result
 
 
+def test_scrub_memory_address_function():
+    """Test the memory address scrubbing function."""
+    # Test scrubbing memory addresses
+    text = "Object at 0x7f8b9c0a1b20"
+    result = _SCRUB_MEMORY_ADDRESS_FN(text)
+    # Should replace the memory address
+    assert "defaced" in result
+
+
 def test_pretty_printer_try_to_finalize():
     """Test FigPrinter._try_to_finalize method."""
 
@@ -241,19 +249,6 @@ def test_pretty_printer_no_finalize():
     # Should not finalize
     result = pp._try_to_finalize(cfg)
     assert result is cfg
-
-
-def test_scrub_memory_address_function():
-    """Test the memory address scrubbing function."""
-    from configgle.pprinting import (  # noqa: PLC0415
-        _SCRUB_MEMORY_ADDRESS_FN,
-    )
-
-    # Test scrubbing memory addresses
-    text = "Object at 0x7f8b9c0a1b20"
-    result = _SCRUB_MEMORY_ADDRESS_FN(text)
-    # Should replace the memory address
-    assert "0xdeadbeef" in result or "0x" in result
 
 
 # ---------------------------------------------------------------------------
@@ -554,4 +549,6 @@ class TestPprintDataclassWithPipes:
 
 
 if __name__ == "__main__":
+    import pytest
+
     pytest.main([__file__, "-v"])
