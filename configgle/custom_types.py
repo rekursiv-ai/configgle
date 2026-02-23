@@ -9,6 +9,7 @@ from typing import (
     ClassVar,
     Protocol,
     Self,
+    override,
     runtime_checkable,
 )
 from typing_extensions import TypeVar
@@ -23,6 +24,7 @@ __all__ = [
     "HasConfig",
     "HasRelaxedConfig",
     "Makeable",
+    "MutableNamespace",
     "RelaxedConfigurable",
     "RelaxedMakeable",
 ]
@@ -38,6 +40,25 @@ class Finalizeable(Protocol):
     """
 
     def finalize(self) -> Self: ...
+
+
+@runtime_checkable
+class MutableNamespace(Protocol):
+    """Non-generic protocol for isinstance checks on dynamic-attribute configs.
+
+    InlineConfig and PartialConfig support dynamic attribute access via
+    __getattr__. However, isinstance(x, PartialConfig) narrows to
+    PartialConfig[Unknown] in basedpyright, causing reportUnknownMemberType
+    warnings. This non-generic protocol avoids that::
+
+        assert isinstance(some.field, MutableNamespace)  # E.g., some.field is a PartialConfig.
+        some.field.lr = 0.1  # No warning and no suppression needed.
+
+    """
+
+    def __getattr__(self, name: str) -> Any: ...
+    @override
+    def __setattr__(self, name: str, value: object) -> None: ...
 
 
 _T_co = TypeVar("_T_co", covariant=True, default=object)

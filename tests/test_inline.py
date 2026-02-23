@@ -9,6 +9,8 @@ import dataclasses
 
 import pytest
 
+from configgle.custom_types import Makeable, MutableNamespace
+from configgle.fig import Fig
 from configgle.inline import InlineConfig, PartialConfig
 
 
@@ -230,6 +232,54 @@ def test_inline_config_recursive_repr():
     # Should not infinitely recurse — @reprlib.recursive_repr handles it
     repr_str = repr(cfg)  # pyright: ignore[reportUnknownArgumentType]  # InlineConfig[Unknown]
     assert "..." in repr_str or "InlineConfig" in repr_str
+
+
+def test_dynamic_namespace_narrows_partial_config():
+    """Test MutableNamespace isinstance narrows for dynamic attribute access.
+
+    When a field is typed as Makeable[...], isinstance(x, PartialConfig) narrows
+    to PartialConfig[Unknown] in basedpyright, causing reportUnknownMemberType
+    warnings. MutableNamespace is a non-generic protocol that avoids this::
+
+        assert isinstance(some.field, MutableNamespace)
+        some.field.lr = 0.1  # no basedpyright warning
+
+    """
+
+    def make_thing(lr: float = 0.1, weight_decay: float = 0.01) -> str:
+        return f"lr={lr}, wd={weight_decay}"
+
+    field: Makeable[object] = PartialConfig(make_thing, lr=0.5)
+
+    assert isinstance(field, MutableNamespace)
+    field.lr = 0.2
+    field.weight_decay = 0.0
+    assert field.lr == 0.2
+    assert field.weight_decay == 0.0
+
+
+def test_dynamic_namespace_narrows_inline_config():
+    """Test MutableNamespace works for InlineConfig too."""
+
+    def add(a: int = 0, b: int = 0) -> int:
+        return a + b
+
+    field: Makeable[object] = InlineConfig(add, a=1)
+
+    assert isinstance(field, MutableNamespace)
+    field.b = 2
+    assert field.make() == 3
+
+
+def test_dynamic_namespace_rejects_fig():
+    """Test MutableNamespace returns False for Fig configs (no __getattr__)."""
+
+    class MyClass:
+        class Config(Fig):
+            x: int = 0
+
+    config = MyClass.Config()
+    assert not isinstance(config, MutableNamespace)
 
 
 if __name__ == "__main__":

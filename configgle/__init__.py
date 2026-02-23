@@ -102,6 +102,7 @@ from configgle.custom_types import (
     HasConfig,
     HasRelaxedConfig,
     Makeable,
+    MutableNamespace,
     RelaxedConfigurable,
     RelaxedMakeable,
 )
@@ -124,6 +125,7 @@ __all__ = [
     "Makeable",
     "Maker",
     "Makes",
+    "MutableNamespace",
     "PartialConfig",
     "RelaxedConfigurable",
     "RelaxedMakeable",
