@@ -45,7 +45,8 @@ def pformat(
     depth: int | None = None,
     *,
     compact: bool = False,
-    # The following differ from the Python standard lib.
+    # sort_dicts=False preserves insertion order (usually meaningful for configs).
+    # underscore_numbers=True improves readability of large numbers (1_000_000).
     sort_dicts: bool = False,
     underscore_numbers: bool = True,
     finalize: bool = True,
@@ -228,7 +229,11 @@ class FigPrinter(_PrettyPrinter):
         return repr_, readable, recursive
 
     def _try_to_finalize(self, obj: _T) -> _T:
-        """Deep-copy and finalize obj if it is an unfinalized Finalizeable."""
+        """Deep-copy then finalize for display purposes.
+
+        Deep-copies first so that finalization (which may mutate) doesn't
+        alter the caller's config. This keeps printing side-effect-free.
+        """
         if (
             self._finalize
             and isinstance(obj, Finalizeable)
@@ -250,7 +255,12 @@ class FigPrinter(_PrettyPrinter):
         context: dict[int, int],
         level: int,
     ) -> None:
-        """Override to filter default values if requested."""
+        """Format a dataclass instance.
+
+        CPython's PrettyPrinter dispatches to ``_pprint_dataclass`` for
+        dataclass instances. We override it to hide default-valued fields
+        and use our extra-compact layout.
+        """
         cls_name = obj.__class__.__qualname__
         indent += len(cls_name) + 1
         items = [
@@ -574,7 +584,12 @@ def _filter_non_default_items(
 
 
 def _make_memory_address_masker() -> Callable[[str], str]:
-    """Build a function that replaces memory addresses with a fixed placeholder."""
+    """Replace memory addresses (e.g., ``0x7f...``) with a fixed placeholder.
+
+    Object reprs include addresses that change every run, making string
+    comparisons and snapshot tests brittle. A fixed placeholder gives
+    stable, reproducible output.
+    """
     n = len(str(lambda: None)[:-1].split(" at 0x")[-1])
     pattern = re.compile(rf"0x[a-f0-9]{{{n}}}")
     # Fun fact: 0x0defaced is a prime number.

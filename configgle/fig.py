@@ -88,10 +88,14 @@ class MakerMeta(type):
     def _parent_class(cls) -> type | None: ...
 
     def __set_name__(cls, owner: type[_ParentT], name: str) -> None:
-        """Bind the parent class reference when this class is a nested attribute.
+        """Bind the parent class reference when Config is defined as a nested class.
 
-        Uses MethodType to make parent_class immutable while remaining
-        compatible with cloudpickle.
+        Python calls ``__set_name__`` on class-body attributes during class
+        creation (PEP 487), so ``class Config(Fig): ...`` inside ``MyClass``
+        triggers ``Config.__set_name__(MyClass, "Config")`` automatically.
+
+        We store the parent reference via ``MethodType`` rather than a plain
+        attribute to avoid reference cycles that break pickle/cloudpickle.
 
         See: https://docs.python.org/3/library/types.html#types.MethodType
 
@@ -163,7 +167,14 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):  # noqa: UP046
     def finalize(self) -> Self:
         """Create a finalized copy with derived defaults applied.
 
-        Override this method to compute derived field values before instantiation.
+        Similar to ``__post_init__`` but deferred: only called automatically
+        by ``make()`` and ``pprint``, not at construction time. This lets you
+        mutate the config (``cfg.lr = 0.01``) before derived defaults are
+        computed. Override to compute derived field values.
+
+        Returns a copy so the original config stays unmodified — useful when
+        the same config is reused for multiple instances or compared
+        before/after finalization.
 
         Returns:
           finalized: A shallow copy with _finalized=True.
@@ -344,6 +355,22 @@ _False = _Default(False)
 
 
 class _DataclassMeta(type):
+    """Metaclass that auto-applies ``@dataclass`` to subclasses.
+
+    Using a metaclass instead of requiring ``@dataclass`` on each Config
+    ensures consistent defaults and lets subclasses inherit dataclass
+    settings without repeating the decorator.
+
+    ``kw_only=True`` because the primary usage pattern is dotted assignment
+    (``cfg.lr = 0.01``) rather than positional construction, and keyword-only
+    args prevent accidental positional misuse.
+
+    ``slots=True`` because configs are allocated frequently and slots give
+    both memory savings and faster attribute access, and — importantly —
+    prevent typos from silently creating new attributes
+    (``cfg.lrr = 0.01`` raises ``AttributeError``).
+    """
+
     __classcell__: CellType | None = None
     __dataclass_params__: _DataclassParams = _DataclassParams()
     make_with_kwargs: ClassVar[bool]
