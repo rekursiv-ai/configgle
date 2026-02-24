@@ -85,6 +85,7 @@ norecursedirs = [
     ".venv",
     "__pycache__",
     "*.egg-info",
+    "typings",
 ]
 
 [tool.coverage.run]
@@ -92,6 +93,7 @@ omit = [
     "*_test.py",
     "*/tests/*",
     "*/.venv/*",
+    "*/typings/*",
 ]
 
 [tool.coverage.report]
@@ -114,6 +116,7 @@ exclude = [
     ".pytest_cache",
     "build",
     "dist",
+    "typings",
 ]
 extend-include = ["*.ipynb"]
 
@@ -182,6 +185,7 @@ ignore = [
 "docs/*" = [
     "INP001",  # Implicit namespace package. (Docs don't need __init__.py.)
     "S101",    # Assert. (Demo code.)
+    "T201",    # Print found. (CLI tools use print for output.)
     "UP046",   # Non-PEP695 generic class. (Intentional.)
     "UP047",   # Non-PEP695 generic function. (Intentional.)
 ]
@@ -216,13 +220,14 @@ section-order = [
 
 [tool.basedpyright]
 typeCheckingMode = "recommended"
-extraPaths = ["."]
+# extraPaths = ["."]
 exclude = [
     ".venv",
     "*.egg-info",
     ".pytest_cache",
     "build",
     "dist",
+    "typings",
 ]
 ignore = [
     ".venv",
@@ -230,6 +235,7 @@ ignore = [
     ".pytest_cache",
     "build",
     "dist",
+    "typings",
 ]
 pythonPlatform = "Linux"
 pythonVersion = "3.12"
@@ -257,8 +263,19 @@ reportUninitializedInstanceVariable = false
 reportUnknownMemberType = false
 reportUnknownParameterType = false
 
+[tool.ty.src]
+exclude = [
+    ".venv",
+    "*.egg-info",
+    ".pytest_cache",
+    "build",
+    "dist",
+    "typings",
+]
+
 [tool.ty.environment]
 python-version = "3.12"
+# extra-paths = ["typings"]
 
 [tool.ty.terminal]
 error-on-warning = true
@@ -279,6 +296,9 @@ invalid-type-guard-definition = "ignore"
 unresolved-attribute = "ignore"
 
 [tool.codespell]
+# SKIP=codespell git commit -m "message"
+# or,
+# some_variable_with_typo = "connexion"  # codespell:ignore
 builtin = "clear,rare,code"
 ignore-words-list = "fave,coo,jupyter,arange,iff,wrt,ow,lite,falsy,truthy,ws,deque"
 skip = "htmlcov,.doctrees,*.pyc,*.ico,*.png,*.jpg,*.PNG,*.inv,*.dot,*.css,.git,.venv,__pycache__,*.egg-info,uv.lock"
