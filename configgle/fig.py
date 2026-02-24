@@ -109,15 +109,17 @@ class MakerMeta(type):
         # is always a real class with __name__.
         cls.__name__ = f"{owner.__name__}.{name}"
 
-    def __get__(
-        cls: type[_T],
-        obj: object,
-        owner: type[_ParentT],
-    ) -> Intersection[
-        type[_T],
-        type[Makeable[_ParentT]],
-    ]:
-        return cls
+    if TYPE_CHECKING:
+
+        def __get__(
+            cls: type[_T],
+            obj: object,
+            owner: type[_ParentT],
+        ) -> Intersection[
+            type[_T],
+            type[Makeable[_ParentT]],
+        ]:
+            return cls
 
 
 class Maker(Generic[_ParentT], metaclass=MakerMeta):  # noqa: UP046
