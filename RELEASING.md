@@ -9,7 +9,7 @@
 
 3. Create GitHub release:
    ```bash
-   gh release create v0.1.0 --title "v0.1.0" --notes "Initial release"
+   gh release create v1.1.14 --title "v1.1.14" --notes ""
    ```
 
 4. Clean up build artifacts:
