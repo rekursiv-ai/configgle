@@ -190,10 +190,9 @@ wheels = [
 
 [[package]]
 name = "configgle"
-version = "1.1.13"
+version = "1.1.14"
 source = { editable = "." }
 dependencies = [
-    { name = "ty-extensions" },
     { name = "wrapt" },
 ]
 
@@ -244,10 +243,7 @@ typing = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "ty-extensions", directory = "packages/ty-extensions" },
-    { name = "wrapt" },
-]
+requires-dist = [{ name = "wrapt" }]
 
 [package.metadata.requires-dev]
 debug = [
@@ -1590,11 +1586,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/de/b5/39be78f30b31ee9f5a585969930c7248354db90494ff5e3d0756560fb731/ty-0.0.17-py3-none-win_amd64.whl", hash = "sha256:531828267527aee7a63e972f54e5eee21d9281b72baf18e5c2850c6b862add83", size = 10542138, upload-time = "2026-02-13T13:27:17.084Z" },
     { url = "https://files.pythonhosted.org/packages/40/b7/f875c729c5d0079640c75bad2c7e5d43edc90f16ba242f28a11966df8f65/ty-0.0.17-py3-none-win_arm64.whl", hash = "sha256:de9810234c0c8d75073457e10a84825b9cd72e6629826b7f01c7a0b266ae25b1", size = 10023068, upload-time = "2026-02-13T13:26:39.637Z" },
 ]
-
-[[package]]
-name = "ty-extensions"
-version = "0.1.1"
-source = { directory = "packages/ty-extensions" }
 
 [[package]]
 name = "typing-extensions"
