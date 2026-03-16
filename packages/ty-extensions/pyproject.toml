@@ -1,6 +1,6 @@
 [project]
 name = "ty-extensions"
-version = "0.1.0"
+version = "0.1.1"
 description = "Polyfill for ty_extensions (a module built into the ty type checker)."
 requires-python = ">=3.11"
 authors = [
