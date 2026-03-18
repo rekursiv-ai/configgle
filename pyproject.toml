@@ -65,9 +65,9 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/jvdillon/configgle"
-Issues = "https://github.com/jvdillon/configgle/issues"
-Discussions = "https://github.com/jvdillon/configgle/discussions"
+Repository = "https://github.com/rekursiv-ai/configgle"
+Issues = "https://github.com/rekursiv-ai/configgle/issues"
+Discussions = "https://github.com/rekursiv-ai/configgle/discussions"
 
 [build-system]
 requires = ["hatchling"]

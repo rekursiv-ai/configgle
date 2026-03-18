@@ -348,7 +348,7 @@ model = cfg_.make()  # parent_class is preserved
 
 ## Comparison
 
-| | [configgle](https://github.com/jvdillon/configgle) | [Hydra](https://github.com/facebookresearch/hydra) | [Sacred](https://github.com/IDSIA/sacred) | [OmegaConf](https://github.com/omry/omegaconf) | [Gin](https://github.com/google/gin-config) | [ml_collections](https://github.com/google/ml_collections) | [Fiddle](https://github.com/google/fiddle) | [Confugue](https://github.com/cifkao/confugue) |
+| | [configgle](https://github.com/rekursiv-ai/configgle) | [Hydra](https://github.com/facebookresearch/hydra) | [Sacred](https://github.com/IDSIA/sacred) | [OmegaConf](https://github.com/omry/omegaconf) | [Gin](https://github.com/google/gin-config) | [ml_collections](https://github.com/google/ml_collections) | [Fiddle](https://github.com/google/fiddle) | [Confugue](https://github.com/cifkao/confugue) |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Pure Python (no YAML/strings) | ✅ | ❌ | ❌ | 🟡 | ❌ | ✅ | ✅ | ❌ |
 | Typed `make()`/`build()` return | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
@@ -361,7 +361,7 @@ model = cfg_.make()  # parent_class is preserved
 | GitHub stars | -- | 10.2k | 4.4k | 2.3k | 2.1k | 1.0k | 374 | 21 |
 
 ✅ = yes, 🟡 = partial, ❌ = no. Corrections welcome --
-[open a PR](https://github.com/jvdillon/configgle/pulls).
+[open a PR](https://github.com/rekursiv-ai/configgle/pulls).
 
 ### How each library works
 
@@ -430,7 +430,7 @@ If you find our work useful, please consider citing:
       author={Joshua V. Dillon},
       year={2026},
       howpublished={Github},
-      url={https://github.com/jvdillon/configgle},
+      url={https://github.com/rekursiv-ai/configgle},
 }
 ```
 
