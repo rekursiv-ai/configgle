@@ -19,3 +19,6 @@
 
 5. Verify successful pypi push: https://pypi.org/simple/configgle/
    (or https://pypi.org/project/configgle/)
+   ```bash
+   pip index versions configgle
+   ```
