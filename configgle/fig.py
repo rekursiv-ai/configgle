@@ -568,7 +568,6 @@ class Dataclass(metaclass=DataclassMeta):
     __slots__: ClassVar[tuple[str, ...]] = ()
 
 
-@dataclass_transform(kw_only_default=True)
 class FigMeta(_DataclassMeta, MakerMeta):
     """Combined metaclass for Fig.
 
@@ -578,7 +577,23 @@ class FigMeta(_DataclassMeta, MakerMeta):
 
     """
 
+    if TYPE_CHECKING:
 
+        def __new__(
+            mcls: type[FigMeta],
+            name: str,
+            bases: tuple[type, ...],
+            attrs: dict[str, object],
+            **kwargs: Any,
+        ) -> FigMeta: ...
+
+
+# @dataclass_transform is on Fig (not FigMeta) to work around a ty bug
+# where Intersection[_T, type[Generic[TypeVar]]] in MakerMeta.__get__
+# breaks dataclass_transform field inheritance when applied to the
+# metaclass (https://github.com/astral-sh/ty/issues/3282). When fixed,
+# move @dataclass_transform back to FigMeta and remove it from here.
+@dataclass_transform(kw_only_default=True)
 class Fig(Maker[_ParentT], metaclass=FigMeta):
     """Dataclass with make/finalize/update for the nested Config pattern.
 

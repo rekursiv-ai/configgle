@@ -77,6 +77,7 @@ Unfortunately neither is perfect:
 | Explict `Fig["Parent"]` specifies parent type | ✅ | ✅ |
 | Inheritance infers parent type | ✅ | ❌ |
 | Explicit `Makes["Child"]` narrows infered inherited parent type | ✅ | ✅ |
+| Inherited Config child fields | ✅ (workaround for [#3282](https://github.com/astral-sh/ty/issues/3282)) | ✅ |
 | `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
 
 **Details:**
