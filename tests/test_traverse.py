@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, override
 
 from configgle.traverse import (
+    could_path_lead_to_pattern,
     path_matches_pattern,
     recursively_iterate_over_object_descendants,
     should_recurse_for_patterns,
@@ -751,6 +752,50 @@ def test_recurse_with_object():
     assert len(results) == 3
     paths = {path for path, _ in results}
     assert paths == {(), ("x",), ("y",)}
+
+
+def test_traverse_string_slots():
+    """Test traversal of objects with __slots__ as a string."""
+
+    class StringSlots:
+        __slots__ = "value"  # noqa: PLC0205
+
+        def __init__(self) -> None:
+            self.value = 42
+
+    obj = StringSlots()
+    results = list(recursively_iterate_over_object_descendants(obj))
+    paths = {path for path, _ in results}
+    assert ("value",) in paths
+
+
+def test_traverse_dict_attr_raises():
+    """Test traversal skips __dict__ attributes that raise AttributeError on access."""
+
+    class Tricky:
+        def __init__(self) -> None:
+            self.normal = 1
+
+        @override
+        def __getattribute__(self, name: str) -> object:
+            if name == "broken_key":
+                raise AttributeError("boom")
+            return super().__getattribute__(name)
+
+    obj = Tricky()
+    # Put a key in __dict__ that __getattribute__ blocks
+    obj.__dict__["broken_key"] = 42
+    results = list(recursively_iterate_over_object_descendants(obj))
+    paths = {path for path, _ in results}
+    # "normal" should be traversed, "broken_key" should be skipped
+    assert ("normal",) in paths
+    assert ("broken_key",) not in paths
+
+
+def test_could_path_lead_to_pattern_wildcard_no_match():
+    """Test could_path_lead_to_pattern returns False for non-matching wildcard."""
+    # Path longer than pattern with wildcards, where no ancestor matches
+    assert not could_path_lead_to_pattern("a.b.c.d.e", "x.*.z")
 
 
 if __name__ == "__main__":

@@ -312,7 +312,7 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
 
         if not callable(method):
             raise TypeError(f"{method!r} is not callable")
-        result = method(*args, **kwargs)
+        result = method(*args, **kwargs)  # ty: ignore[call-top-callable]
 
         # Wrap the result
         return CopyOnWrite(result, debug=self._self_debug)

@@ -98,7 +98,7 @@ def autofig[T](
             make_with_kwargs=True,
         )
 
-        Config.__set_name__(cls_, "Config")
+        Config.__set_name__(cls_, "Config")  # ty: ignore[unresolved-attribute]
         cls_.Config = Config  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
 
         return cls_  # pyright: ignore[reportReturnType]

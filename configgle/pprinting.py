@@ -371,27 +371,6 @@ class FigPrinter(_PrettyPrinter):
         return formatted_value
 
     @override
-    def _pprint_list(
-        self,
-        object: list[object],
-        stream: SupportsWrite[str],
-        indent: int,
-        allowance: int,
-        context: dict[int, int],
-        level: int,
-    ) -> None:
-        """Override to use level-based indent."""
-        if not self._extra_compact:
-            super()._pprint_list(object, stream, indent, allowance, context, level)
-            return
-
-        write = stream.write
-        write("[")
-        if object:
-            self._format_items(object, stream, indent, allowance + 1, context, level)
-        write("]")
-
-    @override
     def _format_items(
         self,
         items: list[object],

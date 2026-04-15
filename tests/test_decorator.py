@@ -112,7 +112,7 @@ def test_autofig_with_broken_type_hints():
         ns,
     )
     Cls = ns["B"]
-    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType, reportUnknownVariableType]  # type: ignore[no-matching-overload]
+    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType, reportUnknownVariableType]  # ty: ignore[no-matching-overload]
     config = decorated.Config(x=42)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
     assert config.make().x == 42  # pyright: ignore[reportUnknownMemberType]
 

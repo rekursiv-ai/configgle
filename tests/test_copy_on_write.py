@@ -698,5 +698,20 @@ class TestCopyOnWriteDelAttrWithChild:
             assert (cow, "inner") not in inner_cow._self_parents
 
 
+def test_delattr_self_prefix():
+    """Test __delattr__ with _self_ prefix delegates to super."""
+
+    @dataclasses.dataclass
+    class Inner:
+        x: int = 1
+
+    cow = CopyOnWrite(Inner())
+    # Add a _self_ attribute dynamically, then delete it
+    cow._self_custom = "test"
+    assert cow._self_custom == "test"
+    del cow._self_custom
+    assert not hasattr(cow, "_self_custom")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

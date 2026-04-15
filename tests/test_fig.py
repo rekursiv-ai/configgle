@@ -5,6 +5,7 @@ from dataclasses import field
 from typing import NamedTuple, Self, override
 
 import dataclasses
+import io
 import logging
 import pickle
 
@@ -42,7 +43,7 @@ class Parent:
 
 
 class Child(Parent):
-    class Config(Parent.Config):
+    class Config(Parent.Config):  # ty: ignore[unsupported-base]
         c: complex = 3.1415j
 
         @override
@@ -70,7 +71,7 @@ def test_standalone():
 def test_cant_set_unknown_field():
     cfg = Parent.Config()
     with pytest.raises(AttributeError):
-        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]
+        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
     assert isinstance(cfg.make(), Parent)
 
 
@@ -150,8 +151,8 @@ def test_cloudpickle_nested_class_with_parent():
 
 def test_mutable():
     cfg = Mutable.Config()
-    cfg.b = 2  # pyright: ignore[reportAttributeAccessIssue]
-    assert cfg.b == 2  # pyright: ignore[reportAttributeAccessIssue]
+    cfg.b = 2  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
+    assert cfg.b == 2  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
 
 
 def test_make_without_parent():
@@ -366,7 +367,7 @@ class Animal:
 
 
 class Dog(Animal):
-    class Config(Makes["Dog"], Animal.Config):
+    class Config(Makes["Dog"], Animal.Config):  # ty: ignore[unsupported-base]
         breed: str = "mutt"
 
     def __init__(self, config: Config):
@@ -419,7 +420,7 @@ class Base:
 class Derived(Base):
     """Child whose Config uses Makes to re-bind parent_class."""
 
-    class Config(Makes["Derived"], Base.Config):
+    class Config(Makes["Derived"], Base.Config):  # ty: ignore[unsupported-base]
         y: float = 2.0
 
     def __init__(self, config: Config) -> None:
@@ -588,7 +589,7 @@ def test_update_source_with_attribute_error():
     cfg = Config()
     source = BadSource()
     # Should skip y since it raises AttributeError
-    cfg.update(source, skip_missing=True)  # pyright: ignore[reportArgumentType]  # type: ignore[invalid-argument-type]
+    cfg.update(source, skip_missing=True)  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type]
     assert cfg.x == 1
 
 
@@ -736,6 +737,68 @@ def test_finalize_value_slotted_object_with_uninitialized_slot():
     cfg = Config()
     finalized = cfg.finalize()
     assert finalized.w.initialized == 42
+
+
+def test_pformat_method():
+    """Test the pformat method on Maker."""
+
+    class MyClass:
+        class Config(Fig):
+            x: int = 0
+            y: str = "hello"
+
+        def __init__(self, config: Config):
+            pass
+
+    cfg = MyClass.Config(x=42)
+    result = cfg.pformat()
+    assert "Config" in result
+    assert "x=42" in result
+
+
+def test_pprint_method(capsys: pytest.CaptureFixture[str]):
+    """Test the pprint method on Maker."""
+
+    class MyClass:
+        class Config(Fig):
+            x: int = 0
+
+        def __init__(self, config: Config):
+            pass
+
+    cfg = MyClass.Config(x=42)
+    cfg.pprint()
+    captured = capsys.readouterr()
+    assert "x=42" in captured.out
+
+
+def test_pprint_method_with_stream():
+    """Test pprint method with a custom stream."""
+
+    class MyClass:
+        class Config(Fig):
+            x: int = 0
+
+        def __init__(self, config: Config):
+            pass
+
+    cfg = MyClass.Config(x=42)
+    buf = io.StringIO()
+    cfg.pprint(stream=buf)
+    assert "x=42" in buf.getvalue()
+
+
+def test_dataclass_params_create_missing_attr():
+    """Test _DataclassParams.create skips keys missing from both kwargs and existing."""
+    # Create an uninitialized _DataclassParams (no __init__ call, so slots are unset)
+    existing = object.__new__(_DataclassParams)
+    # Only set a subset of attributes
+    existing.init = True
+    existing.repr = True
+    # All other slots are unset — getattr with default returns missing, so they're skipped
+    result = _DataclassParams.create(existing)
+    assert result.init is True
+    assert result.repr is True
 
 
 if __name__ == "__main__":

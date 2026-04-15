@@ -10,6 +10,7 @@ from collections.abc import (
 )
 from types import CellType, MethodType
 from typing import (
+    IO,
     TYPE_CHECKING,
     Any,
     ClassVar,
@@ -35,7 +36,12 @@ from configgle.custom_types import (
     Finalizeable,
     Makeable,
 )
-from configgle.pprinting import pformat
+from configgle.pprinting import (
+    _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
+    _SHORT_SEQUENCE_MAX_WIDTH,
+    pformat as _pformat,
+    pprint as _pprint,
+)
 
 
 __all__ = [
@@ -122,7 +128,7 @@ class MakerMeta(type):
             return cls
 
 
-class Maker(Generic[_ParentT], metaclass=MakerMeta):  # noqa: UP046
+class Maker(Generic[_ParentT], metaclass=MakerMeta):
     """Base class providing make/finalize/update capabilities for configs.
 
     When nested inside a parent class, enables the pattern:
@@ -243,13 +249,117 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):  # noqa: UP046
 
         return self
 
+    def pformat(
+        self,
+        indent: int = 8,
+        width: int = 80,
+        depth: int | None = None,
+        *,
+        compact: bool = False,
+        sort_dicts: bool = False,
+        underscore_numbers: bool = True,
+        finalize: bool = True,
+        mask_memory_addresses: bool = True,
+        extra_compact: bool = True,
+        continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
+        hide_default_values: bool = True,
+        short_sequence_max_width: int = _SHORT_SEQUENCE_MAX_WIDTH,
+    ) -> str:
+        """Format this config as a string with Fig-aware pretty printing.
+
+        Args:
+          indent: Spaces per indent level.
+          width: Maximum line width.
+          depth: Maximum nesting depth (None for unlimited).
+          compact: Use compact format for sequences.
+          sort_dicts: Sort dictionary keys.
+          underscore_numbers: Use underscores in large numbers.
+          finalize: Auto-finalize unfinalized configs before printing.
+          mask_memory_addresses: Replace memory addresses with placeholder.
+          extra_compact: Use extra compact formatting.
+          continuation_pipe: Lines threshold for continuation pipes (0=always, -1=never).
+          hide_default_values: Omit fields with default values.
+          short_sequence_max_width: Max width for single-line sequences.
+
+        Returns:
+          formatted: Pretty-printed string representation.
+
+        """
+        return _pformat(
+            self,
+            indent=indent,
+            width=width,
+            depth=depth,
+            compact=compact,
+            sort_dicts=sort_dicts,
+            underscore_numbers=underscore_numbers,
+            finalize=finalize,
+            mask_memory_addresses=mask_memory_addresses,
+            extra_compact=extra_compact,
+            continuation_pipe=continuation_pipe,
+            hide_default_values=hide_default_values,
+            short_sequence_max_width=short_sequence_max_width,
+        )
+
+    def pprint(
+        self,
+        stream: IO[str] | None = None,
+        indent: int = 8,
+        width: int = 80,
+        depth: int | None = None,
+        *,
+        compact: bool = False,
+        sort_dicts: bool = False,
+        underscore_numbers: bool = True,
+        finalize: bool = True,
+        mask_memory_addresses: bool = True,
+        extra_compact: bool = True,
+        continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
+        hide_default_values: bool = True,
+        short_sequence_max_width: int = _SHORT_SEQUENCE_MAX_WIDTH,
+    ) -> None:
+        """Pretty-print this config with Fig-aware formatting.
+
+        Args:
+          stream: Output stream (defaults to sys.stdout).
+          indent: Spaces per indent level.
+          width: Maximum line width.
+          depth: Maximum nesting depth (None for unlimited).
+          compact: Use compact format for sequences.
+          sort_dicts: Sort dictionary keys.
+          underscore_numbers: Use underscores in large numbers.
+          finalize: Auto-finalize unfinalized configs before printing.
+          mask_memory_addresses: Replace memory addresses with placeholder.
+          extra_compact: Use extra compact formatting.
+          continuation_pipe: Lines threshold for continuation pipes (0=always, -1=never).
+          hide_default_values: Omit fields with default values.
+          short_sequence_max_width: Max width for single-line sequences.
+
+        """
+        _pprint(
+            self,
+            stream=stream,
+            indent=indent,
+            width=width,
+            depth=depth,
+            compact=compact,
+            sort_dicts=sort_dicts,
+            underscore_numbers=underscore_numbers,
+            finalize=finalize,
+            mask_memory_addresses=mask_memory_addresses,
+            extra_compact=extra_compact,
+            continuation_pipe=continuation_pipe,
+            hide_default_values=hide_default_values,
+            short_sequence_max_width=short_sequence_max_width,
+        )
+
     def _repr_pretty_(self, p: _IPythonPrinter, cycle: bool) -> None:
         """IPython pretty printer hook for rich display in notebooks."""
         if cycle:
             p.text(f"{type(self).__name__}(...)")
             return
 
-        p.text(pformat(self))
+        p.text(self.pformat())
 
 
 class _Default:

@@ -183,7 +183,7 @@ def test_inline_config_update_from_non_dataclass():
             pass
 
     cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
-    cfg.update(Source())  # pyright: ignore[reportArgumentType]  # type: ignore[invalid-argument-type]
+    cfg.update(Source())  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type]
     assert cfg.x == 42
     assert cfg.y == "data"
     # Methods should NOT be copied
@@ -218,7 +218,7 @@ def test_inline_config_update_non_dataclass_with_property():
             return 42
 
     cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
-    cfg.update(TrickySource())  # pyright: ignore[reportArgumentType]  # type: ignore[invalid-argument-type]
+    cfg.update(TrickySource())  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type]
     # broken should be skipped (AttributeError), data should be skipped (callable check)
     # Actually properties return their values, not the property object itself
     assert cfg.data == 42
@@ -280,6 +280,20 @@ def test_dynamic_namespace_rejects_fig():
 
     config = MyClass.Config()
     assert not isinstance(config, MutableNamespace)
+
+
+def test_setattr_fallback_before_kwargs_initialized():
+    """Test __setattr__ fallback when _kwargs is not yet set."""
+
+    # Subclass without slots so object.__setattr__ can succeed
+    class DictConfig(InlineConfig[object]):
+        pass
+
+    cfg = object.__new__(DictConfig)
+    # _kwargs slot is unset, so setting an arbitrary attr falls through
+    # the except AttributeError path to object.__setattr__
+    cfg.custom = "value"
+    assert object.__getattribute__(cfg, "custom") == "value"
 
 
 if __name__ == "__main__":

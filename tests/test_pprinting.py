@@ -542,6 +542,75 @@ class TestPprintDataclassWithPipes:
         assert "│" not in result
 
 
+def test_format_items_one_line():
+    """Test _format_items one-line path when list triggers dispatch but content is short."""
+    # repr ~47 chars exceeds width=30, triggering _pprint_list dispatch.
+    # But content_width < short_sequence_max_width=100, so _format_items writes one line.
+    items = [100, 200, 300, 400, 500, 600, 700, 800, 900]
+    result = pformat(
+        items,
+        extra_compact=True,
+        hide_default_values=False,
+        width=30,
+        short_sequence_max_width=100,
+    )
+    assert "100" in result
+    assert "900" in result
+
+
+def test_format_namespace_items_context_cycle():
+    """Test _format_namespace_items handles context cycles in multiline mode."""
+
+    class MyClass:
+        class Config(Fig):
+            a: str = "a" * 40
+            b: str = "b" * 40
+            cyclic: object = None
+
+        def __init__(self, config: Config):
+            pass
+
+    cfg = MyClass.Config()
+    finalized = cfg.finalize()
+    # Create a cycle — the multiline formatter must detect it
+    object.__setattr__(finalized, "cyclic", finalized)
+    printer = FigPrinter(
+        extra_compact=True,
+        hide_default_values=False,
+        finalize=False,
+        width=40,  # Force multiline so _format_namespace_items is entered
+    )
+    result = printer.pformat(finalized)
+    assert "..." in result
+
+
+def test_format_items_multiline_context_cycle():
+    """Test _format_items_multiline handles context cycles in lists."""
+
+    class MyClass:
+        class Config(Fig):
+            items: list[object] = dataclasses.field(default_factory=list[object])
+
+        def __init__(self, config: Config):
+            pass
+
+    cfg = MyClass.Config()
+    finalized = cfg.finalize()
+    # Create list with self-reference to trigger cycle detection
+    items: list[object] = [1, 2]
+    items.append(items)  # self-referential list
+    object.__setattr__(finalized, "items", items)
+    printer = FigPrinter(
+        extra_compact=True,
+        hide_default_values=False,
+        finalize=False,
+        width=10,  # Force multiline
+        short_sequence_max_width=5,
+    )
+    result = printer.pformat(finalized)
+    assert "..." in result
+
+
 if __name__ == "__main__":
     import pytest
 
