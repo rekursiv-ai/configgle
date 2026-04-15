@@ -326,7 +326,13 @@ print(pformat(exp001(), continuation_pipe=0))
 
 Default values are hidden, continuation pipes show where nested blocks belong,
 large numbers get underscores (`1_024`), and short sub-configs collapse onto
-one line.
+one line. `pformat` and `pprint` are also available as methods on any config:
+
+```python
+cfg = exp001()
+cfg.pprint()         # prints to stdout
+s = cfg.pformat()    # returns string
+```
 
 ### `@autofig` for zero-boilerplate configs
 

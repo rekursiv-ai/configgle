@@ -245,7 +245,14 @@ config fields as kwargs instead of passing the config object.
 ``PartialConfig(fn, **kw).make()`` returns ``functools.partial(fn, **kw)``.
 
 ``pprint`` / ``pformat`` -- Config-aware pretty printer. Hides defaults,
-auto-finalizes, masks memory addresses.
+auto-finalizes, masks memory addresses. Available as both module-level
+functions and as methods on any ``Maker`` subclass::
+
+    from configgle import pformat
+    print(pformat(cfg))  # module-level
+
+    cfg.pprint()         # method — prints to stdout
+    s = cfg.pformat()    # method — returns string
 
 ``Makeable`` -- Runtime-checkable ``Protocol`` defining the config
 interface (``make()``, ``finalize()``, ``update()``). Also aliased as
