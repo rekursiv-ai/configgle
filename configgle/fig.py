@@ -118,11 +118,11 @@ class MakerMeta(type):
     if TYPE_CHECKING:
 
         def __get__(
-            cls: type[_T],
+            cls: _T,
             obj: object,
             owner: type[_ParentT],
         ) -> Intersection[
-            type[_T],
+            _T,
             type[Makeable[_ParentT]],
         ]:
             return cls

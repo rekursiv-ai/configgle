@@ -43,7 +43,7 @@ class Parent:
 
 
 class Child(Parent):
-    class Config(Parent.Config):  # ty: ignore[unsupported-base]
+    class Config(Parent.Config):
         c: complex = 3.1415j
 
         @override
@@ -83,7 +83,7 @@ def test_cloudpickle():
     assert cfg.b == cfg_.b
     assert cfg.c == cfg_.c
     with pytest.raises(AttributeError):
-        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]
+        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
 
 
 def test_pickle_parent_class_restored():
@@ -367,7 +367,7 @@ class Animal:
 
 
 class Dog(Animal):
-    class Config(Makes["Dog"], Animal.Config):  # ty: ignore[unsupported-base]
+    class Config(Makes["Dog"], Animal.Config):
         breed: str = "mutt"
 
     def __init__(self, config: Config):
@@ -420,7 +420,7 @@ class Base:
 class Derived(Base):
     """Child whose Config uses Makes to re-bind parent_class."""
 
-    class Config(Makes["Derived"], Base.Config):  # ty: ignore[unsupported-base]
+    class Config(Makes["Derived"], Base.Config):
         y: float = 2.0
 
     def __init__(self, config: Config) -> None:
