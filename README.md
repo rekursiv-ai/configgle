@@ -194,8 +194,22 @@ class Encoder:
 
         def finalize(self) -> Self:
             self = super().finalize()
+            # Nested Finalizeable configs are already copies (each
+            # was finalized via its own finalize() → copy.copy),
+            # so mutating them here is safe.
             self.mlp.c_in = self.c_in  # propagate dimensions
             return self
+```
+
+`super().finalize()` returns a shallow copy of the root, but nested
+`Finalizeable` configs are recursively finalized — each gets its own copy
+via its own `finalize()`. So `self.mlp` is already a fresh copy; mutating
+it is safe. If the nested config's own `finalize()` computes derived
+defaults that depend on the changed field, re-finalize after mutation:
+
+```python
+self.mlp.c_in = self.c_in
+self.mlp = self.mlp.finalize()  # re-compute derived defaults
 ```
 
 ### `update()` for bulk mutation
@@ -326,13 +340,19 @@ print(pformat(exp001(), continuation_pipe=0))
 
 Default values are hidden, continuation pipes show where nested blocks belong,
 large numbers get underscores (`1_024`), and short sub-configs collapse onto
-one line. `pformat` and `pprint` are also available as methods on any config:
+one line. `pformat` and `pprint` are also available as methods on any `Fig` config:
 
 ```python
 cfg = exp001()
 cfg.pprint()         # prints to stdout
 s = cfg.pformat()    # returns string
 ```
+
+### `Dataclass` base
+
+`Dataclass` provides the auto-dataclass metaclass (with the same opinionated
+defaults as `Fig`: `kw_only=True`, `slots=True`, etc.) but without `Maker` or
+`make()`. Use it for plain data objects that don't need the factory pattern.
 
 ### `@autofig` for zero-boilerplate configs
 

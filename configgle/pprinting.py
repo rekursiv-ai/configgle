@@ -16,7 +16,6 @@ from configgle.custom_types import Finalizeable
 
 
 __all__ = [
-    "FigPrinter",
     "pformat",
     "pprint",
 ]

@@ -94,7 +94,6 @@ Override ``finalize()`` to compute derived defaults. The contract:
 ::
 
     from typing import Self, override
-    import copy
 
     class Sandwich:
         class Config(Fig["Sandwich"]):
@@ -104,17 +103,19 @@ Override ``finalize()`` to compute derived defaults. The contract:
             @override
             def finalize(self) -> Self:
                 self = super().finalize()
-                # `self` is now a copy. Nested configs are already
-                # finalized -- but we can re-finalize after mutation.
+                # Nested Finalizeable configs are already copies (each
+                # was finalized via its own finalize() → copy.copy),
+                # so mutating them here is safe.
                 if self.topping is not None:
-                    self.topping = copy.copy(self.topping)
                     self.topping.portion = "double"
-                    self.topping = self.topping.finalize()
                 return self
 
-If a nested config needs a field set *before* its own ``finalize()`` runs,
-``copy.copy`` it, set the field, and call ``.finalize()`` on it yourself as
-shown above. The base ``finalize()`` skips anything already finalized
+If the nested config's own ``finalize()`` computes derived defaults
+that depend on the changed field, re-finalize after mutation::
+
+                    self.topping = self.topping.finalize()
+
+The base ``finalize()`` skips anything already finalized
 (``_finalized=True``).
 
 Positional Fields (kw_only=False)
@@ -218,8 +219,7 @@ on the path::
                 self = super().finalize()
                 with CopyOnWrite(self) as cow:
                     cow.cake.layers = self.num_ovens * 2
-                    self = cow.unwrap
-                return self
+                return cow.unwrap
 
     # The original Cake.Config default is never modified.
 
@@ -257,6 +257,10 @@ functions and as methods on any ``Maker`` subclass::
 ``Makeable`` -- Runtime-checkable ``Protocol`` defining the config
 interface (``make()``, ``finalize()``, ``update()``). Also aliased as
 ``Configurable``.
+
+``Maker`` subclasses also integrate with IPython/Jupyter via
+``_repr_pretty_``, so configs display with Fig-aware formatting
+in notebooks automatically.
 
 Design Highlights
 -----------------
