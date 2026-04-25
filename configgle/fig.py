@@ -184,12 +184,19 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         the same config is reused for multiple instances or compared
         before/after finalization.
 
+        The root is shallow-copied, but nested ``Finalizeable`` configs
+        each get their own copy (via their own ``finalize()``). So in an
+        override, mutating a nested config after ``super().finalize()``
+        is safe — it won't touch the original.
+
         Returns:
           finalized: A shallow copy with _finalized=True.
 
         """
         r = copy.copy(self)
 
+        # Nested Finalizeable attrs are finalized (and therefore copied)
+        # individually by _finalize_value, so each becomes a fresh object.
         for name in _get_object_attribute_names(r):
             try:
                 value = getattr(r, name)

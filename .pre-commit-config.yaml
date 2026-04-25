@@ -18,14 +18,14 @@ repos:
     - id: check-toml
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.6
+    rev: 0.11.7
     hooks:
       - id: uv-lock
         name: uv lock
         files: 'pyproject.toml'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.10
+    rev: v0.15.12
     hooks:
       - id: ruff-check
         types_or: [python, pyi]
@@ -43,6 +43,6 @@ repos:
         types_or: [python, pyi]
 
   - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
-    rev: 1.39.0
+    rev: 1.39.3
     hooks:
       - id: basedpyright
