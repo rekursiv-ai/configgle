@@ -13,11 +13,13 @@ tl;dr: Unless python has an intersection type you have to choose between:
 
 from __future__ import annotations
 
+from ty_extensions import Intersection
 from typing import (
     Annotated,
     Any,
     Generic,
     Protocol,
+    cast,
     overload,
     override,
     reveal_type,
@@ -80,6 +82,19 @@ class Fig2(Maker[_ParentT], metaclass=MakerMeta2):
 
 
 class Fig3(Maker[_ParentT], metaclass=MakerMeta3):
+    pass
+
+
+class MakerMetaCast(type):
+    def __get__(
+        cls: _T,
+        obj: object,
+        owner: type[_ParentT],
+    ) -> Intersection[_T, type[Maker[_ParentT]]]:
+        return cast(Intersection[_T, type[Maker[_ParentT]]], cast(Any, cls))
+
+
+class FigCast(Maker[_ParentT], metaclass=MakerMetaCast):
     pass
 
 
@@ -461,3 +476,24 @@ def intersect10(o: object) -> object:
     reveal_type(o.x)  # "int"
     reveal_type(o.make())  # "Foo10"
     return o
+
+
+# -------------------------------------------------------------------------------
+# IDEA 10: Cast cls to an intersection inside __get__
+#
+# Result: This can look like it works, but the inner cast to Any erases cls
+# before reintroducing the intersection. That hides checker evidence about the
+# actual nested Config type. In practice this can silently mask inherited typing
+# issues: the checker accepts the declared intersection even when field or
+# dataclass-transform inheritance has degraded. This is weaker than returning
+# cls and forcing the checker to prove the return type.
+
+
+class FooCast:
+    class Config(FigCast):
+        x: int = 0
+
+
+reveal_type(FooCast.Config)
+reveal_type(FooCast.Config().x)
+reveal_type(FooCast.Config().make())

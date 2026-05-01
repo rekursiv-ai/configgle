@@ -1,0 +1,30 @@
+[sync]
+package_name = "configgle"
+sync_label = "Configgle"
+sync_user_name = "configgle"
+sync_user_email = "copybarista@example.com"
+source_root = "loop/lib/configgle"
+public_repo = "rekursiv-ai/configgle"
+source_repo = "rekursiv-ai/loop"
+copybarista_project_path = "loop/experimental/copybarista"
+smoke_import = "configgle"
+export_branch_prefix = "configgle/export/"
+import_branch_prefix = "configgle/import/"
+type_check_targets = [
+  "configgle",
+  "tests",
+]
+forbidden_pr_text = [
+  "loop",
+]
+validation_python_versions = [
+  "3.12",
+]
+validation_commands = [
+  "uv sync --all-groups",
+  "uv run ruff check .",
+  "uv run basedpyright configgle tests",
+  "uv run pytest",
+  "uv run python -c \"import configgle\"",
+  "uv build",
+]
