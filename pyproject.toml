@@ -219,7 +219,7 @@ section-order = [
 
 [tool.basedpyright]
 typeCheckingMode = "recommended"
-# extraPaths = ["."]
+extraPaths = ["typings"]
 exclude = [
     ".venv",
     "*.egg-info",

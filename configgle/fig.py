@@ -125,7 +125,7 @@ class MakerMeta(type):
             _T,
             type[Makeable[_ParentT]],
         ]:
-            return cls
+            return cls  # ty: ignore[invalid-return-type]
 
 
 class Maker(Generic[_ParentT], metaclass=MakerMeta):

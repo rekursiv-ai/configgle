@@ -1,0 +1,31 @@
+name: Package validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v5
+      - name: Validate package
+        run: |
+          uv sync --all-groups
+          uv run ruff check .
+          uv run basedpyright configgle tests
+          uv run pytest
+          uv run python -c "import configgle"
+          uv build

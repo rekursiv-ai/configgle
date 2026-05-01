@@ -159,7 +159,7 @@ def test_partial_config():
 def test_inline_config_update_from_dataclass():
     """Test InlineConfig.update from a dataclass source."""
 
-    @dataclasses.dataclass
+    @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
     class Source:
         a: int = 10
         b: str = "hello"

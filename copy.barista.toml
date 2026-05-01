@@ -1,0 +1,22 @@
+[workflow]
+name = "configgle"
+mode = "squash"
+source_root = "loop/lib/configgle"
+
+[files]
+include = ["**"]
+exclude = [
+  ".pytest_cache/**",
+  "**/.pytest_cache/**",
+  ".ruff_cache/**",
+  "**/.ruff_cache/**",
+  ".venv/**",
+  "**/__pycache__/**",
+  "**/*.pyc",
+  "*.egg-info/**",
+  "**/*.egg-info/**",
+  "build/**",
+  "dist/**",
+  "htmlcov/**",
+  ".coverage",
+]
