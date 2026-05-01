@@ -125,7 +125,9 @@ class MakerMeta(type):
             _T,
             type[Makeable[_ParentT]],
         ]:
-            return cls
+            # ty has a native Intersection type; the runtime polyfill used by
+            # other checkers approximates it as the first type argument.
+            return cast(Intersection[_T, type[Makeable[_ParentT]]], cast(Any, cls))
 
 
 class Maker(Generic[_ParentT], metaclass=MakerMeta):

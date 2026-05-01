@@ -49,7 +49,7 @@ def test_pformat_basic():
 
 def test_pformat_with_options():
     """Test pformat with various options."""
-    obj = {"a": 1000000, "b": 2000000}
+    obj = {"a": 1_000_000, "b": 2_000_000}
 
     # Test with underscore_numbers
     result = pformat(obj, underscore_numbers=True)
@@ -103,7 +103,7 @@ def test_pprint_basic():
 def test_pprint_with_options():
     """Test pprint with various options."""
     stream = StringIO()
-    obj = {"a": 1000000}
+    obj = {"a": 1_000_000}
 
     pprint(
         obj,
@@ -250,14 +250,14 @@ def test_pretty_printer_no_finalize():
 # ---------------------------------------------------------------------------
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
 class _SimpleData:
     x: int = 1
     y: str = "hello"
     description: str = "a somewhat long default description value"
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
 class _NestedData:
     inner: _SimpleData = dataclasses.field(default_factory=_SimpleData)
     values: list[int] = dataclasses.field(default_factory=lambda: [1, 2, 3])
@@ -429,7 +429,7 @@ class TestFilterNonDefaultItems:
     def test_handles_no_default_constructor(self):
         """Classes that can't be default-constructed return all items."""
 
-        @dataclasses.dataclass
+        @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
         class RequiredFields:
             x: int  # No default
 
@@ -465,7 +465,7 @@ class TestPprintListDispatch:
     def test_long_list_triggers_pprint_list(self):
         """A long list inside a dataclass should trigger _pprint_list dispatch."""
 
-        @dataclasses.dataclass
+        @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
         class WithList:
             items: list[int] = dataclasses.field(
                 default_factory=lambda: list(range(20)),
@@ -482,7 +482,7 @@ class TestPprintListDispatch:
     def test_list_no_extra_compact_dispatch(self):
         """With extra_compact=False, parent _pprint_list is used."""
 
-        @dataclasses.dataclass
+        @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
         class WithList:
             items: list[int] = dataclasses.field(
                 default_factory=lambda: list(range(20)),

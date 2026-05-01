@@ -12,7 +12,7 @@ import pytest
 from configgle.copy_on_write import CopyOnWrite
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
 class SimpleConfig:
     """Simple config for testing."""
 
@@ -23,7 +23,7 @@ class SimpleConfig:
         return copy.copy(self)
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
 class NestedConfig:
     """Config with nested structure."""
 
@@ -34,7 +34,7 @@ class NestedConfig:
         return copy.copy(self)
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
 class DeeplyNestedConfig:
     """Config with deeply nested structure."""
 
@@ -273,7 +273,7 @@ class TestCopyOnWriteFinalize:
         """CopyOnWrite should not re-finalize objects that are already finalized."""
         finalize_count = [0]
 
-        @dataclasses.dataclass
+        @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
         class Inner:
             value: int = 0
             _finalized: bool = dataclasses.field(default=False, repr=False)
@@ -284,7 +284,7 @@ class TestCopyOnWriteFinalize:
                 r._finalized = True
                 return r
 
-        @dataclasses.dataclass
+        @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
         class Outer:
             inner: Inner = dataclasses.field(default_factory=Inner)
             scale: int = 1
@@ -351,7 +351,7 @@ class TestCopyOnWriteMultipleParents:
         """A shared child should update all parent references on copy."""
         shared = SimpleConfig(value=42)
 
-        @dataclasses.dataclass
+        @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
         class Container:
             child: SimpleConfig = dataclasses.field(default_factory=SimpleConfig)
 
@@ -701,7 +701,7 @@ class TestCopyOnWriteDelAttrWithChild:
 def test_delattr_self_prefix():
     """Test __delattr__ with _self_ prefix delegates to super."""
 
-    @dataclasses.dataclass
+    @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
     class Inner:
         x: int = 1
 

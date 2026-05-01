@@ -36,7 +36,13 @@ _INLINE_CONFIG_SLOTS = frozenset(
 )
 
 
-@dataclasses.dataclass(slots=True, init=False, repr=True, weakref_slot=True)
+@dataclasses.dataclass(
+    kw_only=True,
+    slots=True,
+    init=False,
+    repr=True,
+    weakref_slot=True,
+)
 class InlineConfig[T]:
     """Config wrapper for arbitrary callables with deferred execution.
 

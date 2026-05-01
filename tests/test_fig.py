@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import field
-from typing import NamedTuple, Self, override
+from typing import Any, NamedTuple, Self, cast, override
 
 import dataclasses
 import io
 import logging
 import pickle
 
-import cloudpickle  # pyright: ignore[reportMissingTypeStubs]
+import cloudpickle
 import pytest
 
 from configgle import InlineConfig, Makeable, PartialConfig
@@ -70,14 +70,15 @@ def test_standalone():
 
 def test_cant_set_unknown_field():
     cfg = Parent.Config()
+    dynamic_cfg = cast(Any, cfg)
     with pytest.raises(AttributeError):
-        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
+        dynamic_cfg.nonexistent_field = 1
     assert isinstance(cfg.make(), Parent)
 
 
 def test_cloudpickle():
     cfg = Child.Config()
-    cfg_ = pickle.loads(cloudpickle.dumps(cfg))  # pyright: ignore[reportUnknownMemberType]  # no stubs
+    cfg_ = cast(Child.Config, pickle.loads(cloudpickle.dumps(cfg)))
     assert cfg == cfg_
     assert cfg.a == cfg_.a
     assert cfg.b == cfg_.b
@@ -109,10 +110,10 @@ def test_cloudpickle_parent_class_restored():
     assert Child.Config.parent_class is Child
 
     # Cloudpickle and unpickle
-    cfg_ = pickle.loads(cloudpickle.dumps(cfg))  # pyright: ignore[reportUnknownMemberType]  # no stubs
+    cfg_ = cast(Child.Config, pickle.loads(cloudpickle.dumps(cfg)))
 
     # Verify parent_class is restored after unpickling
-    assert type(cfg_).parent_class is Child  # pyright: ignore[reportUnknownMemberType]  # parent_class untyped
+    assert type(cfg_).parent_class is Child
     assert cfg_.make().__class__ is Child
 
 
@@ -137,7 +138,7 @@ def test_pickle_nested_class_with_parent():
 def test_cloudpickle_nested_class_with_parent():
     """Test cloudpickling the parent class that contains the nested Config."""
     # When we cloudpickle the parent class itself, Config should be preserved
-    Child_pickled = pickle.loads(cloudpickle.dumps(Child))  # pyright: ignore[reportUnknownMemberType]  # no stubs
+    Child_pickled = cast(type[Child], pickle.loads(cloudpickle.dumps(Child)))
 
     # Verify the Config class is accessible
     assert hasattr(Child_pickled, "Config")
@@ -151,8 +152,9 @@ def test_cloudpickle_nested_class_with_parent():
 
 def test_mutable():
     cfg = Mutable.Config()
-    cfg.b = 2  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
-    assert cfg.b == 2  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
+    dynamic_cfg = cast(Any, cfg)
+    dynamic_cfg.b = 2
+    assert dynamic_cfg.b == 2
 
 
 def test_make_without_parent():
@@ -560,7 +562,7 @@ def test_finalize_skips_non_data_objects():
 def test_finalize_recurses_into_dataclass_objects():
     """Test finalize recurses into nested dataclass objects."""
 
-    @dataclasses.dataclass
+    @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
     class PlainDC:
         value: int = 0
 
