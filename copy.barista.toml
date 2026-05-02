@@ -20,3 +20,13 @@ exclude = [
   "htmlcov/**",
   ".coverage",
 ]
+
+# The source checkout resolves `ty_extensions` from its parent environment and
+# needs this local suppression. The exported package resolves its bundled
+# `ty_extensions`, so the suppression becomes unused and public CI treats it as
+# a warning.
+[[transform]]
+type = "replace"
+path = "configgle/fig.py"
+before = "return cls  # ty: ignore[invalid-return-type]"
+after = "return cls"

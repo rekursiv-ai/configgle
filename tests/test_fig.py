@@ -70,8 +70,9 @@ def test_standalone():
 
 def test_cant_set_unknown_field():
     cfg = Parent.Config()
+    name = "nonexistent_field"
     with pytest.raises(AttributeError):
-        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]
+        setattr(cfg, name, 1)
     assert isinstance(cfg.make(), Parent)
 
 
@@ -151,8 +152,9 @@ def test_cloudpickle_nested_class_with_parent():
 
 def test_mutable():
     cfg = Mutable.Config()
-    cfg.b = 2  # pyright: ignore[reportAttributeAccessIssue]
-    assert cfg.b == 2  # pyright: ignore[reportAttributeAccessIssue]
+    name = "b"
+    setattr(cfg, name, 2)
+    assert getattr(cfg, name) == 2
 
 
 def test_make_without_parent():

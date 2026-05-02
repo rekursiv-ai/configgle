@@ -23,6 +23,9 @@ validation_python_versions = [
 validation_commands = [
   "uv sync --all-groups",
   "uv run ruff check .",
+  "uv run ruff format --check .",
+  "uv run codespell .",
+  "uv run ty check",
   "uv run basedpyright configgle tests",
   "uv run pytest",
   "uv run python -c \"import configgle\"",

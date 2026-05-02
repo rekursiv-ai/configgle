@@ -42,7 +42,7 @@ jobs:
       (
         github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.head.ref != 'configgle/export/main'
+        !startsWith(github.event.pull_request.head.ref, 'configgle/export/')
       ) ||
       (
         github.event_name == 'push' &&
@@ -87,6 +87,12 @@ jobs:
             echo "::error::Cannot resolve public base ref for import."
             exit 1
           fi
+          for ref in "$base_ref" "$head_ref"; do
+            if ! git check-ref-format --allow-onelevel "$ref"; then
+              echo "::error::Invalid public ref: $ref"
+              exit 1
+            fi
+          done
           echo "base_ref=$base_ref" >> "$GITHUB_OUTPUT"
           echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
 
