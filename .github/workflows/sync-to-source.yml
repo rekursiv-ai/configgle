@@ -29,9 +29,9 @@ jobs:
     env:
       DISPATCH_PUBLIC_BASE_REF: ${{ inputs.public_base_ref }}
       DISPATCH_PUBLIC_HEAD_REF: ${{ inputs.public_head_ref }}
-      TARGET_REPO: "rekursiv-ai/loop"
-      TARGET_PROJECT_PATH: "loop/lib/configgle"
-      COPYBARISTA_TOOL_PROJECT_PATH: "loop/experimental/copybarista"
+      TARGET_REPO: ${{ vars.COPYBARISTA_SOURCE_REPO }}
+      TARGET_PROJECT_PATH: ${{ vars.COPYBARISTA_TARGET_PROJECT_PATH }}
+      COPYBARISTA_TOOL_PROJECT_PATH: ${{ vars.COPYBARISTA_TOOL_PROJECT_PATH }}
       COPYBARISTA_IMPORT_BRANCH_PREFIX: "configgle/import/"
       COPYBARISTA_SYNC_LABEL: "Configgle"
       COPYBARISTA_SYNC_USER_NAME: "configgle"
@@ -53,12 +53,24 @@ jobs:
       )
 
     steps:
-      - name: Check token
+      - name: Check settings
         env:
           IMPORT_TOKEN: ${{ secrets.COPYBARISTA_IMPORT_TOKEN }}
         run: |
           if [ -z "$IMPORT_TOKEN" ]; then
             echo "::error::Set COPYBARISTA_IMPORT_TOKEN with repo and workflow scopes."
+            exit 1
+          fi
+          if [ -z "$TARGET_REPO" ]; then
+            echo "::error::Set COPYBARISTA_SOURCE_REPO."
+            exit 1
+          fi
+          if [ -z "$TARGET_PROJECT_PATH" ]; then
+            echo "::error::Set COPYBARISTA_TARGET_PROJECT_PATH."
+            exit 1
+          fi
+          if [ -z "$COPYBARISTA_TOOL_PROJECT_PATH" ]; then
+            echo "::error::Set COPYBARISTA_TOOL_PROJECT_PATH."
             exit 1
           fi
 
