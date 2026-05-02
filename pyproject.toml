@@ -226,6 +226,7 @@ exclude = [
     ".pytest_cache",
     "build",
     "dist",
+
     "typings",
 ]
 ignore = [
@@ -234,6 +235,7 @@ ignore = [
     ".pytest_cache",
     "build",
     "dist",
+
     "typings",
 ]
 pythonPlatform = "Linux"
