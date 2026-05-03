@@ -1,48 +1,49 @@
-# See:
-#   https://pre-commit.com
-#   https://pre-commit.com/hooks.html
-#   https://learn.scientific-python.org/development/guides/style/
-# uv run pre-commit install
-# uv run pre-commit autoupdate
-# uv run pre-commit run --all-files
-
-fail_fast: true
+fail_fast: false
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-    - id: end-of-file-fixer
-    - id: trailing-whitespace
-    - id: check-merge-conflict
-    - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        args: [--maxkb=500]
+        exclude: |
+          (?x)^(
+            uv\.lock
+          )
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.7
+    rev: 0.11.8
     hooks:
       - id: uv-lock
-        name: uv lock
-        files: 'pyproject.toml'
+        files: pyproject.toml
+        args: [--locked]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.12
     hooks:
       - id: ruff-check
-        types_or: [python, pyi]
+        types_or: [python, pyi, jupyter]
+        args: [--fix]
       - id: ruff-format
-        types_or: [python, pyi]
+        types_or: [python, pyi, jupyter]
 
-  # No official ty pre-commit hook yet (https://github.com/astral-sh/ty/issues/269).
   - repo: local
     hooks:
+      - id: codespell
+        name: codespell
+        language: system
+        types_or: [python, markdown, jupyter, shell]
+        entry: uv run --quiet --all-groups --frozen codespell
+        args: [-w]
+
       - id: ty
         name: ty check
-        # entry: .venv/bin/ty check --error-on-warning  # Now in pyproject.toml.
-        entry: .venv/bin/ty check
         language: system
         types_or: [python, pyi]
-
-  - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
-    rev: 1.39.3
-    hooks:
-      - id: basedpyright
+        pass_filenames: false
+        entry: uv run --quiet --all-groups --frozen ty check
