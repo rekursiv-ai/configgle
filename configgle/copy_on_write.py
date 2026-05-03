@@ -304,7 +304,7 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
 
         # For bound methods, re-fetch from the copied parent to get the method
         # bound to the copy, not the original
-        method: Any = self.__wrapped__
+        method: object = self.__wrapped__
         for parent, key in self._self_parents:
             # Get the updated method from the copied parent
             method = getattr(parent.__wrapped__, key)
@@ -312,6 +312,8 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
 
         if not callable(method):
             raise TypeError(f"{method!r} is not callable")
+        # The proxy resolves methods dynamically, so ty cannot infer the
+        # callable signature after the runtime callable() check.
         result = method(*args, **kwargs)  # ty: ignore[call-top-callable]
 
         # Wrap the result

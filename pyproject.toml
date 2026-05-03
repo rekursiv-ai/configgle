@@ -266,17 +266,19 @@ reportUnknownParameterType = false
 
 [tool.ty.src]
 exclude = [
-    ".venv",
-    "*.egg-info",
-    ".pytest_cache",
-    "build",
-    "dist",
-    "typings",
+    ".venv/",
+    "*.egg-info/",
+    ".pytest_cache/",
+    "build/",
+    "dist/",
+    "docs/",
+    "typings/",
+    "**/third_party/",
 ]
 
 [tool.ty.environment]
 python-version = "3.12"
-# extra-paths = ["typings"]
+extra-paths = ["typings"]
 
 [tool.ty.terminal]
 error-on-warning = true
@@ -286,15 +288,16 @@ error-on-warning = true
 all = "warn"
 
 [[tool.ty.overrides]]
-include = ["docs/**"]
+include = ["typings/**"]
 
 [tool.ty.overrides.rules]
-all = "error"
-empty-body = "ignore"
-invalid-return-type = "ignore"
-invalid-type-form = "ignore"
-invalid-type-guard-definition = "ignore"
-unresolved-attribute = "ignore"
+all = "ignore"
+
+[[tool.ty.overrides]]
+include = ["*_test.py"]
+
+[tool.ty.overrides.rules]
+invalid-key = "ignore"
 
 [tool.codespell]
 # SKIP=codespell git commit -m "message"

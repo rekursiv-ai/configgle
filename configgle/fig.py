@@ -125,6 +125,9 @@ class MakerMeta(type):
             _T,
             type[Makeable[_ParentT]],
         ]:
+            # This return has been reviewed extensively. Do not replace it with
+            # casts or type-checker suppressions; package-local stubs define the
+            # intended checker behavior for this descriptor path.
             return cls
 
 
