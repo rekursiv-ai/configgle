@@ -29,4 +29,7 @@ jobs:
           uv run basedpyright configgle tests
           uv run pytest
           uv run python -c "import configgle"
-          uv build
+          rm -rf dist
+          uv build --out-dir dist
+          wheel="$(ls dist/configgle-*.whl | head -n 1)"
+          uv run --isolated --with "$wheel" python -c "import configgle; print(configgle.__file__)"
