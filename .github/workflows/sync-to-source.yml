@@ -35,7 +35,7 @@ jobs:
       COPYBARISTA_IMPORT_BRANCH_PREFIX: "configgle/import/"
       COPYBARISTA_SYNC_LABEL: "Configgle"
       COPYBARISTA_SYNC_USER_NAME: "configgle"
-      COPYBARISTA_SYNC_USER_EMAIL: "copybarista@example.com"
+      COPYBARISTA_SYNC_USER_EMAIL: "rekursiv-bot@rekursiv.ai"
 
     if: |
       github.event_name == 'workflow_dispatch' ||
@@ -47,7 +47,7 @@ jobs:
       (
         github.event_name == 'push' &&
         github.event.before != '0000000000000000000000000000000000000000' &&
-        github.event.head_commit.author.email != 'copybarista@example.com' &&
+        github.event.head_commit.author.email != 'rekursiv-bot@rekursiv.ai' &&
         !contains(github.event.head_commit.message, 'configgle/export/') &&
         !contains(github.event.head_commit.message, 'Configgle export branch:')
       )
