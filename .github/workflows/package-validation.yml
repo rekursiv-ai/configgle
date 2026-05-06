@@ -35,21 +35,4 @@ jobs:
           uv build --out-dir dist
           wheel="$(ls dist/configgle-*.whl | head -n 1)"
           uv run --isolated --with "$wheel" python -c "import configgle; print(configgle.__file__)"
-          uv run python - <<'PY'
-          from pathlib import Path
-          import zipfile
-
-          required = {
-              "configgle/__init__.py",
-              "configgle/py.typed",
-              "ty_extensions/__init__.py",
-          }
-          wheel = next(Path("dist").glob("configgle-*.whl"))
-          with zipfile.ZipFile(wheel) as archive:
-              names = set(archive.namelist())
-          missing = sorted(required - names)
-          if missing:
-              raise SystemExit(
-                  "wheel is missing required wheel entries: " + ", ".join(missing)
-              )
-          PY
+          uv run python bin/check_wheel.py
