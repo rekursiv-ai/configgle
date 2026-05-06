@@ -48,6 +48,7 @@ stubs = [
 test = [
     "cloudpickle",
     "pytest-cov",
+    "pytest-timeout>=2.4.0",
     "pytest>=7.0",
 ]
 typing = [
@@ -79,7 +80,13 @@ artifacts = ["configgle/py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-Werror"
+addopts = "-Werror -m 'not ci_smoke and not integration and not performance'"
+timeout = 60
+markers = [
+    "ci_smoke: slower package/CLI smoke tests run explicitly in CI",
+    "integration: tests that require networking or external CLIs",
+    "performance: timing-sensitive tests",
+]
 norecursedirs = [
     ".venv",
     "__pycache__",

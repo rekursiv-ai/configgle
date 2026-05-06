@@ -28,6 +28,8 @@ jobs:
           uv run ty check
           uv run basedpyright configgle tests
           uv run pytest
+          uv run pytest -m ci_smoke -o addopts="--durations=20" || \
+            test "$?" = 5
           uv run python -c "import configgle"
           rm -rf dist
           uv build --out-dir dist
