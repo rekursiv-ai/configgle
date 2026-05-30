@@ -4,10 +4,10 @@ version = "1.2.3"
 description = "Type-safe hierarchical experiment configuration using pure Python dataclass factories and dependency injection."
 readme = "README.md"
 requires-python = ">=3.12"
-authors = [
-    {name = "Joshua V. Dillon"},
-]
 license = "Apache-2.0"
+authors = [
+    {name = "rekursiv.ai"},
+]
 keywords = ["ai", "machine-learning"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -71,12 +71,19 @@ artifacts = ["configgle/py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-Werror -m 'not ci_smoke and not integration and not performance'"
-timeout = 60
 markers = [
     "ci_smoke: slower package/CLI smoke tests run explicitly in CI",
-    "integration: tests that require networking or external CLIs",
-    "performance: timing-sensitive tests",
+    "integration: tests that require networking or external CLIs (deselected by default)",
+    "performance: timing-sensitive tests (deselected by default)",
+]
+addopts = "-m 'not ci_smoke and not integration and not performance' --durations=20"
+timeout = 60
+# "error" = treat all warnings as errors (same as -Werror).
+# Using filterwarnings instead of addopts so we can add exceptions.
+filterwarnings = [
+    "error",
+    "ignore:Can.t initialize NVML:UserWarning",  # Optional torch runtimes may lack GPU drivers.
+    "ignore::pytest.PytestUnraisableExceptionWarning",  # async subprocess cleanup after event loop closes
 ]
 norecursedirs = [
     ".venv",
@@ -101,6 +108,9 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
 ]
+# fail_under = 90
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 fix = true
@@ -109,12 +119,14 @@ line-length = 88
 output-format = "concise"
 target-version = "py312"
 exclude = [
-    ".venv",
-    "*.egg-info",
-    ".pytest_cache",
-    "build",
-    "dist",
-    "typings",
+    ".venv/",
+    "*.egg-info/",
+    ".pytest_cache/",
+    "build/",
+    "dist/",
+    "typings/",
+    "**/typings/",
+    "**/third_party/",
 ]
 extend-include = ["*.ipynb"]
 
@@ -173,6 +185,9 @@ ignore = [
     "TRY300",  # Try consider else.
 
     # Additional style relaxations.
+    # "DJ",    # Django.
+    # "EXE",   # Flake8 executable.
+    # "TID",   # Flake8 tidy imports.
     "A001",    # Builtin variable shadowing.
     "DTZ006",  # Call datetime fromtimestamp.
     "EXE001",  # Shebang is present but file is not executable.
@@ -181,7 +196,16 @@ ignore = [
     "PLR2004", # Magic value comparison.
     "S101",    # Use of `assert` detected.
     "SIM108",  # If-else block instead of if-exp.
+    # "B008",  # Function call in default argument.
     "FIX001",  # Line contains FIXME.
+    # "ICN001",# Unconventional import alias.
+    # "N801",  # Invalid class name.
+    # "N802",  # Invalid function name.
+    # "N803",  # Invalid argument name.
+    # "N813",  # Camelcase imported as lowercase.
+    # "N815",  # Mixed case variable in class scope.
+    # "PGH004",# Blanket noqa.
+    # "PT027", # Pytest unittest raises assertion.
     "TD001",   # Invalid TODO tag: `FIXME`
     "TD002",   # Missing author in TODO; try: `# TODO(<author_name>): ...` or `# TODO @<author_name>: ...`
     "TD004",   # Missing colon in TODO
@@ -192,19 +216,34 @@ ignore = [
 "__init__.py" = [
     "F401",    # Unused import.
 ]
-"{*_test.py,tests/*}" = [
+"{*_test.py,**/tests/test*.py}" = [
     "INP001",  # Implicit namespace package. (Tests don't need __init__.py.)
     "PLR2004", # Magic value comparison.
     "S101",    # Use of `assert` detected.
-    "S301",    # Suspicious pickle usage.
+    "S301",    # Pickle usage.
     "SLF001",  # Private member access.
 ]
-"docs/*" = [
-    "INP001",  # Implicit namespace package. (Docs don't need __init__.py.)
-    "S101",    # Assert. (Demo code.)
+"**/docs/*.py" = [
+    "INP001",  # Standalone scripts.
     "T201",    # Print found. (CLI tools use print for output.)
-    "UP046",   # Non-PEP695 generic class. (Intentional.)
-    "UP047",   # Non-PEP695 generic function. (Intentional.)
+    "UP046",   # Non-PEP695 generic class. (Intentional configgle doc.)
+    "UP047",   # Non-PEP695 generic function. (Intentional configgle doc.)
+]
+"typings/**" = [
+    "PYI015", # Assignment default in stub — field specifiers (struct.field, module_field, dataclasses.field) are semantically meaningful to @dataclass_transform.
+]
+"*.ipynb" = [
+    "ARG001",  # Unused function argument (callbacks).
+    "BLE001",  # Blind exception (sandboxed exec).
+    "E402",    # Module level import not at top of file.
+    "F811",    # Redefinition across cells.
+    "F821",    # Undefined name (e.g., `display` from IPython).
+    "INP001",  # Implicit namespace package.
+    "PLC0415", # Import not at top level.
+    "RUF100",  # Preserve noqa for jupytext-synced .py files.
+    "S102",    # Use of exec.
+    "S301",    # Pickle usage.
+    "T201",    # Print found.
 ]
 
 [tool.ruff.lint.isort]
@@ -236,20 +275,29 @@ section-order = [
 typeCheckingMode = "recommended"
 extraPaths = ["typings"]
 exclude = [
-    ".venv",
-    "*.egg-info",
-    ".pytest_cache",
-    "build",
-    "dist",
-    "typings",
+    "**/.venv/",
+    "**/node_modules/",
+    "*.egg-info/",
+    "**/*.ipynb",
+    ".pytest_cache/",
+    "build/",
+    "dist/",
+    "typings/",
+    "**/third_party/",
+    "**/typings/",
+    "docs/demonstrate_typing_techniques.py",  # deliberate reveal_type notes
+    "docs/test_basedtyping_intersection.py",  # deliberate reveal_type notes
 ]
 ignore = [
-    ".venv",
-    "*.egg-info",
-    ".pytest_cache",
-    "build",
-    "dist",
-    "typings",
+    "**/.venv/",
+    "*.egg-info/",
+    ".pytest_cache/",
+    "build/",
+    "dist/",
+    "typings/",
+    "**/third_party/",
+    "docs/demonstrate_typing_techniques.py",  # deliberate reveal_type notes
+    "docs/test_basedtyping_intersection.py",  # deliberate reveal_type notes
 ]
 pythonPlatform = "Linux"
 pythonVersion = "3.12"
@@ -267,21 +315,12 @@ reportIncompatibleMethodOverride = false   # Subclasses may rename parameters.
 reportMissingSuperCall = false             # Fires on plain `object` inheritance (no-op super).
 reportImportCycles = false                 # Lazy imports inside functions create benign cycles.
 reportUnsafeMultipleInheritance = false    # Mixin patterns are intentional.
+# reportConstantRedefinition = false       # Uppercase locals treated as constants (math). [Violates PEP8]
 
 [[tool.basedpyright.executionEnvironments]]
 root = "tests"
 reportPrivateUsage = false
 reportPrivateLocalImportUsage = false
-
-[[tool.basedpyright.executionEnvironments]]
-root = "docs"
-reportAttributeAccessIssue = false
-reportGeneralTypeIssues = false
-reportInvalidTypeVarUse = false
-reportReturnType = false
-reportUninitializedInstanceVariable = false
-reportUnknownMemberType = false
-reportUnknownParameterType = false
 
 [tool.ty.src]
 exclude = [
@@ -290,11 +329,11 @@ exclude = [
     ".pytest_cache/",
     "build/",
     "dist/",
-    "docs/",
     "typings/",
+    "**/third_party/",
+    "**/docs/",
     "ty_extensions/",  # Polyfill exists for basedpyright/runtime; ty uses its built-in (real Intersection).
     "packages/ty-extensions/",
-    "**/third_party/",
 ]
 
 [tool.ty.environment]
@@ -307,27 +346,29 @@ error-on-warning = true
 
 [tool.ty.rules]
 all = "warn"
-unused-ignore-comment = "ignore"  # Polyfill ty_extensions exports `Intersection[A, B] = A`, masking real intersection cases where ty: ignore is needed under loop's source-side ty.
+unused-ignore-comment = "ignore"  # Exported tree ships ty_extensions polyfill at project root, shadowing ty's built-in. Polyfill's degenerate Intersection makes source-side ty: ignore directives appear unused.
 
 [[tool.ty.overrides]]
 include = ["typings/**"]
-
 [tool.ty.overrides.rules]
 all = "ignore"
 
 [[tool.ty.overrides]]
 include = ["*_test.py"]
-
 [tool.ty.overrides.rules]
 invalid-key = "ignore"
 
 [tool.codespell]
-# SKIP=codespell git commit -m "message"
-# or,
 # some_variable_with_typo = "connexion"  # codespell:ignore
 builtin = "clear,rare,code"
-ignore-words-list = "fave,coo,jupyter,arange,iff,wrt,ow,lite,falsy,truthy,ws,deque"
-skip = "htmlcov,.doctrees,*.pyc,*.ico,*.png,*.jpg,*.PNG,*.inv,*.dot,*.css,.git,.venv,__pycache__,*.egg-info,uv.lock"
+ignore-words = ".codespell-ignore"
+# Pre-commit exclude handles most skips. This covers direct CLI invocations.
+# Don't add new folder paths here — add them to .pre-commit-config.yaml's
+# codespell exclude regex instead. This list is only for file patterns.
+skip = "htmlcov,.doctrees,*.pyc,*.ico,*.png,*.jpg,*.PNG,*.inv,*.dot,*.css,*.egg-info,uv.lock,__pycache__,.git,.venv,typings,**/third_party/"
+
+[tool.jupytext]
+formats = "ipynb,py:percent"
 
 [tool.uv]
 package = true
