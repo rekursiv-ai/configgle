@@ -128,7 +128,7 @@ class MakerMeta(type):
             # This return has been reviewed extensively. Do not replace it with
             # casts or type-checker suppressions; package-local stubs define the
             # intended checker behavior for this descriptor path.
-            return cls
+            return cls  # ty: ignore[invalid-return-type] -- `cls` is only `_T` at source level; the `& type[Makeable[_ParentT]]` half of the intersection is a design assertion that ty's real Intersection cannot prove. Configgle's `_stubs/ty_extensions/` polyfill (where `Intersection[A, B] = A`) hides this when run under package-local ty config; root ty sees the real intersection and rejects the return. See fig.py module docstring for the design rationale.
 
 
 class Maker(Generic[_ParentT], metaclass=MakerMeta):
@@ -691,7 +691,7 @@ def _get_object_attribute_names(obj: object) -> Iterator[str]:
                 yield key
 
 
-def _finalize_value[ValueT](value: ValueT) -> ValueT:  # noqa: PLR0911
+def _finalize_value[ValueT](value: ValueT) -> ValueT:
     """Recursively finalize nested Fig instances, preserving container types.
 
     Traverses sequences, mappings, sets, and objects with __slots__/__dict__
