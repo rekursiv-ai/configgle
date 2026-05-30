@@ -386,20 +386,20 @@ if is_creatable(Foo8.Config, Foo8):
 # Type of "Foo9.Config().make()" is "Foo9"
 
 
-class ConfigFor9(Generic[_T]):
+class ConfigFor9(Generic[_T]):  # noqa: UP046  # Intentional pre-PEP-695 form; this file demonstrates the alternatives.
     """Tells type checker make() returns _T."""
 
     def make(self) -> _T: ...
     def __getattr__(self, name: str) -> Any: ...
 
 
-class Configurable9(Generic[_T]):
+class Configurable9(Generic[_T]):  # noqa: UP046  # Intentional pre-PEP-695 form; this file demonstrates the alternatives.
     """Base class with typed Config."""
 
     Config: type[ConfigFor9[_T]]
 
 
-def has_config(cls: type[_T]) -> type[Configurable9[_T]]:
+def has_config(cls: type[_T]) -> type[Configurable9[_T]]:  # noqa: UP047  # Intentional pre-PEP-695 form; this file demonstrates the alternatives.
     return cls
 
 
@@ -439,7 +439,7 @@ reveal_type(Foo9.Config().make())
 # Type of "o.make()" is "Foo10"
 
 
-def supports_t(o: object, tp: type[_T]) -> TypeIs[_T]:
+def supports_t(o: object, tp: type[_T]) -> TypeIs[_T]:  # noqa: UP047  # Intentional pre-PEP-695 form; this file demonstrates the alternatives.
     """Unconditionally returns True; used purely for TypeIs narrowing."""
     del o, tp
     return True

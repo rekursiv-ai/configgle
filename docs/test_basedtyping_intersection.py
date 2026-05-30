@@ -12,6 +12,16 @@ Tested with:
 
 from typing import reveal_type
 
+import sys
+
+
+if "pytest" in sys.modules:
+    import pytest
+
+    pytest.skip(
+        "Static basedpyright probe, not a runtime pytest test.", allow_module_level=True
+    )
+
 from basedtyping import Intersection
 
 
