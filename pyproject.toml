@@ -8,7 +8,7 @@ license = "Apache-2.0"
 authors = [
     {name = "rekursiv.ai"},
 ]
-keywords = ["ai", "machine-learning"]
+keywords = ["configuration", "configuration management", "reproducible science", "reproducible research"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -34,8 +34,6 @@ publish = [
     "build",
     "twine",
 ]
-stubs = [
-]
 test = [
     "cloudpickle",
     "pytest-cov",
@@ -43,7 +41,7 @@ test = [
     "pytest-xdist>=3.8.0",
     "pytest>=7.0",
 ]
-typing = [
+typecheck = [
     "basedpyright>=1.10",
     "basedtyping>=0.1.10",
     "ty",
@@ -52,14 +50,17 @@ typing = [
 dev = [
     {include-group = "lint"},
     {include-group = "publish"},
-    {include-group = "stubs"},
     {include-group = "test"},
-    {include-group = "typing"},
+    {include-group = "typecheck"},
 ]
 
 [project.urls]
+Homepage = "https://www.rekursiv.ai"
 Repository = "https://github.com/rekursiv-ai/configgle"
+Documentation = "https://github.com/rekursiv-ai/configgle/tree/main/docs"
+Source = "https://github.com/rekursiv-ai/configgle"
 Issues = "https://github.com/rekursiv-ai/configgle/issues"
+Changelog = "https://github.com/rekursiv-ai/configgle/releases"
 Discussions = "https://github.com/rekursiv-ai/configgle/discussions"
 
 [build-system]
@@ -71,13 +72,13 @@ packages = ["configgle", "ty_extensions"]
 artifacts = ["configgle/py.typed"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+python_files = ["*_test.py", "test_*.py"]
 markers = [
     "ci_smoke: slower package/CLI smoke tests run explicitly in CI",
     "integration: tests that require networking or external CLIs (deselected by default)",
     "performance: timing-sensitive tests (deselected by default)",
 ]
-addopts = "-m 'not ci_smoke and not integration and not performance' --durations=20"
+addopts = "-m 'not ci_smoke and not integration and not performance' --durations=20 --dist=worksteal"
 timeout = 60
 # "error" = treat all warnings as errors (same as -Werror).
 # Using filterwarnings instead of addopts so we can add exceptions.
@@ -87,16 +88,20 @@ filterwarnings = [
     "ignore::pytest.PytestUnraisableExceptionWarning",  # async subprocess cleanup after event loop closes
 ]
 norecursedirs = [
+    "*.egg-info",
+    ".agents",
+    ".claude",
+    ".hypothesis",
     ".venv",
     "__pycache__",
-    "*.egg-info",
+    "third_party",
     "typings",
-    ".hypothesis",
 ]
 
 [tool.coverage.run]
 omit = [
     "*_test.py",
+    "test_*.py",
     "*/tests/*",
     "*/.venv/*",
     "*/typings/*",
@@ -109,7 +114,7 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
 ]
-# fail_under = 90
+fail_under = 100
 show_missing = true
 skip_covered = true
 
@@ -224,12 +229,6 @@ ignore = [
     "S301",    # Pickle usage.
     "SLF001",  # Private member access.
 ]
-"**/docs/*.py" = [
-    "INP001",  # Standalone scripts.
-    "T201",    # Print found. (CLI tools use print for output.)
-    "UP046",   # Non-PEP695 generic class. (Intentional configgle doc.)
-    "UP047",   # Non-PEP695 generic function. (Intentional configgle doc.)
-]
 "typings/**" = [
     "PYI015", # Assignment default in stub — field specifiers (struct.field, module_field, dataclasses.field) are semantically meaningful to @dataclass_transform.
 ]
@@ -245,6 +244,10 @@ ignore = [
     "S102",    # Use of exec.
     "S301",    # Pickle usage.
     "T201",    # Print found.
+]
+"**/docs/**" = [
+    "INP001",  # Standalone scripts.
+    "T201",    # Print found. (CLI tools use print for output.)
 ]
 
 [tool.ruff.lint.isort]
@@ -274,7 +277,6 @@ section-order = [
 
 [tool.basedpyright]
 typeCheckingMode = "recommended"
-extraPaths = ["typings"]
 exclude = [
     "**/.venv/",
     "**/node_modules/",
@@ -339,7 +341,9 @@ exclude = [
 
 [tool.ty.environment]
 python-version = "3.12"
-extra-paths = ["typings"]
+extra-paths = [
+  "typings",
+]
 
 [tool.ty.terminal]
 error-on-warning = true
