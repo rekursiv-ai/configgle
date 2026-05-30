@@ -7,6 +7,6 @@
 from typing import TypeVar
 
 
-_First = TypeVar("_First")
-_Second = TypeVar("_Second")
+_First = TypeVar("_First")  # noqa: PYI018 -- Polyfill exports TypeVar used in `type Intersection[_First, _Second] = _First`; ruff cannot trace the PEP-695 alias.
+_Second = TypeVar("_Second")  # noqa: PYI018 -- Polyfill exports TypeVar used in `type Intersection[_First, _Second] = _First`; ruff cannot trace the PEP-695 alias.
 type Intersection[_First, _Second] = _First

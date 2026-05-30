@@ -1,4 +1,4 @@
-"""Minimal cloudpickle stubs used by Configgle tests."""
+"""Minimal cloudpickle stubs used by tests."""
 
 from collections.abc import Callable
 from typing import Any

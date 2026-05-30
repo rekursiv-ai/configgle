@@ -12,7 +12,7 @@ class _Canary:
         self.x = x
 
 
-_canary_config = _Canary.Config(x=1)  # ty: ignore[unresolved-attribute]
+_canary_config = _Canary.Config(x=1)
 
 
 def test_basic_decorator():
@@ -23,10 +23,10 @@ def test_basic_decorator():
             self.y = y
             self.z = z
 
-    assert Foo.Config.__bases__ == (Fig,)  # ty: ignore[unresolved-attribute]
-    assert Foo.Config.parent_class == Foo  # ty: ignore[unresolved-attribute]
+    assert Foo.Config.__bases__ == (Fig,)
+    assert Foo.Config.parent_class == Foo
 
-    config = Foo.Config(x=42, y="hello", z=3.14)  # ty: ignore[unresolved-attribute]
+    config = Foo.Config(x=42, y="hello", z=3.14)
     assert config.x == 42
     assert config.y == "hello"
     assert config.z == 3.14
@@ -44,7 +44,7 @@ def test_config_update():
             self.x = x
             self.y = y
 
-    config = Foo.Config(x=1, y="a")  # ty: ignore[unresolved-attribute]
+    config = Foo.Config(x=1, y="a")
     config.update(x=99)
     assert config.x == 99
     assert config.y == "a"
@@ -63,9 +63,9 @@ def test_with_defaults():
             self.name = name
             self.count = count
 
-    assert Bar.Config.parent_class == Bar  # ty: ignore[unresolved-attribute]
+    assert Bar.Config.parent_class == Bar
 
-    config = Bar.Config(items=[1, 2, 3], name="test")  # ty: ignore[unresolved-attribute]
+    config = Bar.Config(items=[1, 2, 3], name="test")
     assert config.items == [1, 2, 3]
     assert config.name == "test"
     assert config.count == 5
@@ -97,7 +97,7 @@ def test_require_defaults():
             self.x = x
 
     # Should work - require_defaults=False allows parameters without defaults
-    config = NoDefaults.Config(x=42)  # ty: ignore[unresolved-attribute]
+    config = NoDefaults.Config(x=42)
     instance = config.make()
     assert instance.x == 42
 

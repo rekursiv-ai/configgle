@@ -22,6 +22,7 @@ Example:
 
 from __future__ import annotations
 
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Self, cast, override
 
 import copy
@@ -40,9 +41,7 @@ if TYPE_CHECKING:
     _ChildrenDict = dict[str, Any]
 
 
-# Note: wrapt.ObjectProxy is generic in type stubs but not subscriptable at runtime.
-# We use Generic[_T] to provide type parameters and declare __wrapped__: _T.
-class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArgument]
+class CopyOnWrite[T](wrapt.ObjectProxy[T]):
     """A proxy that copies objects lazily on first mutation.
 
     Wraps an object and intercepts all attribute/item mutations. When a mutation
@@ -66,6 +65,28 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
     _self_is_finalized: bool
     _self_debug: bool
 
+    def __new__(
+        cls,
+        wrapped: T,
+        parent: CopyOnWrite[Any] | None = None,
+        key: str = "",
+        debug: bool = False,
+    ) -> Self:
+        # Anchors the constructor return type to Self. Without this, both
+        # basedpyright and ty infer `CopyOnWrite(...)` as `ObjectProxy[Unknown]`
+        # because wrapt-stubs' `ObjectProxy.__new__` hardcodes a non-Self return.
+        #
+        # We tried fixing this upstream by vendoring wrapt-stubs into
+        # `loop/lib/typings/wrapt/` with `__new__(cls, ...) -> Self`. In isolated
+        # probes the stub fix worked (subclasses of `ObjectProxy[T]` were typed
+        # correctly), but inside this file basedpyright re-resolves T based on
+        # downstream `CopyOnWrite(...)` call sites (e.g. `__getitem__` passes
+        # `cast(object, ...)`), which collapsed the return back to
+        # `ObjectProxy[Unknown]`. A local `__new__` override is the only place
+        # that keeps inference stable across every call site here.
+        del wrapped, parent, key, debug
+        return cast("Self", super().__new__(cls))
+
     def __init__(
         self,
         wrapped: T,
@@ -82,8 +103,7 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
           debug: Enable debug printing of COW operations.
 
         """
-        # wrapt.ObjectProxy.__init__ type is partially unknown in stubs
-        super().__init__(wrapped)  # pyright: ignore[reportUnknownMemberType]
+        super().__init__(wrapped)
         if parent is None:
             self._self_parents = set()
         else:
@@ -97,20 +117,22 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
     # Context manager
     # -------------------------------------------------------------------------
 
+    @override
     def __enter__(self) -> Self:
         """Enter context manager."""
         return self
 
+    @override
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        exc_traceback: object,
-    ) -> None:
+        traceback: TracebackType | None,
+    ) -> bool | None:
         """Exit context manager, calling finalize on wrapped objects."""
         # Exit children first (depth-first)
         for child in self._self_children.values():
-            child.__exit__(exc_type, exc_value, exc_traceback)
+            child.__exit__(exc_type, exc_value, traceback)
 
         # Call finalize if present and not already finalized. For children
         # (objects with parents), only finalize if a copy was made — otherwise
@@ -168,20 +190,21 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
     # Attribute access - return wrapped children for nested COW
     # -------------------------------------------------------------------------
 
-    def __getattr__(self, key: str) -> CopyOnWrite[Any]:
-        if key.startswith("_self_"):
+    @override
+    def __getattr__(self, name: str) -> CopyOnWrite[Any]:
+        if name.startswith("_self_"):
             # This shouldn't happen with wrapt, but just in case
-            raise AttributeError(key)
+            raise AttributeError(name)
 
         if self._self_debug:
-            print(f"  get : {type(self.__wrapped__).__name__}.{key}")
+            print(f"  get : {type(self.__wrapped__).__name__}.{name}")
 
         # Return cached child wrapper or create new one
-        child: CopyOnWrite[Any] | None = self._self_children.get(key)
+        child: CopyOnWrite[Any] | None = self._self_children.get(name)
         if child is None:
-            actual = getattr(self.__wrapped__, key)
-            child = CopyOnWrite(actual, parent=self, key=key, debug=self._self_debug)
-            self._self_children[key] = child
+            actual = getattr(self.__wrapped__, name)
+            child = CopyOnWrite(actual, parent=self, key=name, debug=self._self_debug)
+            self._self_children[name] = child
         return child
 
     @override
@@ -233,6 +256,7 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
     # Item access (for sequences, mappings)
     # -------------------------------------------------------------------------
 
+    @override
     def __getitem__(self, key: object) -> CopyOnWrite[Any]:
         if self._self_debug:
             print(f"  get : {type(self.__wrapped__).__name__}[{key!r}]")
@@ -251,6 +275,7 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
             self._self_children[cache_key] = child
         return child
 
+    @override
     def __setitem__(self, key: object, value: object) -> None:
         if self._self_debug:
             print(f"  set : {type(self.__wrapped__).__name__}[{key!r}] = {value!r}")
@@ -270,6 +295,7 @@ class CopyOnWrite[T](wrapt.ObjectProxy):  # pyright: ignore[reportMissingTypeArg
         self._copy()
         self.__wrapped__[key] = actual_value  # pyright: ignore[reportIndexIssue]  # ty: ignore[invalid-assignment]
 
+    @override
     def __delitem__(self, key: object) -> None:
         if self._self_debug:
             print(f"  del : {type(self.__wrapped__).__name__}[{key!r}]")

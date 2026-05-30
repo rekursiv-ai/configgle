@@ -145,7 +145,7 @@ class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInval
     #   - Drop ClassVar: loses the "class attribute" semantic in the Protocol.
     #   - @property: covariant but instance-only (no Cls.parent_class access).
     # Suppressed in both checkers as a deliberate design choice.
-    parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleMethodOverride]  # ty: ignore[invalid-type-form]
+    parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form]
 
     def __init__(self, *args: object, **kwargs: object) -> None: ...
     def __getattr__(self, name: str) -> Any: ...
