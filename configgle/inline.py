@@ -24,11 +24,6 @@ if TYPE_CHECKING:
     from configgle.custom_types import DataclassLike, Makeable
 
 
-@runtime_checkable
-class _HasMake(Protocol):
-    def make(self) -> object: ...
-
-
 __all__ = ["InlineConfig", "PartialConfig"]
 
 _INLINE_CONFIG_SLOTS = frozenset(
@@ -206,3 +201,8 @@ class PartialConfig[T](InlineConfig[Callable[..., T]]):
         **kwargs: object,
     ) -> None:
         super().__init__(functools.partial, func, *args, **kwargs)
+
+
+@runtime_checkable
+class _HasMake(Protocol):
+    def make(self) -> object: ...
