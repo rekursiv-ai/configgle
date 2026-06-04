@@ -157,36 +157,6 @@ class CopyOnWrite[T](wrapt.ObjectProxy[T]):
             )
 
     # -------------------------------------------------------------------------
-    # Copy-on-write core
-    # -------------------------------------------------------------------------
-
-    def _copy(self) -> Self:
-        """Lazily copy this object and propagate copies to parents."""
-        if self._self_is_copy:
-            if self._self_debug:
-                print(
-                    f"  copy: {type(self.__wrapped__).__name__} [SKIP - already copied]",
-                )
-            return self
-
-        if self._self_debug:
-            print(f"  copy: {type(self.__wrapped__).__name__}")
-
-        # Copy parents first (propagate up)
-        for parent, _ in self._self_parents:
-            parent._copy()  # noqa: SLF001
-
-        # Now copy this object
-        self.__wrapped__ = copy.copy(self.__wrapped__)
-        self._self_is_copy = True
-
-        # Update parent references to point to our new copy
-        for parent, key in self._self_parents:
-            setattr(parent.__wrapped__, key, self.__wrapped__)
-
-        return self
-
-    # -------------------------------------------------------------------------
     # Attribute access - return wrapped children for nested COW
     # -------------------------------------------------------------------------
 
@@ -372,3 +342,33 @@ class CopyOnWrite[T](wrapt.ObjectProxy[T]):
         # Use identity-based hash so CopyOnWrite instances can be stored in sets
         # regardless of whether the wrapped object is hashable
         return id(self)
+
+    # -------------------------------------------------------------------------
+    # Copy-on-write core
+    # -------------------------------------------------------------------------
+
+    def _copy(self) -> Self:
+        """Lazily copy this object and propagate copies to parents."""
+        if self._self_is_copy:
+            if self._self_debug:
+                print(
+                    f"  copy: {type(self.__wrapped__).__name__} [SKIP - already copied]",
+                )
+            return self
+
+        if self._self_debug:
+            print(f"  copy: {type(self.__wrapped__).__name__}")
+
+        # Copy parents first (propagate up)
+        for parent, _ in self._self_parents:
+            parent._copy()  # noqa: SLF001
+
+        # Now copy this object
+        self.__wrapped__ = copy.copy(self.__wrapped__)
+        self._self_is_copy = True
+
+        # Update parent references to point to our new copy
+        for parent, key in self._self_parents:
+            setattr(parent.__wrapped__, key, self.__wrapped__)
+
+        return self
