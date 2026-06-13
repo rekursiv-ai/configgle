@@ -1,5 +1,3 @@
-"""Minimal cloudpickle stubs used by tests."""
-
 from collections.abc import Callable
 from typing import Any
 
