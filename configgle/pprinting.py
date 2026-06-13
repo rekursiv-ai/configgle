@@ -240,7 +240,7 @@ class FigPrinter(_PrettyPrinter):
         ):
             try:
                 obj = copy.deepcopy(obj)
-                obj = obj.finalize()  # ty: ignore[invalid-assignment]
+                obj = obj.finalize()
             except Exception as e:  # noqa: BLE001
                 warnings.warn(str(e), stacklevel=2)
         return obj

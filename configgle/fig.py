@@ -705,7 +705,7 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
 
     """
     if isinstance(value, Finalizeable) and not getattr(value, "_finalized", False):
-        return value.finalize()  # ty: ignore[invalid-return-type]
+        return value.finalize()
 
     # Skip classes, types, and primitives - they don't need finalization
     if isinstance(value, (type, int, float, str, bytes, bool, type(None))):
