@@ -1,7 +1,7 @@
 # configgle🤭
 Hierarchical experiment configuration using pure Python dataclasses with typed
 factory methods, covariant protocols, inheritance support, and tooling for
-pretty printing and copy-on-write semantics.
+pretty printing, autodecorating, updating, and semi-deep copying.
 
 ## Installation
 
@@ -363,7 +363,6 @@ model = cfg_.make()  # parent_class is preserved
 | Config inheritance | ✅ | 🟡 | ❌ | 🟡 | ❌ | ❌ | ❌ | 🟡 |
 | Covariant protocol | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Nested finalization | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Copy-on-write | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `pickle`/`cloudpickle` | ✅ | 🟡 | ❌ | ✅ | ❌ | 🟡 | ✅ | ❌ |
 | Auto-generated configs | ✅ | 🟡 | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | GitHub stars | -- | 10.2k | 4.4k | 2.3k | 2.1k | 1.0k | 374 | 21 |
