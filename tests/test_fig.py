@@ -268,20 +268,116 @@ def test_fig_update():
 
 
 def test_fig_finalize():
-    """Test Fig finalize creates copy."""
+    """Test Fig finalize mutates in place and returns self."""
 
     class TestConfig(Fig):
         x: int = 1
 
     cfg = TestConfig()
-    # Fig doesn't have _finalized, only Setup does
-    # But finalize returns a copy
     finalized = cfg.finalize()
 
-    # They should be different objects
-    assert cfg is not finalized
-    # Values should be the same
-    assert cfg.x == finalized.x
+    # finalize is in-place: it returns the same object, now finalized.
+    assert finalized is cfg
+    assert getattr(cfg, "_finalized", False) is True
+
+
+def test_finalize_is_in_place():
+    """Finalize mutates the receiver; copy_tree().finalize() isolates it."""
+
+    class TestConfig(Fig):
+        x: int = 1
+
+        @override
+        def finalize(self) -> Self:
+            self = super().finalize()
+            self.x = 99
+            return self
+
+    # Direct finalize mutates the original.
+    cfg = TestConfig()
+    cfg.finalize()
+    assert cfg.x == 99
+    assert getattr(cfg, "_finalized", False) is True
+
+    # copy_tree().finalize() leaves the original untouched.
+    pristine = TestConfig()
+    finalized = pristine.copy_tree().finalize()
+    assert pristine.x == 1
+    assert getattr(pristine, "_finalized", False) is False
+    assert finalized.x == 99
+    assert finalized is not pristine
+
+
+def test_make_does_not_mutate_original():
+    """make() finalizes a copy; the source config stays pristine."""
+
+    class Thing:
+        class Config(Fig["Thing"]):
+            x: int = 1
+
+            @override
+            def finalize(self) -> Self:
+                self = super().finalize()
+                self.x = 42
+                return self
+
+        def __init__(self, config: Config) -> None:
+            self.x = config.x
+
+    cfg = Thing.Config()
+    obj = cfg.make()
+    assert obj.x == 42  # finalized value reached the instance
+    assert cfg.x == 1  # original config untouched
+    assert getattr(cfg, "_finalized", False) is False
+
+
+def test_finalize_cascades_into_children_in_place():
+    """Finalize finalizes nested children in place (no extra copy in finalize)."""
+
+    class Inner(Fig):
+        v: int = 0
+
+        @override
+        def finalize(self) -> Self:
+            self = super().finalize()
+            self.v = 7
+            return self
+
+    class Outer(Fig):
+        inner: Inner = field(default_factory=Inner)
+
+    cfg = Outer()
+    finalized = cfg.finalize()
+    # finalize is in place: root identity preserved, child finalized in place.
+    assert finalized is cfg
+    assert cfg.inner.v == 7
+    assert getattr(cfg.inner, "_finalized", False) is True
+
+
+def test_make_isolates_nested_children():
+    """make() (copy_tree first) finalizes children without touching the source."""
+
+    class Inner(Fig):
+        v: int = 0
+
+        @override
+        def finalize(self) -> Self:
+            self = super().finalize()
+            self.v = 7
+            return self
+
+    class Outer:
+        class Config(Fig["Outer"]):
+            inner: Inner = field(default_factory=Inner)
+
+        def __init__(self, config: Config) -> None:
+            self.inner = config.inner
+
+    cfg = Outer.Config()
+    cfg.make()
+    # Source's nested child is untouched: copy_tree isolated it.
+    assert cfg.inner.v == 0
+    assert getattr(cfg.inner, "_finalized", False) is False
 
 
 def test_dataclass_params_iter_with_str_slots():
@@ -1056,6 +1152,194 @@ def test_copy_tree_preserves_namedtuple_type():
     copied = copy_tree(pair)
     assert isinstance(copied, Pair)
     assert copied == Pair(1, 2)
+
+
+def test_make_twice_leaves_source_unmutated():
+    """Two ``make()`` calls each finalize a fresh copy; the source stays pristine.
+
+    ``make`` is ``copy_tree().finalize()``, so the source config is never
+    mutated and each build applies derived defaults to its own copy.
+    """
+
+    class Thing:
+        class Config(Fig["Thing"]):
+            n: int = 0
+
+            @override
+            def finalize(self) -> Self:
+                self = super().finalize()
+                self.n += 1
+                return self
+
+        def __init__(self, config: Config) -> None:
+            self.n = config.n
+
+    cfg = Thing.Config()
+    first = cfg.make()
+    second = cfg.make()
+    assert first.n == 1
+    assert second.n == 1
+    assert cfg.n == 0  # source config never mutated
+
+
+def test_pformat_after_finalize_does_not_re_finalize():
+    """``pformat`` skips an already-finalized config (its ``_finalized`` guard)."""
+
+    class Cfg(Fig):
+        n: int = 0
+
+        @override
+        def finalize(self) -> Self:
+            self = super().finalize()
+            self.n += 1
+            return self
+
+    cfg = Cfg()
+    cfg.finalize()
+    assert cfg.n == 1
+    cfg.pformat()  # _try_to_finalize guards on _finalized; must not re-apply
+    assert cfg.n == 1
+
+
+def test_finalize_finalizes_hashable_fig_in_frozenset():
+    """A hashable (eq=False) Fig held in a frozenset is finalized.
+
+    Set members must be hashable; an ``eq=False`` Fig is, so a frozenset can
+    legally hold one. ``_finalize_value`` must finalize it rather than skip the
+    whole set.
+    """
+
+    class Leaf(Fig, eq=False):
+        v: int = 0
+
+        @override
+        def finalize(self) -> Self:
+            self = super().finalize()
+            self.v = 99
+            return self
+
+    class Holder(Fig):
+        s: frozenset[Leaf] = field(default_factory=frozenset[Leaf])
+
+    holder = Holder(s=frozenset({Leaf()}))
+    finalized = holder.copy_tree().finalize()
+    member = next(iter(finalized.s))
+    assert member.v == 99
+    assert getattr(member, "_finalized", False) is True
+
+
+def test_finalize_finalizes_hashable_fig_in_set():
+    """A hashable (eq=False) Fig held in a mutable set is finalized."""
+
+    class Leaf(Fig, eq=False):
+        v: int = 0
+
+        @override
+        def finalize(self) -> Self:
+            self = super().finalize()
+            self.v = 99
+            return self
+
+    class Holder(Fig):
+        s: set[Leaf] = field(default_factory=set[Leaf])
+
+    holder = Holder(s={Leaf()})
+    finalized = holder.copy_tree().finalize()
+    member = next(iter(finalized.s))
+    assert member.v == 99
+
+
+def test_finalize_finalizes_hashable_fig_dict_key():
+    """A hashable (eq=False) Fig used as a dict key is finalized and isolated.
+
+    ``copy_tree`` copies the key and ``_finalize_value`` finalizes it, so a
+    Fig-keyed dict is handled like its values -- and the source is untouched.
+    """
+
+    class Key(Fig, eq=False):
+        v: int = 0
+
+        @override
+        def finalize(self) -> Self:
+            self = super().finalize()
+            self.v = 99
+            return self
+
+    class Holder(Fig):
+        d: dict[Key, str] = field(default_factory=dict[Key, str])
+
+    source_key = Key()
+    holder = Holder(d={source_key: "val"})
+    finalized = holder.copy_tree().finalize()
+    key = next(iter(finalized.d))
+    assert key.v == 99
+    assert finalized.d[key] == "val"
+    assert key is not source_key  # key copied, source isolated
+    assert source_key.v == 0
+
+
+def test_finalize_preserves_unchanged_tuple_identity():
+    """A tuple whose elements finalize in place is preserved (not rebuilt).
+
+    In-place finalize keeps each Fig's identity, so the tuple holding them is
+    unchanged and is returned as-is -- matching ``copy_tree``'s preserve rule.
+    """
+
+    class Leaf(Fig):
+        v: int = 0
+
+        @override
+        def finalize(self) -> Self:
+            self = super().finalize()
+            self.v = 99
+            return self
+
+    class Holder(Fig):
+        t: tuple[Leaf, ...] = field(default_factory=lambda: (Leaf(),))
+
+    holder = Holder()
+    original_tuple = holder.t
+    holder.finalize()
+    assert holder.t is original_tuple  # identity preserved
+    assert holder.t[0].v == 99  # element finalized in place
+
+
+def test_finalize_finalizes_dict_with_leaf_keys():
+    """A dict with ordinary (str) keys round-trips: values finalized, keys intact."""
+
+    class Leaf(Fig):
+        v: int = 0
+
+        @override
+        def finalize(self) -> Self:
+            self = super().finalize()
+            self.v = 99
+            return self
+
+    class Holder(Fig):
+        d: dict[str, Leaf] = field(default_factory=lambda: {"k": Leaf()})
+
+    finalized = Holder().copy_tree().finalize()
+    assert finalized.d["k"].v == 99
+
+
+def test_finalize_does_not_misunwrap_wrapped_field():
+    """A config field literally named ``__wrapped__`` is not mistaken for a proxy.
+
+    ``finalize`` sheds a CopyOnWrite proxy by reading ``__wrapped__``; that probe
+    must not fire on a real config that happens to declare such a field.
+    """
+
+    class Weird(Fig, slots=False):
+        __wrapped__: str = (
+            "payload"  # field name collides with the proxy probe by design of this test
+        )
+
+    cfg = Weird()
+    finalized = cfg.finalize()
+    assert finalized is cfg
+    assert finalized.__wrapped__ == "payload"
+    assert getattr(cfg, "_finalized", False) is True
 
 
 if __name__ == "__main__":
