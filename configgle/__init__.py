@@ -71,25 +71,29 @@ for Python's lack of Intersection types.
 Maker -- Core Methods
 ---------------------
 
-``Fig`` inherits from ``Maker``, which provides three methods:
+``Fig`` inherits from ``Maker``. The lifecycle is construct -> finalize ->
+make:
 
-- ``.make()`` -- finalize the config, then call ``parent_class(config)``
-  to build the object.
-- ``.finalize()`` -- shallow-copy and recursively finalize nested configs.
-  Override this to compute derived defaults (see below).
+- ``.make()`` -- ``copy_tree().finalize()`` then call ``parent_class(config)``
+  to build the object. The source config you pass is never mutated.
+- ``.finalize()`` -- apply derived defaults IN PLACE and recursively finalize
+  nested configs; returns ``self``. Override this to compute derived defaults
+  (see below). It does NOT copy.
+- ``.copy_tree()`` -- a "semi-deep" copy: nested configs and mutable containers
+  holding configs are duplicated; leaf values (primitives, tensors, loggers)
+  are aliased; immutable containers are preserved unless an element changed.
+  This is the copy ``make``/``pprint`` apply before finalizing, so the original
+  stays pristine.
 - ``.update(source, **kwargs)`` -- merge attributes from another config or
-  kwargs for config composition. Returns ``self`` for chaining.
+  kwargs in place, for composition. Returns ``self`` for chaining. ``update``
+  only assigns; it computes nothing derived (run ``finalize`` afterward).
 
 Overriding finalize()
 ---------------------
 
-Override ``finalize()`` to compute derived defaults. The contract:
-
-1. Call ``super().finalize()`` first. This shallow-copies the config and
-   recursively finalizes all nested ``Finalizeable`` attributes (configs
-   inside lists, dicts, dataclass fields, etc.).
-2. The returned object is a copy -- mutate it freely.
-3. Return the mutated copy.
+Override ``finalize()`` to compute derived defaults. The contract: mutate
+``self`` (and any nested child configs) FIRST, then ``return
+super().finalize()`` LAST.
 
 ::
 
@@ -102,21 +106,21 @@ Override ``finalize()`` to compute derived defaults. The contract:
 
             @override
             def finalize(self) -> Self:
-                self = super().finalize()
-                # Nested Finalizeable configs are already copies (each
-                # was finalized via its own finalize() → copy.copy),
-                # so mutating them here is safe.
+                # Set own derived fields and inject into children HERE,
+                # before the super call cascades into them.
                 if self.topping is not None:
                     self.topping.portion = "double"
-                return self
+                return super().finalize()
 
-If the nested config's own ``finalize()`` computes derived defaults
-that depend on the changed field, re-finalize after mutation::
+``super().finalize()`` cascades into the nested configs and marks them
+finalized, so any value you inject into a child must be set BEFORE the super
+call -- otherwise the child finalizes against the stale default. Always call
+super LAST, never first.
 
-                    self.topping = self.topping.finalize()
-
-The base ``finalize()`` skips anything already finalized
-(``_finalized=True``).
+``finalize`` mutates in place, but the copy that protects the original happens
+once at the ``make``/``pprint`` boundary (``copy_tree().finalize()``), so a
+config handed to ``make()`` is left untouched. The base ``finalize()`` skips
+anything already finalized (``_finalized=True``).
 
 Positional Fields (kw_only=False)
 ---------------------------------
@@ -197,39 +201,6 @@ forwards the base class's required args through ``super()``::
         def __init__(self, config: Config):
             super().__init__(config=config, text=config.text)
 
-CopyOnWrite
------------
-
-``CopyOnWrite`` is a ``wrapt.ObjectProxy``-based proxy for safe
-counterfactual mutation. It wraps a config tree and lazily copies
-objects only when (and where) mutations actually occur, propagating
-copies upward to parents. The original tree is never modified.
-
-The typical use case is inside a ``finalize()`` override where you need
-to tweak a nested config without manually ``copy.copy``-ing every node
-on the path::
-
-    class Bakery:
-        class Config(Fig["Bakery"]):
-            cake: Cake.Config = field(default_factory=Cake.Config)
-            num_ovens: int = 2
-
-            @override
-            def finalize(self) -> Self:
-                self = super().finalize()
-                with CopyOnWrite(self) as cow:
-                    cow.cake.layers = self.num_ovens * 2
-                return cow.unwrap
-
-    # The original Cake.Config default is never modified.
-
-Without ``CopyOnWrite``, the equivalent requires ``copy.copy`` at each
-level of nesting. Nested attribute access returns child wrappers, so
-``cow.a.b.c = 1`` lazily copies ``c``, ``b``, ``a``, and the root --
-but only on first mutation. Subsequent writes to already-copied objects
-are free. On context manager exit, any copied configs are automatically
-finalized.
-
 Other Components
 ----------------
 
@@ -269,8 +240,9 @@ Design Highlights
   and descriptor tricks give type checkers accurate ``.make()`` return types.
 - **Composition** -- Configs nest naturally; ``finalize()`` recursively
   walks the tree.
-- **Immutability-friendly** -- ``finalize()`` returns copies;
-  ``CopyOnWrite`` enables mutation without touching originals.
+- **Predictable copying** -- ``finalize()`` mutates in place; the copy that
+  protects the original happens once at the ``make``/``pprint`` boundary via
+  ``copy_tree()``.
 - **Pickle/cloudpickle compatible** -- Parent class binding uses
   ``MethodType`` to avoid reference cycles during serialization.
 
