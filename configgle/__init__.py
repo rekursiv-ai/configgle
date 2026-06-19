@@ -88,12 +88,26 @@ make:
   kwargs in place, for composition. Returns ``self`` for chaining. ``update``
   only assigns; it computes nothing derived (run ``finalize`` afterward).
 
-Overriding finalize()
----------------------
+Overriding finalize() -- pre / super / post
+--------------------------------------------
 
-Override ``finalize()`` to compute derived defaults. The contract: mutate
-``self`` (and any nested child configs) FIRST, then ``return
-super().finalize()`` LAST.
+Override ``finalize()`` to compute derived defaults. ``super().finalize()`` is
+the seam that cascades into the nested child configs, so the call splits the
+method into two phases::
+
+    @override
+    def finalize(self) -> Self:
+        # PRE  (runs BEFORE children finalize):
+        #   push values DOWN into children, set own derived fields.
+        self = super().finalize()   # cascade: children finalize here
+        # POST (runs AFTER children finalize):
+        #   derive values UP from the now-finalized children.
+        return self
+
+Put a value you INJECT into a child before ``super()`` (so the child finalizes
+with it); put a value you DERIVE from a child after ``super()`` (so you read its
+finalized result). Pushdown is by far the common case, so ``super()`` is usually
+last -- but it is NOT required to be; the pull-up phase legitimately follows it.
 
 ::
 
@@ -106,21 +120,14 @@ super().finalize()`` LAST.
 
             @override
             def finalize(self) -> Self:
-                # Set own derived fields and inject into children HERE,
-                # before the super call cascades into them.
                 if self.topping is not None:
-                    self.topping.portion = "double"
+                    self.topping.portion = "double"  # pushdown (pre)
                 return super().finalize()
 
-``super().finalize()`` cascades into the nested configs and marks them
-finalized, so any value you inject into a child must be set BEFORE the super
-call -- otherwise the child finalizes against the stale default. Always call
-super LAST, never first.
-
-``finalize`` mutates in place, but the copy that protects the original happens
-once at the ``make``/``pprint`` boundary (``copy_tree().finalize()``), so a
-config handed to ``make()`` is left untouched. The base ``finalize()`` skips
-anything already finalized (``_finalized=True``).
+``finalize`` mutates in place; the copy that protects the original happens once
+at the ``make``/``pprint`` boundary (``copy_tree().finalize()``), so a config is
+finalized exactly once, on a fresh tree -- there is never a re-finalize. A
+config passed to ``make()`` is left untouched.
 
 Positional Fields (kw_only=False)
 ---------------------------------

@@ -12,6 +12,7 @@ import re
 import warnings
 
 from configgle.custom_types import Finalizeable
+from configgle.walk import copy_tree
 
 
 __all__ = [
@@ -238,10 +239,6 @@ class FigPrinter(_PrettyPrinter):
             and isinstance(obj, Finalizeable)
             and not getattr(obj, "_finalized", False)
         ):
-            # Local import: fig.py imports this module, so a top-level import
-            # would cycle; copy_tree is only needed on this rare display path.
-            from configgle.fig import copy_tree  # noqa: PLC0415
-
             try:
                 obj = copy_tree(obj).finalize()
             except Exception as e:  # noqa: BLE001

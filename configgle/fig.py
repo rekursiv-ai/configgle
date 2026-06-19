@@ -36,30 +36,30 @@ Key operations
 - ``update(cfg, source, **kwargs)`` -- in-place attribute overrides from a
   source object and/or keywords (kwargs win); returns the config for chaining.
 
-Writing a ``finalize`` override
--------------------------------
-Mutate ``self`` (and any nested child configs) FIRST, then call
-``super().finalize()`` LAST::
+Writing a ``finalize`` override -- pre / super / post
+-----------------------------------------------------
+``super().finalize()`` cascades into the children, so it splits the method into
+a PRE phase (before children finalize -- push values down) and a POST phase
+(after -- derive values up)::
 
     @override
     def finalize(self) -> Self:
         if self.channels_in == -1:
-            self.channels_in = self.channels_out  # own derived field
-        self.norm.channels_in = self.channels_in  # inject into a child
-        return super().finalize()
+            self.channels_in = self.channels_out  # own derived field (pre)
+        self.norm.channels_in = self.channels_in  # inject into a child (pre)
+        self = super().finalize()                 # children finalize here
+        self.out_dim = self.norm.out_dim          # derive from a child (post)
+        return self
 
-``super().finalize()`` cascades into the children and marks them finalized, so
-any value you inject into a child must be set BEFORE the super call -- otherwise
-the child finalizes against the stale default. Call super LAST, never first.
+Inject into a child BEFORE the super call (the child finalizes with it); derive
+from a child AFTER it (read its finalized value). Pushdown dominates, so
+``super()`` is usually last -- but it need not be.
 """
 
 from __future__ import annotations
 
 from collections.abc import (
     Iterator,
-    Mapping,
-    Sequence,
-    Set as AbstractSet,
 )
 from types import CellType, MethodType
 from typing import (
@@ -76,7 +76,6 @@ from typing import (
 )
 from typing_extensions import TypeVar
 
-import copy
 import dataclasses
 
 
@@ -86,7 +85,6 @@ if TYPE_CHECKING:
 
 from configgle.custom_types import (
     DataclassLike,
-    Finalizeable,
     Makeable,
 )
 from configgle.pprinting import (
@@ -95,6 +93,11 @@ from configgle.pprinting import (
     pformat as _pformat,
     pprint as _pprint,
 )
+from configgle.walk import (
+    _copy_slots,
+    _finalize_value,
+    _get_object_attribute_names,
+)
 
 
 __all__ = [
@@ -102,7 +105,6 @@ __all__ = [
     "Fig",
     "Maker",
     "Makes",
-    "copy_tree",
     "make",
     "update",
 ]
@@ -219,15 +221,30 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         """
         return make(self)
 
-    def copy_tree(self) -> Self:
+    def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
         """Copy this config's tree down to leaf values.
+
+        The default implementation copies ``self`` and recurses through its
+        fields (the shared ``_copy_slots`` walk, which the free ``copy_tree``
+        also uses for plain data objects). Override to customize copy semantics
+        for a config -- the dual of overriding ``finalize`` -- and
+        thread ``visited`` through any ``super().copy_tree(visited)`` /
+        ``copy_tree(value, visited)`` calls so shared and cyclic references stay
+        consistent.
+
+        Args:
+          visited: Maps ``id(obj)`` to its copy, so a config reached twice (a
+            shared sub-config, or a cycle) yields one copy, not several. The free
+            ``copy_tree`` supplies it; callers may omit it.
 
         Returns:
           copied: A structural copy with nested configs and containers fresh and
             leaf values aliased.
 
         """
-        return copy_tree(self)
+        if visited is None:
+            visited = {}
+        return cast(Self, _copy_slots(self, visited))
 
     def finalize(self) -> Self:
         """Apply derived defaults in place and mark this config finalized.
@@ -245,11 +262,11 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         ``finalize`` runs); since the caller already copied the whole tree,
         no per-child copy is needed here.
 
-        Overriding: mutate ``self`` and any nested child configs FIRST, then
-        ``return super().finalize()`` LAST. The super call cascades into the
-        children and marks them finalized, so a value injected into a child
-        after it would be applied to an already-finalized child (stale). Always
-        call super last, never first. See the module docstring for the full
+        Overriding: ``super().finalize()`` cascades into the children, splitting
+        the override into a PRE phase (before it -- push values down / inject
+        into children) and a POST phase (after it -- derive values up from the
+        now-finalized children). Pushdown is the common case, so ``super()`` is
+        usually last, but it need not be. See the module docstring for the full
         lifecycle and an example.
 
         Returns:
@@ -269,6 +286,15 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         else:
             target = cast(Self, getattr(self, "__wrapped__", self))
 
+        # Mark finalized BEFORE the cascade. A config is normally finalized once
+        # (``make``/``pprint`` run ``copy_tree().finalize()`` on a fresh tree), so
+        # this is the only write that matters -- but ``copy_tree`` preserves the
+        # identity of a sub-config shared by two fields (a DAG), and the flag lets
+        # ``_finalize_value`` finalize that shared node exactly once. The flag
+        # also drives pprint's display (finalize=True skips marked configs).
+        # ``object.__setattr__`` bypasses frozen dataclass restrictions.
+        object.__setattr__(target, "_finalized", True)
+
         # Cascade into nested Finalizeable attrs. The caller copied the tree
         # before calling finalize, so mutation is isolated. A child finalize may
         # return a different object than it received, so the result is written
@@ -282,8 +308,6 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
             if finalized_value is not value:
                 object.__setattr__(target, name, finalized_value)
 
-        # Use object.__setattr__ to bypass frozen dataclass restrictions.
-        object.__setattr__(target, "_finalized", True)
         return target
 
     def update(
@@ -726,128 +750,6 @@ class Makes(Generic[_ParentT]):
         return _NoMroAlias()
 
 
-_SKIP_ATTRS = frozenset(("__weakref__", "__dict__", "_finalized"))
-
-
-def _get_object_attribute_names(obj: object) -> Iterator[str]:
-    """Yield attribute names, excluding __weakref__, __dict__, and _finalized."""
-    seen = set[str]()
-    if hasattr(type(obj), "__slots__"):
-        for cls in type(obj).__mro__:
-            slots = getattr(cls, "__slots__", ())
-            if isinstance(slots, str):
-                slots = (slots,)
-            for slot in slots:
-                if slot not in seen and slot not in _SKIP_ATTRS:
-                    seen.add(slot)
-                    yield slot
-    if hasattr(obj, "__dict__"):
-        for key in sorted(vars(obj)):
-            if key not in seen and key not in _SKIP_ATTRS:
-                seen.add(key)
-                yield key
-
-
-def _copy_immutable_container(value: tuple[object, ...] | frozenset[object]) -> object:
-    """Copy a tuple/frozenset, preserving it when no element changed.
-
-    An immutable container cannot be mutated in place, so it is rebuilt only to
-    carry a freshly copied (mutable) element; otherwise the original is returned.
-    The caller restores the precise type (the element type is erased at runtime).
-
-    Args:
-      value: The tuple or frozenset to copy.
-
-    Returns:
-      copied: The original when every element is unchanged, else a rebuilt
-        container holding the copied elements.
-
-    """
-    items: list[object] = list(value)
-    copied: list[object] = [copy_tree(item) for item in items]
-    if all(c is o for c, o in zip(copied, items, strict=True)):
-        return value  # nothing inside changed -- keep the immutable original
-    if isinstance(value, frozenset):
-        return frozenset(copied)
-    if type(value) is tuple:
-        return tuple(copied)
-    # Namedtuple subclass: reconstructed by positional unpacking. Its field types
-    # are erased at runtime, so neither checker can model ``type(value)(*copied)``.
-    return type(value)(*copied)  # ty: ignore[invalid-argument-type] -- namedtuple field types erased.  # pyright: ignore[reportArgumentType] -- namedtuple field types erased.
-
-
-def copy_tree[ValueT](value: ValueT) -> ValueT:
-    """Copy a config tree down through Figs/containers, aliasing leaf values.
-
-    Returns a copy in which every nested config (Fig, dataclass, or any object
-    with its own ``__slots__``) and every container holding such configs is
-    duplicated, while leaf values (primitives, tensors, loggers -- anything that
-    is not a data container) are shared by reference. This is the copy a config
-    needs before in-place mutation: it isolates the structure that ``finalize``
-    (or any edit) may touch, without the cost/incorrectness of deep-copying heavy
-    leaves like tensors.
-
-    The traversal mirrors ``_finalize_value``'s -- the same shapes (Figs,
-    slotted objects, lists, dicts including keys, sets, tuples) are walked, minus
-    the ``finalize`` call -- so ``finalize`` is "copy_tree then mutate". Both
-    preserve an immutable container (tuple/frozenset) whose elements are all
-    unchanged.
-
-    Args:
-      value: The config (or container/value) to copy.
-
-    Returns:
-      copied: A structural copy; nested configs/containers fresh, leaves aliased.
-
-    """
-    # Primitives and types: immutable leaves, shared as-is.
-    if isinstance(value, (type, int, float, str, bytes, bool, type(None))):
-        return value
-
-    # Immutable containers (tuple, frozenset): preserve the original unless a
-    # mutable element inside it was copied. They cannot be mutated in place, so
-    # the only reason to rebuild one is to carry a freshly copied element.
-    if isinstance(value, (tuple, frozenset)):
-        container = cast("tuple[object, ...] | frozenset[object]", value)
-        return cast("ValueT", _copy_immutable_container(container))
-
-    # Mutable containers (list, dict, set): always copy so an in-place mutation
-    # never reaches the original.
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        copied = [copy_tree(v) for v in value]
-    elif isinstance(value, Mapping):
-        copied = {
-            copy_tree(k): copy_tree(v)
-            for k, v in cast(Mapping[object, object], value).items()
-        }
-    elif isinstance(value, AbstractSet):
-        copied = {copy_tree(v) for v in cast(AbstractSet[object], value)}
-    else:
-        # Only recurse into data containers (dataclasses -- which includes every
-        # Fig -- or classes with their own ``__slots__``). Plain objects without
-        # config data (loggers, file handles, tensors) are leaves: aliased.
-        obj_type = type(value)
-        if not (
-            hasattr(obj_type, "__dataclass_fields__")
-            or "__slots__" in obj_type.__dict__
-        ):
-            return value
-
-        r = copy.copy(value)
-        for name in _get_object_attribute_names(r):
-            try:
-                attr_value = getattr(r, name)
-            except AttributeError:
-                # Declared-but-unset slot: nothing to copy.
-                continue
-            copied_attr = copy_tree(attr_value)
-            if copied_attr is not attr_value:
-                object.__setattr__(r, name, copied_attr)
-        return r
-
-    return type(value)(copied)  # pyright: ignore[reportCallIssue,reportUnknownArgumentType,reportUnknownVariableType] -- reconstruct the original container type from the copied items; the element type is erased at runtime.
-
-
 def make[ParentT](config: Maker[ParentT]) -> ParentT:
     """Finalize a config and instantiate its parent class.
 
@@ -916,75 +818,3 @@ def update[MakerT: Maker[Any]](
         setattr(config, key, value)
 
     return config
-
-
-def _finalize_value[ValueT](value: ValueT) -> ValueT:
-    """Finalize nested Fig instances, recursing through containers and objects.
-
-    Visits every nested ``Finalizeable`` reachable through sequences, mappings,
-    and data objects (dataclasses or classes with their own ``__slots__``) and
-    finalizes it. The whole tree was already duplicated by ``copy_tree`` before
-    ``finalize`` ran, so the work here is isolated from the caller's original.
-
-    A child ``finalize`` may return a *different* object than it received, so the
-    returned value is threaded back: containers are rebuilt and object attrs are
-    reassigned when an element changed identity.
-
-    Args:
-      value: Value to finalize recursively.
-
-    Returns:
-      finalized_value: The finalized value (a new object when a nested finalize
-        produced one, else the same value mutated in place).
-
-    """
-    if isinstance(value, Finalizeable) and not getattr(value, "_finalized", False):
-        return value.finalize()
-
-    # Classes, types, and primitives never need finalization.
-    if isinstance(value, (type, int, float, str, bytes, bool, type(None))):
-        return value
-
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        finalized_items: list[object] = [_finalize_value(v) for v in value]
-        if isinstance(value, tuple):
-            # Preserve the original tuple/namedtuple when no element changed
-            # identity (an in-place finalize); rebuild only to carry a replaced
-            # element. Matches ``_copy_immutable_container``.
-            if all(f is o for f, o in zip(finalized_items, value, strict=True)):
-                return value
-            if type(value) is tuple:
-                return tuple(finalized_items)  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type] -- ValueT is a tuple here, but the checkers cannot prove the reconstructed tuple matches ValueT.
-            return type(value)(*finalized_items)  # pyright: ignore[reportArgumentType] -- namedtuple reconstruction: positional args are the finalized fields, untypeable generically.
-        finalized = finalized_items
-    elif isinstance(value, Mapping):
-        finalized = {
-            _finalize_value(k): _finalize_value(v)
-            for k, v in cast(Mapping[object, object], value).items()
-        }
-    elif isinstance(value, AbstractSet):
-        # An ``eq=False`` Fig is hashable and can be a set member, so its
-        # elements are finalized and the set is rebuilt. (A default ``eq=True``
-        # Fig is unhashable and cannot appear here.)
-        finalized = {_finalize_value(v) for v in cast(AbstractSet[object], value)}
-    else:
-        # Only recurse into data containers (dataclasses or classes with their
-        # own __slots__). Skip plain objects like loggers, file handles, etc.
-        obj_type = type(value)
-        if not (
-            hasattr(obj_type, "__dataclass_fields__")
-            or "__slots__" in obj_type.__dict__
-        ):
-            return value
-        for name in _get_object_attribute_names(value):
-            try:
-                attr_value = getattr(value, name)
-            except AttributeError:
-                continue
-            finalized_attr = _finalize_value(attr_value)
-            if finalized_attr is not attr_value:
-                object.__setattr__(value, name, finalized_attr)
-        return value
-
-    # Reconstruct the container with the finalized items.
-    return type(value)(finalized)  # pyright: ignore[reportCallIssue,reportUnknownArgumentType,reportUnknownVariableType] -- reconstruct the original container type from the finalized items; the element type is erased at runtime.

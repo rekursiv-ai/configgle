@@ -8,6 +8,7 @@ from typing import (
     Any,
     Protocol,
     Self,
+    cast,
     override,
     runtime_checkable,
 )
@@ -18,7 +19,7 @@ import functools
 import reprlib
 
 from configgle.custom_types import Finalizeable
-from configgle.fig import copy_tree
+from configgle.walk import copy_tree
 
 
 if TYPE_CHECKING:
@@ -95,11 +96,23 @@ class InlineConfig[T]:
         }
         return r.func(*args, **kwargs)
 
-    def copy_tree(self) -> Self:
-        """Copy this config tree down to leaf values (args/kwargs duplicated)."""
+    def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
+        """Copy this config tree down to leaf values (args/kwargs duplicated).
+
+        Args:
+          visited: Shared ``id(obj) -> copy`` map so shared/cyclic references
+            stay consistent; supplied by the free ``copy_tree`` during recursion.
+
+        """
+        if visited is None:
+            visited = {}
+        cached = visited.get(id(self))
+        if cached is not None:
+            return cast(Self, cached)
         r = copy.copy(self)
-        r._args = [copy_tree(v) for v in r._args]  # noqa: SLF001
-        r._kwargs = {k: copy_tree(v) for k, v in r._kwargs.items()}  # noqa: SLF001
+        visited[id(self)] = r
+        r._args = [copy_tree(v, visited) for v in r._args]  # noqa: SLF001
+        r._kwargs = {k: copy_tree(v, visited) for k, v in r._kwargs.items()}  # noqa: SLF001
         return r
 
     def finalize(self) -> Self:
