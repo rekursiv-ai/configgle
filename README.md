@@ -78,7 +78,7 @@ Unfortunately neither is perfect:
 | Inheritance infers parent type | ✅ | ❌ |
 | Explicit `Makes["Child"]` narrows inferred inherited parent type | ✅ | ✅ |
 | Inherited Config child fields | ✅ (workaround for [#3282](https://github.com/astral-sh/ty/issues/3282)) | ✅ |
-| `@autofig` `.Config` access | ❌ ([#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
+| `@autofig` `.Config` access | ✅ (fixed [#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
 
 **Details:**
 
@@ -119,10 +119,10 @@ works without typecheck suppressions).
 
 `ty` gets full inference from `Intersection` -- bare `Fig` and inherited
 configs just work. `basedpyright` doesn't support `Intersection` yet, so it
-needs explicit `Fig["Parent"]` and `Makes["Child"]` annotations. `ty` doesn't
-yet support class decorator return types, so `@autofig`-decorated classes need
-`# ty: ignore[unresolved-attribute]` to access `.Config`; `basedpyright`
-handles this correctly. When `Intersection` lands in the
+needs explicit `Fig["Parent"]` and `Makes["Child"]` annotations. `ty`
+honors class decorator return types ([#143](https://github.com/astral-sh/ty/issues/143),
+fixed in 0.0.49), so `@autofig`-decorated classes resolve `.Config` with no
+suppression on both checkers. When `Intersection` lands in the
 [type spec](https://github.com/python/typing/issues/213), `Makes` becomes
 unnecessary and both checkers will infer everything from bare `Fig`.
 
