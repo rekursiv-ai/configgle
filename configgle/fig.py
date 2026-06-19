@@ -49,6 +49,9 @@ __all__ = [
     "Fig",
     "Maker",
     "Makes",
+    "copy_tree",
+    "make",
+    "update",
 ]
 
 
@@ -70,7 +73,7 @@ class _MakerParentClassDescriptor:
         obj: Makeable[_ParentT] | None,
         owner: type[Makeable[_ParentT]],
     ) -> type[_ParentT]:
-        return owner._parent_class()  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType]
+        return owner._parent_class()  # noqa: SLF001 -- reads the metaclass-bound parent reference; deliberate internal access  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType] -- _parent_class is bound dynamically by MakerMeta.__set_name__, invisible to the checker.
 
 
 class MakerMeta(type):
@@ -110,7 +113,7 @@ class MakerMeta(type):
         def _returns_owner(_: MakerMeta) -> type[_ParentT]:
             return owner
 
-        cls._parent_class = MethodType(_returns_owner, cls)  # ty: ignore[invalid-assignment]
+        cls._parent_class = MethodType(_returns_owner, cls)  # ty: ignore[invalid-assignment] -- assigning a bound MethodType over the declared classmethod stub; intentional dynamic binding.
         # __set_name__ is only called when nested inside a class, so owner
         # is always a real class with __name__.
         cls.__name__ = f"{owner.__name__}.{name}"
@@ -152,28 +155,26 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         self._finalized = False
 
     def make(self) -> _ParentT:
-        """Finalize config and instantiate the parent class.
+        """Finalize this config and instantiate its parent class.
 
         Returns:
           instance: Instance of the parent class.
 
         Raises:
-          ValueError: If not nested in a parent class.
+          ValueError: If the config is not nested in a parent class.
 
         """
-        config = self.finalize()
-        cls = config.parent_class
-        if cls is None:  # pyright: ignore[reportUnnecessaryComparison]
-            raise ValueError("Maker must be nested in a parent class")
-        if getattr(type(config), "make_with_kwargs", False):
-            kwargs = {
-                f.name: getattr(config, f.name)
-                for f in dataclasses.fields(
-                    cast(DataclassLike, cast(object, config)),
-                )
-            }
-            return cls(**kwargs)
-        return cls(config)  # pyright: ignore[reportCallIssue]
+        return make(self)
+
+    def copy_tree(self) -> Self:
+        """Copy this config's tree down to leaf values.
+
+        Returns:
+          copied: A structural copy with nested configs and containers fresh and
+            leaf values aliased.
+
+        """
+        return copy_tree(self)
 
     def finalize(self) -> Self:
         """Create a finalized copy with derived defaults applied.
@@ -221,43 +222,18 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         skip_missing: bool = False,
         **kwargs: Any,
     ) -> Self:
-        """Update config attributes from source and/or kwargs.
+        """Update this config's attributes from a source and/or keyword overrides.
 
         Args:
-          source: Optional source object to copy attributes from.
-          skip_missing: If True, skip kwargs keys that don't exist as attributes.
-          **kwargs: Additional attribute overrides (use **mapping to pass a dict).
+          source: Optional object whose attributes are copied onto this config.
+          skip_missing: Skip keys that are not declared attributes of this config.
+          **kwargs: Attribute overrides; take precedence over ``source``.
 
         Returns:
-          self: Updated instance for method chaining.
+          self: This config, updated, for method chaining.
 
         """
-        # Build valid_keys set if needed for skip_missing
-        valid_keys: set[str] | None = None
-        if skip_missing:
-            valid_keys = set(_get_object_attribute_names(self))
-
-        # Apply source attributes (kwargs take precedence)
-        if source is not None:
-            for name in _get_object_attribute_names(source):
-                # Skip if already in kwargs (kwargs override source)
-                if name in kwargs:
-                    continue
-                # Skip if not a valid key
-                if valid_keys is not None and name not in valid_keys:
-                    continue
-                try:
-                    setattr(self, name, getattr(source, name))
-                except AttributeError:
-                    continue
-
-        # Apply kwargs
-        for k, v in kwargs.items():
-            if valid_keys is not None and k not in valid_keys:
-                continue
-            setattr(self, k, v)
-
-        return self
+        return update(self, source, skip_missing=skip_missing, **kwargs)
 
     def pformat(
         self,
@@ -542,7 +518,7 @@ class _DataclassMeta(type):
                 dict[str, object],
                 attrs.get("__annotations__", {}),
             )
-            for field in dataclasses.fields(cls):  # pyright: ignore[reportArgumentType]
+            for field in dataclasses.fields(cls):  # pyright: ignore[reportArgumentType] -- cls is a dataclass at this point (just decorated above), but the checker sees the pre-decoration type.
                 if field.name not in current_annotations:
                     continue
                 if (
@@ -691,6 +667,170 @@ def _get_object_attribute_names(obj: object) -> Iterator[str]:
                 yield key
 
 
+def _copy_immutable_container(value: tuple[object, ...] | frozenset[object]) -> object:
+    """Copy a tuple/frozenset, preserving it when no element changed.
+
+    An immutable container cannot be mutated in place, so it is rebuilt only to
+    carry a freshly copied (mutable) element; otherwise the original is returned.
+    The caller restores the precise type (the element type is erased at runtime).
+
+    Args:
+      value: The tuple or frozenset to copy.
+
+    Returns:
+      copied: The original when every element is unchanged, else a rebuilt
+        container holding the copied elements.
+
+    """
+    items: list[object] = list(value)
+    copied: list[object] = [copy_tree(item) for item in items]
+    if all(c is o for c, o in zip(copied, items, strict=True)):
+        return value  # nothing inside changed -- keep the immutable original
+    if isinstance(value, frozenset):
+        return frozenset(copied)
+    if type(value) is tuple:
+        return tuple(copied)
+    # Namedtuple subclass: reconstructed by positional unpacking. Its field types
+    # are erased at runtime, so neither checker can model ``type(value)(*copied)``.
+    return type(value)(*copied)  # ty: ignore[invalid-argument-type] -- namedtuple field types erased.  # pyright: ignore[reportArgumentType] -- namedtuple field types erased.
+
+
+def copy_tree[ValueT](value: ValueT) -> ValueT:
+    """Copy a config tree down through Figs/containers, aliasing leaf values.
+
+    Returns a copy in which every nested config (Fig, dataclass, or any object
+    with its own ``__slots__``) and every container holding such configs is
+    duplicated, while leaf values (primitives, tensors, loggers -- anything that
+    is not a data container) are shared by reference. This is the copy a config
+    needs before in-place mutation: it isolates the structure that ``finalize``
+    (or any edit) may touch, without the cost/incorrectness of deep-copying heavy
+    leaves like tensors.
+
+    The boundary mirrors ``_finalize_value``'s traversal exactly, minus the
+    ``finalize`` call -- so ``finalize`` is "copy_tree then mutate".
+
+    Args:
+      value: The config (or container/value) to copy.
+
+    Returns:
+      copied: A structural copy; nested configs/containers fresh, leaves aliased.
+
+    """
+    # Primitives and types: immutable leaves, shared as-is.
+    if isinstance(value, (type, int, float, str, bytes, bool, type(None))):
+        return value
+
+    # Immutable containers (tuple, frozenset): preserve the original unless a
+    # mutable element inside it was copied. They cannot be mutated in place, so
+    # the only reason to rebuild one is to carry a freshly copied element.
+    if isinstance(value, (tuple, frozenset)):
+        container = cast("tuple[object, ...] | frozenset[object]", value)
+        return cast("ValueT", _copy_immutable_container(container))
+
+    # Mutable containers (list, dict, set): always copy so an in-place mutation
+    # never reaches the original.
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        copied = [copy_tree(v) for v in value]
+    elif isinstance(value, Mapping):
+        copied = {k: copy_tree(v) for k, v in cast(Mapping[str, object], value).items()}
+    elif isinstance(value, AbstractSet):
+        copied = {copy_tree(v) for v in cast(AbstractSet[object], value)}
+    else:
+        # Only recurse into data containers (dataclasses -- which includes every
+        # Fig -- or classes with their own ``__slots__``). Plain objects without
+        # config data (loggers, file handles, tensors) are leaves: aliased.
+        obj_type = type(value)
+        if not (
+            hasattr(obj_type, "__dataclass_fields__")
+            or "__slots__" in obj_type.__dict__
+        ):
+            return value
+
+        r = copy.copy(value)
+        for name in _get_object_attribute_names(r):
+            try:
+                attr_value = getattr(r, name)
+            except AttributeError:
+                # Declared-but-unset slot: nothing to copy.
+                continue
+            copied_attr = copy_tree(attr_value)
+            if copied_attr is not attr_value:
+                object.__setattr__(r, name, copied_attr)
+        return r
+
+    return type(value)(copied)  # pyright: ignore[reportCallIssue,reportUnknownArgumentType,reportUnknownVariableType] -- reconstruct the original container type from the copied items; the element type is erased at runtime.
+
+
+def make[ParentT](config: Maker[ParentT]) -> ParentT:
+    """Finalize a config and instantiate its parent class.
+
+    Args:
+      config: The config to finalize and build.
+
+    Returns:
+      instance: An instance of the config's parent class.
+
+    Raises:
+      ValueError: If the config is not nested in a parent class.
+
+    """
+    finalized = config.finalize()
+    cls = finalized.parent_class
+    if cls is None:  # pyright: ignore[reportUnnecessaryComparison] -- parent_class is non-None per its annotation, but a Maker not nested in a class has none at runtime; the guard is a real runtime check.
+        raise ValueError("Maker must be nested in a parent class")
+    if getattr(type(finalized), "make_with_kwargs", False):
+        kwargs = {
+            f.name: getattr(finalized, f.name)
+            for f in dataclasses.fields(cast(DataclassLike, cast(object, finalized)))
+        }
+        return cls(**kwargs)
+    return cls(finalized)  # pyright: ignore[reportCallIssue] -- the parent class accepts its own Config; the checker cannot link parent_class back to that constructor signature.
+
+
+def update[MakerT: Maker[Any]](
+    config: MakerT,
+    source: DataclassLike | Makeable[object] | None = None,
+    *,
+    skip_missing: bool = False,
+    **kwargs: Any,
+) -> MakerT:
+    """Update a config's attributes in place from a source and/or overrides.
+
+    Args:
+      config: The config to mutate.
+      source: Optional object whose attributes are copied onto ``config``.
+      skip_missing: Skip keys that are not declared attributes of ``config``.
+      **kwargs: Attribute overrides; take precedence over ``source``.
+
+    Returns:
+      config: The same config, updated, for method chaining.
+
+    """
+    valid_keys: set[str] | None = None
+    if skip_missing:
+        valid_keys = set(_get_object_attribute_names(config))
+
+    # Apply source attributes (kwargs take precedence).
+    if source is not None:
+        for name in _get_object_attribute_names(source):
+            if name in kwargs:
+                continue
+            if valid_keys is not None and name not in valid_keys:
+                continue
+            try:
+                setattr(config, name, getattr(source, name))
+            except AttributeError:
+                continue
+
+    # Apply kwargs.
+    for key, value in kwargs.items():
+        if valid_keys is not None and key not in valid_keys:
+            continue
+        setattr(config, key, value)
+
+    return config
+
+
 def _finalize_value[ValueT](value: ValueT) -> ValueT:
     """Recursively finalize nested Fig instances, preserving container types.
 
@@ -715,9 +855,9 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
         finalized_items: list[object] = [_finalize_value(v) for v in value]
         if isinstance(value, tuple):
             if type(value) is tuple:
-                return tuple(finalized_items)  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+                return tuple(finalized_items)  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type] -- ValueT is a tuple here, but the checkers cannot prove the reconstructed tuple matches ValueT.
             # Namedtuple needs unpacking
-            return type(value)(*finalized_items)  # pyright: ignore[reportArgumentType]
+            return type(value)(*finalized_items)  # pyright: ignore[reportArgumentType] -- namedtuple reconstruction: positional args are the finalized fields, untypeable generically.
         finalized = finalized_items
     elif isinstance(value, Mapping):
         # Mapping key type is unknown at runtime
@@ -750,4 +890,4 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
         return r
 
     # Reconstruct container with finalized items
-    return type(value)(finalized)  # pyright: ignore[reportCallIssue,reportUnknownArgumentType,reportUnknownVariableType]
+    return type(value)(finalized)  # pyright: ignore[reportCallIssue,reportUnknownArgumentType,reportUnknownVariableType] -- reconstruct the original container type from the finalized items; the element type is erased at runtime.
