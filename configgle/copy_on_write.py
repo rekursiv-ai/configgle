@@ -32,6 +32,11 @@ import wrapt
 
 __all__ = ["CopyOnWrite"]
 
+# Immutable leaf types returned raw (not proxied) by ``__getattr__``: they cannot
+# be copy-on-write-mutated and must not leak a wrapper into a config built from a
+# read (``Child.Config(c=self.x)``).
+_LEAF_TYPES = (int, float, str, bytes, bool, type(None))
+
 # We use Any for parent/children because:
 # 1. They hold CopyOnWrite wrappers of heterogeneous types (Config, int, list, etc.)
 # 2. We need to call methods like ._copy() on them (object doesn't have these)
@@ -117,10 +122,27 @@ class CopyOnWrite[T](wrapt.ObjectProxy[T]):
     # Context manager
     # -------------------------------------------------------------------------
 
-    @override
-    def __enter__(self) -> Self:
-        """Enter context manager."""
-        return self
+    if TYPE_CHECKING:
+
+        @override
+        def __enter__(self) -> T:
+            """Bind the wrapped type ``T`` to the ``as`` target (type-level only).
+
+            At runtime ``__enter__`` returns ``self`` -- the proxy -- so writes
+            inside the block are intercepted (copy-on-write). To the type checker
+            it returns ``T`` (the wrapped object), so ``with CopyOnWrite(cfg) as
+            cfg:`` types ``cfg`` as the real object with its real field types (not
+            ``CopyOnWrite[Any]``) -- field reads/writes need no casts. The proxy
+            forwards every operation to the wrapped object, so the fiction is
+            sound; ``__copy__`` unwraps when something copies the proxy.
+            """
+            ...
+
+    else:
+
+        @override
+        def __enter__(self):
+            return self
 
     @override
     def __exit__(
@@ -129,20 +151,31 @@ class CopyOnWrite[T](wrapt.ObjectProxy[T]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
-        """Exit context manager, calling finalize on wrapped objects."""
+        """Exit context manager, finalizing copied children (never the root)."""
+        # Propagate a body exception untouched: skip all finalization so the
+        # original error surfaces, rather than being masked by a child finalize
+        # that then raises on a half-built object.
+        if exc_type is not None:
+            return None
+
         # Exit children first (depth-first)
         for child in self._self_children.values():
             child.__exit__(exc_type, exc_value, traceback)
 
-        # Call finalize if present and not already finalized. For children
-        # (objects with parents), only finalize if a copy was made — otherwise
-        # read-only access would finalize and mutate the original parent.
+        # Finalize copied *children* only, re-pointing each parent at the result.
+        #   - ``_self_parents``: the root (the object passed to
+        #     ``CopyOnWrite(self)``) is never finalized here. Finalizing it would
+        #     re-enter the very ``finalize`` that opened the proxy and recurse.
+        #     The caller owns the root's finalize.
+        #   - ``_self_is_copy``: a read-only child stays the shared original
+        #     (finalizing it would mutate the original).
         finalize_fn = getattr(self.__wrapped__, "finalize", None)
         if (
-            not self._self_is_finalized
+            self._self_parents
+            and self._self_is_copy
+            and not self._self_is_finalized
             and not getattr(self.__wrapped__, "_finalized", False)
             and callable(finalize_fn)
-            and (self._self_is_copy or not self._self_parents)
         ):
             finalized = finalize_fn()
             # Update parent references to point to finalized value
@@ -169,10 +202,19 @@ class CopyOnWrite[T](wrapt.ObjectProxy[T]):
         if self._self_debug:
             print(f"  get : {type(self.__wrapped__).__name__}.{name}")
 
+        actual = getattr(self.__wrapped__, name)
+        # Return immutable leaf values raw -- not wrapped. A leaf cannot be
+        # copy-on-write-mutated (``cow.x.y = 1`` is meaningless for an int), and
+        # returning a proxy here leaks it: ``Child.Config(c=self.x)`` would store
+        # the wrapper, not the value. Everything else (Figs, containers, unknown
+        # objects that might contain a Fig) stays proxied so deep mutation stays
+        # isolated.
+        if isinstance(actual, _LEAF_TYPES):
+            return actual  # pyright: ignore[reportReturnType] -- leaves return raw, not a proxy
+
         # Return cached child wrapper or create new one
         child: CopyOnWrite[Any] | None = self._self_children.get(name)
         if child is None:
-            actual = getattr(self.__wrapped__, name)
             child = CopyOnWrite(actual, parent=self, key=name, debug=self._self_debug)
             self._self_children[name] = child
         return child
@@ -328,6 +370,29 @@ class CopyOnWrite[T](wrapt.ObjectProxy[T]):
 
         """
         return self.__wrapped__
+
+    @override
+    def __copy__(self) -> T:
+        """Shallow-copy the *wrapped* object, returning it unwrapped.
+
+        ``Maker.finalize`` opens with ``copy.copy(self)``; wrapt's proxy rejects
+        a bare ``copy.copy`` (``object proxy must define __copy__``). Returning
+        the unwrapped copy keeps the finalize chain on a real config (never the
+        proxy) -- so ``with CopyOnWrite(self) as self: ...; return
+        super().finalize()`` needs no manual unwrap. The proxy is scaffolding for
+        deciding when to copy; once a copy is made it is shed.
+        """
+        return copy.copy(self.__wrapped__)
+
+    @override
+    def __deepcopy__(self, memo: dict[int, object]) -> T:
+        """Deep-copy the *wrapped* object, returning it unwrapped.
+
+        Same rationale as ``__copy__``: a proxy read of a nested config may be
+        deep-copied by the finalize cascade; wrapt rejects ``copy.deepcopy`` on
+        the proxy. Deep-copy the wrapped value instead.
+        """
+        return copy.deepcopy(self.__wrapped__, memo)
 
     @override
     def __repr__(self) -> str:

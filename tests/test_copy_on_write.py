@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Self
+from dataclasses import field
+from typing import Self, override
 
 import copy
 import dataclasses
 
 import pytest
 
+from configgle import Fig, Makeable, Makes
 from configgle.copy_on_write import CopyOnWrite
 
 
@@ -50,7 +52,8 @@ class TestCopyOnWriteBasic:
     def test_read_without_copy(self):
         """Reading attributes should not trigger a copy."""
         original = SimpleConfig(value=42, name="test")
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+        with cow:
             _ = cow.value
             _ = cow.name
             assert cow._self_is_copy is False
@@ -61,7 +64,8 @@ class TestCopyOnWriteBasic:
     def test_write_triggers_copy(self):
         """Writing an attribute should trigger a copy."""
         original = SimpleConfig(value=42, name="test")
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+        with cow:
             cow.value = 100
             assert cow._self_is_copy is True
             assert cow.unwrap.value == 100
@@ -72,7 +76,8 @@ class TestCopyOnWriteBasic:
     def test_multiple_writes_single_copy(self):
         """Multiple writes should only copy once."""
         original = SimpleConfig(value=42, name="test")
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+        with cow:
             cow.value = 100
             cow.name = "modified"
             # Still the same copy
@@ -90,7 +95,8 @@ class TestCopyOnWriteNested:
     def test_nested_read_no_copy(self):
         """Reading nested attributes should not trigger copies."""
         original = NestedConfig(inner=SimpleConfig(value=42))
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+        with cow:
             _ = cow.inner.value
             assert cow._self_is_copy is False
 
@@ -99,7 +105,9 @@ class TestCopyOnWriteNested:
         original = NestedConfig(inner=SimpleConfig(value=42))
         original_inner = original.inner
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             cow.inner.value = 100
 
             # Both parent and child should be copied
@@ -119,7 +127,9 @@ class TestCopyOnWriteNested:
         """Writing deeply nested attribute should copy entire chain."""
         original = DeeplyNestedConfig(level1=NestedConfig(inner=SimpleConfig(value=42)))
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             cow.level1.inner.value = 100
 
             # Verify modification
@@ -135,7 +145,8 @@ class TestCopyOnWriteSequences:
     def test_list_read_no_copy(self):
         """Reading list items should not trigger copy."""
         original = NestedConfig(items=[1, 2, 3])
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+        with cow:
             _ = cow.items[0]
             assert cow._self_is_copy is False
 
@@ -143,7 +154,9 @@ class TestCopyOnWriteSequences:
         """Setting list item should trigger copy."""
         original = NestedConfig(items=[1, 2, 3])
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             items_cow = cow.items
             items_cow[0] = 100
 
@@ -157,7 +170,9 @@ class TestCopyOnWriteSequences:
         """Deleting list item should trigger copy."""
         original = NestedConfig(items=[1, 2, 3])
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             items_cow = cow.items
             del items_cow[0]
 
@@ -173,7 +188,8 @@ class TestCopyOnWriteMappings:
     def test_dict_read_no_copy(self):
         """Reading dict items should not trigger copy."""
         original = {"a": 1, "b": 2}
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+        with cow:
             _ = cow["a"]
             assert cow._self_is_copy is False
 
@@ -181,7 +197,9 @@ class TestCopyOnWriteMappings:
         """Setting dict item should trigger copy."""
         original = {"a": 1, "b": 2}
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             cow["a"] = 100
             assert cow._self_is_copy is True
             assert cow.unwrap["a"] == 100
@@ -192,7 +210,9 @@ class TestCopyOnWriteMappings:
         """Deleting dict item should trigger copy."""
         original = {"a": 1, "b": 2}
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             del cow["a"]
             assert cow._self_is_copy is True
             assert "a" not in cow.unwrap
@@ -213,7 +233,9 @@ class TestCopyOnWriteDelattr:
 
         original = Deletable()
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             del cow.x
             assert cow._self_is_copy is True
             assert not hasattr(cow.unwrap, "x")
@@ -225,8 +247,13 @@ class TestCopyOnWriteDelattr:
 class TestCopyOnWriteFinalize:
     """Test COW finalize integration."""
 
-    def test_finalize_called_on_exit(self):
-        """Finalize should be called on context exit if object has it."""
+    def test_root_is_not_finalized_on_exit(self):
+        """The wrapped root is never finalized by COW -- only copied children.
+
+        The root's finalize is the caller's responsibility. The canonical use is
+        ``CopyOnWrite(self)`` inside ``self.finalize()``; re-finalizing the root
+        on exit would re-enter that finalize and recurse.
+        """
         finalize_called = list[int]()
 
         class FinalizeTracker:
@@ -242,11 +269,9 @@ class TestCopyOnWriteFinalize:
         original = FinalizeTracker(42)
 
         with CopyOnWrite(original):
-            # No modification yet
             pass
 
-        # Finalize should have been called
-        assert 42 in finalize_called
+        assert finalize_called == []  # root left to the caller
 
     def test_finalize_not_called_twice(self):
         """Finalize should not be called if already finalized via method call."""
@@ -262,7 +287,9 @@ class TestCopyOnWriteFinalize:
 
         original = FinalizeCounter()
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             # Explicitly call finalize
             cow.finalize()
 
@@ -295,7 +322,8 @@ class TestCopyOnWriteFinalize:
                 r.inner = r.inner.finalize()
                 r._finalized = True
                 # Use CopyOnWrite inside finalize (the README pattern)
-                with CopyOnWrite(r) as cow:
+                cow = CopyOnWrite(r)
+                with cow:
                     cow.inner.value = r.scale * 10
                 return cow.unwrap
 
@@ -325,7 +353,9 @@ class TestCopyOnWriteMethodCalls:
 
         original = Counter()
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             result = cow.increment()
             assert result.unwrap == 1
             assert cow.unwrap.count == 1
@@ -359,7 +389,9 @@ class TestCopyOnWriteMultipleParents:
         container2 = Container(child=shared)
 
         # Create COW for both containers
-        with CopyOnWrite(container1) as cow1, CopyOnWrite(container2) as cow2:
+        cow1 = CopyOnWrite(container1)
+        cow2 = CopyOnWrite(container2)
+        with cow1, cow2:
             # Get shared child through cow1
             child_cow = cow1.child
 
@@ -388,7 +420,9 @@ class TestCopyOnWriteDebugMode:
         """Debug mode should print operations."""
         original = SimpleConfig(value=42)
 
-        with CopyOnWrite(original, debug=True) as cow:
+        cow = CopyOnWrite(original, debug=True)
+
+        with cow:
             _ = cow.value
             cow.value = 100
 
@@ -423,18 +457,24 @@ class TestCopyOnWriteContextManager:
         parent.child = Trackable("child")
         original_child = parent.child
 
-        with CopyOnWrite(parent) as cow:
+        cow = CopyOnWrite(parent)
+
+        with cow:
             # Access child but don't mutate
             _ = cow.child
 
-        # Root finalizes (harmless, no parent to mutate), child does not
-        assert "parent" in finalize_called
-        assert "child" not in finalize_called
+        # Neither finalizes: the child was untouched, and COW never finalizes
+        # the root (left to the caller).
+        assert finalize_called == []
         # Original child reference is unchanged
         assert parent.child is original_child
 
-    def test_exits_children_first_on_mutation(self):
-        """Children should be finalized before parent when mutations occur."""
+    def test_mutated_child_finalizes_root_does_not(self):
+        """A mutated child is finalized on exit; the root never is.
+
+        The copied child finalizes (depth-first), but COW leaves the root to the
+        caller -- so only ``child`` appears.
+        """
         exit_order = list[str]()
 
         class Trackable:
@@ -450,12 +490,13 @@ class TestCopyOnWriteContextManager:
         parent = Trackable("parent")
         parent.child = Trackable("child")
 
-        with CopyOnWrite(parent) as cow:
+        cow = CopyOnWrite(parent)
+
+        with cow:
             # Mutate the child — triggers copy of child and parent
             cow.child.value = 99
 
-        # Both should be finalized, child first (depth-first exit)
-        assert exit_order.index("child") < exit_order.index("parent")
+        assert exit_order == ["child"]
 
 
 class TestCopyOnWriteSetAttrCOWValue:
@@ -465,7 +506,9 @@ class TestCopyOnWriteSetAttrCOWValue:
         """Setting a CopyOnWrite value should unwrap and track it."""
         original = NestedConfig(inner=SimpleConfig(value=42))
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             inner_cow = cow.inner
             # Set a COW-wrapped value on another attribute
             cow.inner = inner_cow
@@ -482,7 +525,9 @@ class TestCopyOnWriteSetItemCOWValue:
         """Setting a CopyOnWrite value in a dict should unwrap it."""
         original = {"key": SimpleConfig(value=42)}
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             inner_cow = cow["key"]
             cow["key"] = inner_cow
             assert cow._self_is_copy is True
@@ -497,7 +542,9 @@ class TestCopyOnWriteDelItem:
         """Deleting an item with a cached child should clean up parent tracking."""
         original = {"a": 1, "b": 2}
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             # Access item to cache child
             _ = cow["a"]
             assert "__item_'a'" in cow._self_children
@@ -544,7 +591,9 @@ class TestCopyOnWriteCallable:
         """Calling a non-callable COW should raise TypeError."""
         original = SimpleConfig(value=42)
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             # Access 'value' (an int, not callable)
             value_cow = cow.value
             with pytest.raises(TypeError, match="not callable"):
@@ -562,7 +611,9 @@ class TestCopyOnWriteCallable:
 
         original = Finalizable()
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             cow.finalize()
             # Parent should be marked as finalized
             assert cow._self_is_finalized is True
@@ -575,7 +626,9 @@ class TestCopyOnWriteDebugExtended:
         """Debug mode should print on attribute access."""
         original = SimpleConfig(value=42)
 
-        with CopyOnWrite(original, debug=True) as cow:
+        cow = CopyOnWrite(original, debug=True)
+
+        with cow:
             _ = cow.value
 
         captured = capsys.readouterr()
@@ -585,7 +638,9 @@ class TestCopyOnWriteDebugExtended:
         """Debug mode should print when copy is skipped."""
         original = SimpleConfig(value=42)
 
-        with CopyOnWrite(original, debug=True) as cow:
+        cow = CopyOnWrite(original, debug=True)
+
+        with cow:
             cow.value = 1  # First copy
             cow.name = "x"  # Should skip (already copied)
 
@@ -601,7 +656,9 @@ class TestCopyOnWriteDebugExtended:
 
         original = Deletable()
 
-        with CopyOnWrite(original, debug=True) as cow:
+        cow = CopyOnWrite(original, debug=True)
+
+        with cow:
             del cow.x
 
         captured = capsys.readouterr()
@@ -611,7 +668,9 @@ class TestCopyOnWriteDebugExtended:
         """Debug mode should print on item access."""
         original = {"a": 1}
 
-        with CopyOnWrite(original, debug=True) as cow:
+        cow = CopyOnWrite(original, debug=True)
+
+        with cow:
             _ = cow["a"]
 
         captured = capsys.readouterr()
@@ -621,7 +680,9 @@ class TestCopyOnWriteDebugExtended:
         """Debug mode should print on item set."""
         original = {"a": 1}
 
-        with CopyOnWrite(original, debug=True) as cow:
+        cow = CopyOnWrite(original, debug=True)
+
+        with cow:
             cow["a"] = 99
 
         captured = capsys.readouterr()
@@ -631,7 +692,9 @@ class TestCopyOnWriteDebugExtended:
         """Debug mode should print on item deletion."""
         original = {"a": 1, "b": 2}
 
-        with CopyOnWrite(original, debug=True) as cow:
+        cow = CopyOnWrite(original, debug=True)
+
+        with cow:
             del cow["a"]
 
         captured = capsys.readouterr()
@@ -646,7 +709,9 @@ class TestCopyOnWriteDebugExtended:
 
         original = CallableObj()
 
-        with CopyOnWrite(original, debug=True) as cow:
+        cow = CopyOnWrite(original, debug=True)
+
+        with cow:
             cow.method()
 
         captured = capsys.readouterr()
@@ -687,7 +752,9 @@ class TestCopyOnWriteDelAttrWithChild:
         """Deleting an attribute should remove it from children cache."""
         original = NestedConfig(inner=SimpleConfig(value=42))
 
-        with CopyOnWrite(original) as cow:
+        cow = CopyOnWrite(original)
+
+        with cow:
             # Access to create child
             inner_cow = cow.inner
             assert "inner" in cow._self_children
@@ -711,6 +778,130 @@ def test_delattr_self_prefix():
     assert cow._self_custom == "test"
     del cow._self_custom
     assert not hasattr(cow, "_self_custom")
+
+
+class _Norm:
+    class Config(Fig["_Norm"]):
+        channels_in: int = -1
+
+    def __init__(self, config: Config) -> None:
+        self.channels_in = config.channels_in
+
+
+class _Base:
+    class Config(Fig["_Base"]):
+        channels: int = -1
+        norm: _Norm.Config = field(default_factory=_Norm.Config)
+
+        @override
+        def finalize(self) -> Self:
+            # Logic-bearing base finalize: injects ``channels`` into the CHILD.
+            with CopyOnWrite(self) as self:
+                self.norm.channels_in = self.channels
+            return super().finalize()
+
+    def __init__(self, config: Config) -> None:
+        self.channels = config.channels
+        self.norm = config.norm.make()
+
+
+class _Sub(_Base):
+    class Config(Makes["_Sub"], _Base.Config):
+        @override
+        def finalize(self) -> Self:
+            # Subclass wires its field, then chains the base finalize LAST -- so
+            # the base derives from the wired value.
+            with CopyOnWrite(self) as self:
+                self.channels = 64
+            return super().finalize()
+
+
+class _TrackedChild:
+    class Config(Fig["_TrackedChild"]):
+        value: int = -1
+
+        @override
+        def finalize(self) -> Self:
+            with CopyOnWrite(self) as self:
+                self.value = 7
+            return super().finalize()
+
+    def __init__(self, config: Config) -> None:
+        self.value = config.value
+
+
+class _Outer:
+    class Config(Fig["_Outer"]):
+        # A child the outer finalize never touches: it must still be finalized
+        # by the base ``Maker.finalize`` the outer chains to.
+        child: Makeable[_TrackedChild] = field(default_factory=_TrackedChild.Config)
+        knob: int = -1
+
+        @override
+        def finalize(self) -> Self:
+            with CopyOnWrite(self) as self:
+                self.knob = 5  # touch only ``knob``, never ``child``
+            return super().finalize()
+
+    def __init__(self, config: Config) -> None:
+        self.knob = config.knob
+        self.child = config.child.make()
+
+
+class TestCopyOnWriteFinalizeIdiom:
+    """The supported finalize idiom: ``with CopyOnWrite(self) as self: ...;
+    return super().finalize()`` -- typed reads, copy-on-write, child injection.
+    """
+
+    def test_chains_base_finalize_that_injects_into_child(self):
+        """A subclass chains its base finalize (super last), child injection intact.
+
+        Mirrors kimi -> causal_lm -> norm: ``_Sub.Config`` wires ``channels``; the
+        chained ``_Base.Config.finalize`` injects it into the ``norm`` child --
+        and because finalize runs on the wired object, ``norm.channels_in``
+        reflects the wired value.
+        """
+        finalized = _Sub.Config().finalize()
+        assert finalized.channels == 64
+        assert isinstance(finalized.norm, _Norm.Config)
+        assert finalized.norm.channels_in == 64
+
+    def test_chain_leaves_original_untouched_at_every_level(self):
+        """Every level's mutation lands on a copy; the original tree is unchanged.
+
+        The subclass level mutates ``channels`` and the base level mutates the
+        ``norm`` child. The original config -- and its original ``norm`` -- must
+        keep their defaults and remain distinct objects from the result.
+        """
+        original = _Sub.Config()
+        original_norm = original.norm
+        assert isinstance(original_norm, _Norm.Config)
+
+        finalized = original.finalize()
+
+        assert finalized.channels == 64
+        assert isinstance(finalized.norm, _Norm.Config)
+        assert finalized.norm.channels_in == 64
+        # Original untouched at both levels.
+        assert original.channels == -1
+        assert original_norm.channels_in == -1
+        assert original.norm is original_norm
+        # The result is a distinct copy.
+        assert finalized is not original
+        assert finalized.norm is not original_norm
+
+    def test_finalize_runs_maker_cascade_on_untouched_children(self):
+        """A COW finalize body still runs the base ``Maker.finalize`` cascade.
+
+        ``return super().finalize()`` runs the base cascade: it sets
+        ``_finalized`` and finalizes EVERY child, even ones the body never
+        touched (here ``child``, whose finalize sets ``value=7``).
+        """
+        finalized = _Outer.Config().finalize()
+        assert finalized._finalized is True
+        assert isinstance(finalized.child, _TrackedChild.Config)
+        assert finalized.child.value == 7
+        assert finalized.child._finalized is True
 
 
 if __name__ == "__main__":
