@@ -1,4 +1,57 @@
-"""Dataclass metaclasses and Maker base for the nested Config pattern."""
+"""Dataclass metaclasses and Maker base for the nested Config pattern.
+
+Configs are mutable dataclasses (``Fig``) nested in their parent class as
+``Config``; you build the parent with ``ParentClass.Config(...).make()``.
+
+Lifecycle
+---------
+A config has three phases:
+
+1. **Construct + mutate.** ``cfg = Foo.Config(); cfg.lr = 0.01``. Plain
+   attribute assignment; nothing derived yet.
+2. **Finalize.** ``cfg.finalize()`` applies derived defaults (fields computed
+   from other fields) and cascades into nested child configs. It mutates the
+   receiver IN PLACE and returns it -- it does NOT copy.
+3. **Build.** ``cfg.make()`` constructs the parent class from the finalized
+   config.
+
+The copy that keeps a source config pristine happens ONCE, at the boundary:
+``make()`` and ``pprint`` run ``config.copy_tree().finalize()``. So the source
+you hand to ``make()`` is never mutated, while ``finalize`` itself stays a pure
+in-place hook.
+
+The free functions ``make``/``copy_tree``/``update`` and the matching
+``Maker`` methods are equivalent; ``finalize`` is the one overridable hook and
+is method-only.
+
+Key operations
+--------------
+- ``copy_tree(cfg)`` -- a "semi-deep" copy: every nested config and every
+  mutable container holding configs is duplicated, while leaf values
+  (primitives, tensors, loggers) are aliased. Immutable containers
+  (tuple/frozenset) are preserved unless an element changed. This is the copy
+  ``finalize`` needs before mutating; ``make``/``pprint`` apply it for you.
+- ``finalize(cfg)`` -- apply derived defaults in place (see below).
+- ``make(cfg)`` -- ``copy_tree().finalize()`` then construct the parent.
+- ``update(cfg, source, **kwargs)`` -- in-place attribute overrides from a
+  source object and/or keywords (kwargs win); returns the config for chaining.
+
+Writing a ``finalize`` override
+-------------------------------
+Mutate ``self`` (and any nested child configs) FIRST, then call
+``super().finalize()`` LAST::
+
+    @override
+    def finalize(self) -> Self:
+        if self.channels_in == -1:
+            self.channels_in = self.channels_out  # own derived field
+        self.norm.channels_in = self.channels_in  # inject into a child
+        return super().finalize()
+
+``super().finalize()`` cascades into the children and marks them finalized, so
+any value you inject into a child must be set BEFORE the super call -- otherwise
+the child finalizes against the stale default. Call super LAST, never first.
+"""
 
 from __future__ import annotations
 
@@ -192,18 +245,23 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         ``finalize`` runs); since the caller already copied the whole tree,
         no per-child copy is needed here.
 
+        Overriding: mutate ``self`` and any nested child configs FIRST, then
+        ``return super().finalize()`` LAST. The super call cascades into the
+        children and marks them finalized, so a value injected into a child
+        after it would be applied to an already-finalized child (stale). Always
+        call super last, never first. See the module docstring for the full
+        lifecycle and an example.
+
         Returns:
           finalized: ``self``, mutated, with _finalized=True.
 
         """
-        # Shed a CopyOnWrite proxy: the ``with CopyOnWrite(self) as self`` idiom
-        # has already made the lazy copy by the time it calls
-        # ``super().finalize()``; ``__wrapped__`` is that copy. Finalize it in
-        # place and return the real config (never the proxy). This is unavoidable
-        # here: the cascade writes with ``object.__setattr__`` (to satisfy frozen
-        # configs), which bypasses the proxy's interception by design -- so the
-        # proxy cannot redirect the write itself; finalize must target the
-        # wrapped object. The probe is gated on the receiver NOT being a real
+        # Shed a transparent ``wrapt``-style proxy: if ``self`` is a proxy whose
+        # ``__wrapped__`` is the real config, finalize the wrapped object in
+        # place and return it (never the proxy). The cascade writes with
+        # ``object.__setattr__`` (to satisfy frozen configs), which bypasses a
+        # proxy's interception by design, so finalize must target the wrapped
+        # object directly. The probe is gated on the receiver NOT being a real
         # config (a dataclass): only a proxy reaches the ``__wrapped__`` branch,
         # so a config that happens to declare a ``__wrapped__`` field is safe.
         if dataclasses.is_dataclass(self):
@@ -213,8 +271,8 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
 
         # Cascade into nested Finalizeable attrs. The caller copied the tree
         # before calling finalize, so mutation is isolated. A child finalize may
-        # return a different object (e.g. the CopyOnWrite idiom returns a copy),
-        # so the result is written back onto this config.
+        # return a different object than it received, so the result is written
+        # back onto this config.
         for name in _get_object_attribute_names(target):
             try:
                 value = getattr(target, name)
@@ -235,7 +293,12 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         skip_missing: bool = False,
         **kwargs: Any,
     ) -> Self:
-        """Update this config's attributes from a source and/or keyword overrides.
+        """Update this config's attributes in place from a source and/or kwargs.
+
+        Mutates ``self`` (no copy) and returns it for chaining. Unlike
+        ``finalize``, ``update`` computes nothing derived -- it only assigns the
+        given attributes; run ``finalize`` (or ``make``) afterward to apply
+        derived defaults.
 
         Args:
           source: Optional object whose attributes are copied onto this config.
@@ -596,6 +659,11 @@ class FigMeta(_DataclassMeta, MakerMeta):
 class Fig(Maker[_ParentT], metaclass=FigMeta):
     """Dataclass with make/finalize/update for the nested Config pattern.
 
+    Build with ``ParentClass.Config(...).make()``. See the module docstring for
+    the construct -> finalize -> make lifecycle, the role of ``copy_tree``, and
+    how to write a ``finalize`` override (mutate first, ``super().finalize()``
+    last).
+
     Example:
       >>> class MyClass:
       ...     class Config(Fig):
@@ -858,8 +926,7 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
     finalizes it. The whole tree was already duplicated by ``copy_tree`` before
     ``finalize`` ran, so the work here is isolated from the caller's original.
 
-    A child ``finalize`` may return a *different* object than it received -- the
-    supported ``with CopyOnWrite(self) as self`` idiom returns a copy -- so the
+    A child ``finalize`` may return a *different* object than it received, so the
     returned value is threaded back: containers are rebuilt and object attrs are
     reassigned when an element changed identity.
 

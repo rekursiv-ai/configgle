@@ -1,5 +1,11 @@
 # ruff: noqa: T201
-"""Copy-on-write proxy for safe, efficient counterfactual mutation.
+"""DEPRECATED. Copy-on-write proxy for safe, efficient counterfactual mutation.
+
+DEPRECATED: no longer needed for the ``finalize`` contract. ``finalize`` now
+mutates in place and ``make``/``pprint`` copy the whole tree (``copy_tree``)
+before finalizing, so a ``finalize`` override mutates ``self`` directly and the
+original is still protected. Prefer ``copy_tree`` for counterfactual mutation
+too. Retained only for legacy callers.
 
 This module provides a CopyOnWrite wrapper that allows mutations to an object
 tree while preserving the original. Copies are made lazily only when mutations
@@ -47,7 +53,12 @@ if TYPE_CHECKING:
 
 
 class CopyOnWrite[T](wrapt.ObjectProxy[T]):
-    """A proxy that copies objects lazily on first mutation.
+    """DEPRECATED. A proxy that copies objects lazily on first mutation.
+
+    DEPRECATED: not needed for ``finalize`` overrides -- mutate ``self``
+    directly and ``return super().finalize()``; ``make``/``pprint`` already copy
+    the tree via ``copy_tree``. Prefer ``copy_tree`` for other counterfactual
+    mutation. Retained only for legacy callers.
 
     Wraps an object and intercepts all attribute/item mutations. When a mutation
     occurs, the object (and all its parents) are shallow-copied first, ensuring
