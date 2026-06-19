@@ -21,6 +21,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "typing_extensions",
     "wrapt",
 ]
 
