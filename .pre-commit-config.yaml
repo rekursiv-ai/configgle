@@ -95,6 +95,7 @@ repos:
         # pyproject.toml's ``[tool.ty.src]``.
         types_or: [python, pyi]
         entry: uv --quiet run --frozen --group typecheck ty check
+        # Exclusions defined in pyproject.toml.
 
   # To enable:  uv run pre-commit install --hook-type pre-push
   # To disable: uv run pre-commit uninstall --hook-type pre-push
