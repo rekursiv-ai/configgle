@@ -206,6 +206,7 @@ class InlineConfig[T]:
             pass
         object.__setattr__(self, key, value)
 
+    @override
     @reprlib.recursive_repr()
     def __repr__(self) -> str:
         return (
