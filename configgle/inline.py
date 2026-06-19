@@ -18,6 +18,7 @@ import functools
 import reprlib
 
 from configgle.custom_types import Finalizeable
+from configgle.fig import copy_tree
 
 
 if TYPE_CHECKING:
@@ -78,11 +79,14 @@ class InlineConfig[T]:
     def make(self) -> T:
         """Finalize and invoke the wrapped function.
 
+        Finalizes a copy (``copy_tree`` then in-place ``finalize``) so the
+        original config is left untouched, matching ``Maker.make``.
+
         Returns:
           result: Result of calling func(*args, **kwargs).
 
         """
-        r = self.finalize()
+        r = self.copy_tree().finalize()
         # Dynamic dispatch to make() on args that may have it
         args = [v.make() if isinstance(v, _HasMake) else v for v in r._args]  # noqa: SLF001
         kwargs = {
@@ -91,22 +95,34 @@ class InlineConfig[T]:
         }
         return r.func(*args, **kwargs)
 
+    def copy_tree(self) -> Self:
+        """Copy this config tree down to leaf values (args/kwargs duplicated)."""
+        r = copy.copy(self)
+        r._args = [copy_tree(v) for v in r._args]  # noqa: SLF001
+        r._kwargs = {k: copy_tree(v) for k, v in r._kwargs.items()}  # noqa: SLF001
+        return r
+
     def finalize(self) -> Self:
-        """Create a finalized copy with nested configs finalized.
+        """Finalize nested configs in place and mark this config finalized.
+
+        Mutates ``self`` (the copy ``make`` already isolated). Child finalize
+        may itself return a fresh object (a non-in-place implementation), so its
+        return is captured back into ``_args`` / ``_kwargs``.
 
         Returns:
-          finalized: Copy with _finalized=True and nested configs finalized.
+          finalized: ``self``, with _finalized=True and nested configs finalized.
 
         """
-        r = copy.copy(self)
-        # Dynamic dispatch to finalize() on args that may have it
-        r._args = [v.finalize() if isinstance(v, Finalizeable) else v for v in r._args]  # noqa: SLF001
-        r._kwargs = {  # noqa: SLF001
+        # Dynamic dispatch to finalize() on args that may have it.
+        self._args = [
+            v.finalize() if isinstance(v, Finalizeable) else v for v in self._args
+        ]
+        self._kwargs = {
             k: v.finalize() if isinstance(v, Finalizeable) else v
-            for k, v in r._kwargs.items()  # noqa: SLF001
+            for k, v in self._kwargs.items()
         }
-        r._finalized = True  # noqa: SLF001
-        return r
+        self._finalized = True
+        return self
 
     def update(
         self,

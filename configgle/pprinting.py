@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pprint import PrettyPrinter as _PrettyPrinter
 from typing import IO, Protocol, TypeVar, override
 
-import copy
 import dataclasses
 import io
 import re
@@ -228,19 +227,23 @@ class FigPrinter(_PrettyPrinter):
         return repr_, readable, recursive
 
     def _try_to_finalize(self, obj: _T) -> _T:
-        """Deep-copy then finalize for display purposes.
+        """Copy the config tree then finalize it for display purposes.
 
-        Deep-copies first so that finalization (which may mutate) doesn't
-        alter the caller's config. This keeps printing side-effect-free.
+        ``finalize`` mutates in place, so the tree is copied first (via
+        ``copy_tree``, which duplicates the config spine but aliases heavy
+        leaves like tensors) to keep printing side-effect-free.
         """
         if (
             self._finalize
             and isinstance(obj, Finalizeable)
             and not getattr(obj, "_finalized", False)
         ):
+            # Local import: fig.py imports this module, so a top-level import
+            # would cycle; copy_tree is only needed on this rare display path.
+            from configgle.fig import copy_tree  # noqa: PLC0415
+
             try:
-                obj = copy.deepcopy(obj)
-                obj = obj.finalize()
+                obj = copy_tree(obj).finalize()
             except Exception as e:  # noqa: BLE001
                 warnings.warn(str(e), stacklevel=2)
         return obj
