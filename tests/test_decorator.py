@@ -4,8 +4,9 @@ from configgle.decorator import autofig
 from configgle.fig import Fig
 
 
-# ty canary: when this suppression becomes unnecessary, ty supports
-# class decorator return types and all @autofig ignores can be removed.
+# ty regression canary: as of ty 0.0.49 (astral-sh/ty#143) class decorator
+# return types are honored, so `.Config` resolves with no suppression here.
+# If ty regresses, this line emits unresolved-attribute and ty check fails.
 @autofig
 class _Canary:
     def __init__(self, x: int = 0):

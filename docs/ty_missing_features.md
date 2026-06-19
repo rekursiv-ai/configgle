@@ -2,15 +2,15 @@
 
 This document tracks ty type checker limitations discovered while making configgle compatible with both ty and basedpyright.
 
-**ty version tested:** 0.0.15
+**ty version tested:** 0.0.49
 
 ---
 
 ## 1. Decorator return types not honored
 
-**Status:** Blocking for `@autofig` users
+**Status:** Fixed in ty 0.0.49 ([astral-sh/ty#143](https://github.com/astral-sh/ty/issues/143), via [astral-sh/ruff#22375](https://github.com/astral-sh/ruff/pull/22375))
 
-**Description:** ty does not honor decorator return type annotations. When a decorator declares it returns a different type than the input, ty ignores this and uses the original class type.
+**Description:** ty previously did not honor decorator return type annotations. When a decorator declared it returns a different type than the input, ty ignored this and used the original class type. As of 0.0.49, ty honors the declared return type, so `.Config` access on `@autofig`-decorated classes resolves with no suppression.
 
 **Example:**
 ```python
@@ -35,9 +35,7 @@ class Foo:
 Foo.Config  # ty error: Class `Foo` has no attribute `Config`
 ```
 
-**Impact:** Users of `@autofig` decorator see `unresolved-attribute` errors when accessing `.Config` on decorated classes.
-
-**Workaround:** Use basedpyright, or add `# ty: ignore[unresolved-attribute]` at usage sites.
+**Impact (historical):** Users of `@autofig` saw `unresolved-attribute` errors when accessing `.Config` on decorated classes. No longer occurs on ty ≥ 0.0.49.
 
 ---
 
@@ -152,7 +150,7 @@ def process(v: object) -> object:
 
 | Issue | Severity | Workaround Available |
 |-------|----------|---------------------|
-| Decorator return types | High | Use basedpyright |
+| Decorator return types | Fixed (0.0.49) | n/a |
 | TypeIs intersection | Medium | Suppress comment |
 | Protocol + @dataclass | Low | Remove decorator |
 | Final in Protocol | Low | Remove Final |
