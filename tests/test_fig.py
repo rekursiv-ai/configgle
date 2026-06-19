@@ -1033,25 +1033,6 @@ def test_finalize_finalizes_dict_with_leaf_keys():
     assert finalized.d["k"].v == 99
 
 
-def test_finalize_does_not_misunwrap_wrapped_field():
-    """A config field literally named ``__wrapped__`` is not mistaken for a proxy.
-
-    ``finalize`` sheds a CopyOnWrite proxy by reading ``__wrapped__``; that probe
-    must not fire on a real config that happens to declare such a field.
-    """
-
-    class Weird(Fig, slots=False):
-        __wrapped__: str = (
-            "payload"  # field name collides with the proxy probe by design of this test
-        )
-
-    cfg = Weird()
-    finalized = cfg.finalize()
-    assert finalized is cfg
-    assert finalized.__wrapped__ == "payload"
-    assert getattr(cfg, "_finalized", False) is True
-
-
 def test_finalize_dag_finalizes_shared_child_once():
     """A config shared by two fields is finalized exactly once."""
 

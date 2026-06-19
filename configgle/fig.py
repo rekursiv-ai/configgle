@@ -273,19 +273,6 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
           finalized: ``self``, mutated, with _finalized=True.
 
         """
-        # Shed a transparent ``wrapt``-style proxy: if ``self`` is a proxy whose
-        # ``__wrapped__`` is the real config, finalize the wrapped object in
-        # place and return it (never the proxy). The cascade writes with
-        # ``object.__setattr__`` (to satisfy frozen configs), which bypasses a
-        # proxy's interception by design, so finalize must target the wrapped
-        # object directly. The probe is gated on the receiver NOT being a real
-        # config (a dataclass): only a proxy reaches the ``__wrapped__`` branch,
-        # so a config that happens to declare a ``__wrapped__`` field is safe.
-        if dataclasses.is_dataclass(self):
-            target = self
-        else:
-            target = cast(Self, getattr(self, "__wrapped__", self))
-
         # Mark finalized BEFORE the cascade. A config is normally finalized once
         # (``make``/``pprint`` run ``copy_tree().finalize()`` on a fresh tree), so
         # this is the only write that matters -- but ``copy_tree`` preserves the
@@ -293,22 +280,22 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         # ``_finalize_value`` finalize that shared node exactly once. The flag
         # also drives pprint's display (finalize=True skips marked configs).
         # ``object.__setattr__`` bypasses frozen dataclass restrictions.
-        object.__setattr__(target, "_finalized", True)
+        object.__setattr__(self, "_finalized", True)
 
         # Cascade into nested Finalizeable attrs. The caller copied the tree
         # before calling finalize, so mutation is isolated. A child finalize may
         # return a different object than it received, so the result is written
         # back onto this config.
-        for name in _get_object_attribute_names(target):
+        for name in _get_object_attribute_names(self):
             try:
-                value = getattr(target, name)
+                value = getattr(self, name)
             except AttributeError:
                 continue
             finalized_value = _finalize_value(value)
             if finalized_value is not value:
-                object.__setattr__(target, name, finalized_value)
+                object.__setattr__(self, name, finalized_value)
 
-        return target
+        return self
 
     def update(
         self,
