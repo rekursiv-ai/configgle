@@ -180,8 +180,9 @@ hierarchy without losing type information.
 
 ### Nested config finalization
 
-Override `finalize()` to compute derived fields before instantiation. Nested
-configs are finalized recursively:
+Override `finalize()` to compute derived fields before instantiation. Mutate
+`self` and any nested child configs FIRST, then `return super().finalize()`
+LAST:
 
 ```python
 from configgle import Configurable  # Just an alias to Makeable.
@@ -193,24 +194,17 @@ class Encoder:
         mlp: Configurable[nn.Module] = field(default_factory=MLP.Config)
 
         def finalize(self) -> Self:
-            self = super().finalize()
-            # Nested Finalizeable configs are already copies (each
-            # was finalized via its own finalize() → copy.copy),
-            # so mutating them here is safe.
-            self.mlp.c_in = self.c_in  # propagate dimensions
-            return self
+            self.mlp.c_in = self.c_in  # propagate dimensions into the child
+            return super().finalize()
 ```
 
-`super().finalize()` returns a shallow copy of the root, but nested
-`Finalizeable` configs are recursively finalized — each gets its own copy
-via its own `finalize()`. So `self.mlp` is already a fresh copy; mutating
-it is safe. If the nested config's own `finalize()` computes derived
-defaults that depend on the changed field, re-finalize after mutation:
-
-```python
-self.mlp.c_in = self.c_in
-self.mlp = self.mlp.finalize()  # re-compute derived defaults
-```
+`finalize()` mutates in place and returns `self` — it does **not** copy. The
+copy that protects the original happens once at the `make()` / `pprint`
+boundary (`copy_tree().finalize()`), so a config passed to `make()` is never
+mutated. Call `super().finalize()` LAST: it cascades into the nested configs
+and marks them finalized, so any value injected into a child must be set
+BEFORE the super call — otherwise the child finalizes against the stale
+default.
 
 ### `update()` for bulk mutation
 
@@ -255,34 +249,23 @@ loss = loss_fn(logits, targets)  # calls F.cross_entropy(logits, targets, label_
 Nested configs in args/kwargs are finalized and `make()`-d recursively, so
 both compose naturally with `Fig` configs.
 
-### `CopyOnWrite`
+### `copy_tree()`
 
-`CopyOnWrite` wraps a config tree and lazily copies objects only when mutations
-occur. Copies propagate up to parents automatically, so the original is never
-touched. This is especially useful inside `finalize()`, where you want to
-derive a variant of a shared sub-config without mutating the original:
+`copy_tree()` is a "semi-deep" copy: nested configs and mutable containers
+holding configs are duplicated, while leaf values (primitives, tensors,
+loggers) are aliased. `make()` and `pprint` apply it before finalizing so the
+source config stays pristine. Reach for it directly to finalize a copy without
+touching the source:
 
 ```python
-from configgle import CopyOnWrite, Fig
-
-class Encoder:
-    class Config(Fig):
-        hidden_size: int = 256
-        encoder: Configurable[nn.Module] = field(default_factory=MLP.Config)
-        decoder: Configurable[nn.Module] = field(default_factory=MLP.Config)
-
-        def finalize(self) -> Self:
-            self = super().finalize()
-            # encoder and decoder can share the same MLP.Config object.
-            # CopyOnWrite lets us tweak the decoder's copy without
-            # touching the encoder's (or the shared original).
-            with CopyOnWrite(self) as cow:
-                cow.decoder.c_out = self.hidden_size * 2
-            return cow.unwrap
+finalized = cfg.copy_tree().finalize()  # cfg unchanged
 ```
 
-Only the mutated nodes (and their ancestors) are shallow-copied; everything
-else stays shared.
+> **`CopyOnWrite` is deprecated.** It predates the in-place `finalize`
+> contract and is no longer needed for `finalize` overrides: because
+> `make()` / `pprint` already copy the tree via `copy_tree()`, an override
+> mutates `self` directly. Prefer `copy_tree()` for other counterfactual
+> mutation. `CopyOnWrite` remains exported for legacy callers only.
 
 ### `pprint` / `pformat`
 
