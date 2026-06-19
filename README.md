@@ -265,12 +265,6 @@ touching the source:
 finalized = cfg.copy_tree().finalize()  # cfg unchanged
 ```
 
-> **`CopyOnWrite` is deprecated.** It predates the in-place `finalize`
-> contract and is no longer needed for `finalize` overrides: because
-> `make()` / `pprint` already copy the tree via `copy_tree()`, an override
-> mutates `self` directly. Prefer `copy_tree()` for other counterfactual
-> mutation. `CopyOnWrite` remains exported for legacy callers only.
-
 ### `pprint` / `pformat`
 
 Config-aware pretty printing that hides default values, auto-finalizes before

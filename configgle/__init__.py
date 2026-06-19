@@ -264,7 +264,6 @@ requires ``Makes`` annotations to achieve the same narrowing.
 
 from __future__ import annotations
 
-from configgle.copy_on_write import CopyOnWrite
 from configgle.custom_types import (
     Configurable,
     DataclassLike,
@@ -284,7 +283,6 @@ from configgle.pprinting import pformat, pprint
 
 __all__ = [
     "Configurable",
-    "CopyOnWrite",
     "Dataclass",
     "DataclassLike",
     "Fig",
