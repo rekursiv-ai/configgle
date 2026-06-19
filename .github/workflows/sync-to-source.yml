@@ -155,14 +155,13 @@ jobs:
       - name: Import public tree into target repository
         if: steps.settings.outputs.enabled == 'true'
         run: |
-          uv --quiet --project "target/$COPYBARISTA_TOOL_PROJECT_PATH" run python \
+          uv --quiet run --no-project python \
             "$TRUSTED_IMPORT_SCRIPT" \
             --public-base public-base \
             --public-head public-head \
             --target-dir target \
             --target-repo "$TARGET_REPO" \
             --project-path "$TARGET_PROJECT_PATH" \
-            --copybarista-project-path "$COPYBARISTA_TOOL_PROJECT_PATH" \
             --base-branch main \
             --public-repo "$GITHUB_REPOSITORY" \
             --public-sha "$GITHUB_SHA" \
@@ -180,11 +179,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.COPYBARISTA_IMPORT_TOKEN }}
         run: |
-          python "$TRUSTED_IMPORT_SCRIPT" \
+          # The target checkout uses persist-credentials: false so the import
+          # token never reaches the validation step (which executes imported
+          # public code). The PR step needs git auth to push the import branch,
+          # so configure a token auth header scoped to this target checkout only.
+          auth_header="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -C target config http."https://github.com/".extraheader \
+            "AUTHORIZATION: basic $auth_header"
+          uv --quiet run --no-project python "$TRUSTED_IMPORT_SCRIPT" \
             --target-dir target \
             --target-repo "$TARGET_REPO" \
             --project-path "$TARGET_PROJECT_PATH" \
-            --copybarista-project-path "$COPYBARISTA_TOOL_PROJECT_PATH" \
             --base-branch main \
             --public-repo "$GITHUB_REPOSITORY" \
             --public-sha "$GITHUB_SHA" \
