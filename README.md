@@ -178,11 +178,12 @@ train(Dog.Config(breed="poodle"))
 This makes it easy to write functions that accept any config for a class
 hierarchy without losing type information.
 
-### Nested config finalization
+### Nested config finalization -- pre / super / post
 
-Override `finalize()` to compute derived fields before instantiation. Mutate
-`self` and any nested child configs FIRST, then `return super().finalize()`
-LAST:
+Override `finalize()` to compute derived fields. `super().finalize()` cascades
+into the child configs, so it splits the method into a **pre** phase (before
+children finalize -- push values down) and a **post** phase (after -- derive
+values up):
 
 ```python
 from configgle import Configurable  # Just an alias to Makeable.
@@ -194,17 +195,20 @@ class Encoder:
         mlp: Configurable[nn.Module] = field(default_factory=MLP.Config)
 
         def finalize(self) -> Self:
-            self.mlp.c_in = self.c_in  # propagate dimensions into the child
-            return super().finalize()
+            self.mlp.c_in = self.c_in   # pre: push down into the child
+            self = super().finalize()   # children finalize here
+            self.out = self.mlp.out     # post: derive up from the child
+            return self
 ```
 
-`finalize()` mutates in place and returns `self` — it does **not** copy. The
-copy that protects the original happens once at the `make()` / `pprint`
-boundary (`copy_tree().finalize()`), so a config passed to `make()` is never
-mutated. Call `super().finalize()` LAST: it cascades into the nested configs
-and marks them finalized, so any value injected into a child must be set
-BEFORE the super call — otherwise the child finalizes against the stale
-default.
+Inject into a child **before** `super()` (so it finalizes with the value);
+derive from a child **after** (so you read its finalized result). Pushdown is
+the common case, so `super()` is usually last -- but it need not be.
+
+`finalize()` mutates in place; the copy that protects the original happens once
+at the `make()` / `pprint` boundary (`copy_tree().finalize()`), so a config is
+finalized exactly once on a fresh tree (never re-finalized) and the config
+passed to `make()` is left untouched.
 
 ### `update()` for bulk mutation
 
