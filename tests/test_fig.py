@@ -83,7 +83,7 @@ def test_cloudpickle():
     assert cfg.b == cfg_.b
     assert cfg.c == cfg_.c
     with pytest.raises(AttributeError):
-        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
+        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_pickle_parent_class_restored():
