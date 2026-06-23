@@ -18,7 +18,7 @@
 
 4. Create GitHub release:
    ```bash
-   gh release create v1.1.14 --title "v1.1.14" --notes ""
+   gh release create v1.3.1 --repo rekursiv-ai/configgle --title "v1.3.1" --generate-notes
    ```
 
 5. Clean up build artifacts:
