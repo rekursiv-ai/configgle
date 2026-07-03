@@ -31,10 +31,12 @@ class SupportsWrite(Protocol[_T_contra]):
 
 
 # Default threshold for continuation pipes (lines)
-_DEFAULT_CONTINUATION_PIPE_THRESHOLD = 50
+_DEFAULT_CONTINUATION_PIPE_THRESHOLD = (
+    50  # config-globals: ignore -- formatting default.
+)
 
 # Maximum width for sequences to always stay on one line
-_SHORT_SEQUENCE_MAX_WIDTH = 40
+_SHORT_SEQUENCE_MAX_WIDTH = 40  # config-globals: ignore -- formatting default.
 
 
 def pformat(
