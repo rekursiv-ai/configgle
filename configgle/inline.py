@@ -223,6 +223,11 @@ class InlineConfig[T]:
 class PartialConfig[T](InlineConfig[Callable[..., T]]):
     """InlineConfig that returns a functools.partial instead of calling the function."""
 
+    # Empty slots: without this, subclassing the slotted InlineConfig grants a
+    # (always-empty) __dict__, and serializers that prefer __dict__ over slots
+    # (jsonpickle) would then flatten nothing and silently drop all state.
+    __slots__ = ()
+
     def __init__(
         self,
         /,
