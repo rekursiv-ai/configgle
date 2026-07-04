@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pprint import PrettyPrinter as _PrettyPrinter
+from pprint import PrettyPrinter
 from typing import IO, Protocol, TypeVar, override
 
 import dataclasses
@@ -150,7 +150,7 @@ def pprint(
     return printer.pprint(obj)
 
 
-class FigPrinter(_PrettyPrinter):
+class FigPrinter(PrettyPrinter):
     """PrettyPrinter subclass with Fig-specific formatting enhancements."""
 
     def __init__(
