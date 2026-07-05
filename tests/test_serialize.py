@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Callable
 from dataclasses import field
 from decimal import Decimal
@@ -854,7 +854,7 @@ def test_unshared_list_serializes_as_native_array():
 
 
 def test_shared_list_keeps_wrapper_for_identity():
-    """TAK-001: a shared list stays wrapped so it can carry $id and round-trip shared."""
+    """A list shared by two fields is registered so a repeat emits ``py/id`` and stays shared."""
     shared: list[int] = [1, 2]
     cfg = Containers.Config()
     cfg.nums = shared
@@ -895,43 +895,19 @@ def test_local_callable_rejected_at_serialize_boundary():
 
 
 def test_deserialize_passes_through_plain_dict():
-    """A tagless dict is literal data (no $type), returned as-is -- not an error."""
+    """A tagless dict (no ``py/*`` key) is literal data, returned as-is -- not an error."""
     assert deserialize({"no_tag": 1, "nested": {"x": 2}}) == {
         "no_tag": 1,
         "nested": {"x": 2},
     }
 
 
-def test_user_dict_with_reserved_keys_survives():
-    """WIRE-001: a user data dict containing literal ``$``-keys round-trips intact.
-
-    ``prune_ids`` must not descend into a wrapped dict's user payload and delete a
-    key that merely looks like a node's ``$id`` -- reserved keys are collision-safe
-    only if user data carrying them is preserved verbatim.
-    """
-    data = {"$id": 123, "$type": "user", "$ref": 9, "normal": 1}
-    back = _roundtrip(data)
-    assert back == data
-
-
-def test_user_dict_with_marker_key_roundtrips_as_dict():
-    """WIRE-003: a data dict whose KEY looks like a recipe marker stays a dict.
-
-    ``$args``/``$global``/``$hook`` are legal dict keys (not identifiers). Because
-    recipes ride NODE-level keys (never inside $value), a container's data payload
-    holding these keys is never misrouted to the reduce/hook/inline path.
-    """
-    for marker in ("$args", "$global", "$hook", "$inline"):
-        data = {marker: [1, 2], "normal": 3}
-        assert _roundtrip(data) == data, f"marker {marker} misrouted"
-
-
 def test_reduce_reconstructor_is_builtin_container_roundtrips():
-    """WIRE-002: an opaque leaf that reduces to a builtin-container reconstructor.
+    """A leaf whose ``__reduce__`` reconstructor is a builtin container round-trips.
 
-    ``$type: builtins:dict`` with a ``$value`` of ``{"$args": [...]}`` must decode
-    via the reduce recipe, not be misread as literal container items by the class
-    dispatch.
+    The ``py/reduce`` recipe records ``builtins.tuple`` / ``builtins.dict`` as the
+    reconstructor and replays it, rather than the container being misread as
+    literal items by the class dispatch.
     """
     back_t = _roundtrip(WithReducibleLeaves.Config(path=ReducesToTuple()))
     assert back_t.path == (1, 2)
@@ -979,6 +955,109 @@ def test_non_finite_float_is_valid_strict_json():
     dumped = json.dumps(tree, allow_nan=False)
     back = deserialize(json.loads(dumped))
     assert back.x == float("inf")
+
+
+def test_reduce_leaf_with_listitems_roundtrips():
+    """A reduce whose 4th element (listitems) fills the object round-trips.
+
+    ``deque`` reduces to ``(deque, (), None, iter(items))`` -- the decoder must
+    replay the listitems via ``extend``.
+    """
+    back = _roundtrip(WithReducibleLeaves.Config(path=deque([1, 2, 3])))
+    assert back.path == deque([1, 2, 3])
+    assert isinstance(back.path, deque)
+
+
+class _CustomState:
+    """A leaf with an explicit ``__setstate__`` (the reduce state-setter path)."""
+
+    def __init__(self, value: int = 0) -> None:
+        self.value = value
+
+    @override
+    def __getstate__(self) -> dict[str, int]:
+        return {"value": self.value}
+
+    def __setstate__(self, state: dict[str, int]) -> None:
+        self.value = state["value"]
+
+
+def test_reduce_leaf_with_custom_setstate_roundtrips():
+    """A reduce whose object defines ``__setstate__`` restores via that method."""
+    back = _roundtrip(WithReducibleLeaves.Config(path=_CustomState(7)))
+    assert isinstance(back.path, _CustomState)
+    assert back.path.value == 7
+
+
+class _SlotsState:
+    """A slotted leaf: its default reduce state is a ``(None, slots_dict)`` tuple."""
+
+    __slots__ = ("a", "b")
+
+    def __init__(self, a: int = 0, b: int = 0) -> None:
+        self.a = a
+        self.b = b
+
+
+def test_reduce_leaf_with_slots_state_tuple_roundtrips():
+    """A slotted leaf's ``(dict, slots)`` reduce-state tuple round-trips.
+
+    Exercises the state-tuple branch of ``_apply_state`` (no ``__setstate__``).
+    """
+    back = _roundtrip(WithReducibleLeaves.Config(path=_SlotsState(a=1, b=2)))
+    assert isinstance(back.path, _SlotsState)
+    assert (back.path.a, back.path.b) == (1, 2)
+
+
+def test_local_mapping_subclass_degrades_to_base_dict():
+    """A Mapping with no usable reduce degrades to a plain ``dict`` by contents."""
+
+    class LocalMap(dict[str, int]):
+        pass
+
+    back = _roundtrip(WithReducibleLeaves.Config(path=LocalMap({"a": 1, "b": 2})))
+    assert back.path == {"a": 1, "b": 2}
+    assert type(cast("dict[str, int]", back.path)) is dict
+
+
+def test_deserialize_rejects_unresolvable_import_path():
+    """A ``py/type`` naming a nonexistent module raises ``ImportError`` on decode."""
+    with pytest.raises(ImportError, match="Cannot resolve path"):
+        deserialize({"py/type": "no_such_module_xyz.Thing"})
+
+
+class _NonReducibleSet(frozenset[int]):
+    """A set subclass whose ``__reduce_ex__`` raises -- forces the set degrade path."""
+
+    @override
+    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[Any, ...]:
+        del protocol
+        raise TypeError("no reduce")
+
+
+def test_non_reducible_set_degrades_to_base_set():
+    """A set with no usable reduce degrades to a plain ``set`` by contents."""
+    back = _roundtrip(WithReducibleLeaves.Config(path=_NonReducibleSet({1, 2, 3})))
+    assert back.path == {1, 2, 3}
+    assert type(cast("set[int]", back.path)) is set
+
+
+class _BareStringReduce:
+    """A singleton-like leaf whose ``__reduce__`` returns a bare global name."""
+
+    @override
+    def __reduce_ex__(self, protocol: SupportsIndex) -> str:
+        del protocol
+        return "_THE_BARE_STRING_SINGLETON"
+
+
+_THE_BARE_STRING_SINGLETON = _BareStringReduce()
+
+
+def test_bare_string_reduce_roundtrips_as_global_reference():
+    """A ``__reduce__`` returning a bare name resolves to that module global."""
+    back = _roundtrip(WithReducibleLeaves.Config(path=_THE_BARE_STRING_SINGLETON))
+    assert back.path is _THE_BARE_STRING_SINGLETON
 
 
 if __name__ == "__main__":
