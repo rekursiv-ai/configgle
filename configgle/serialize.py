@@ -82,6 +82,11 @@ the Fig -- entered via the Fig -- closes on the Fig's ``py/id``). Value leaves
 (``py/tuple``, ``py/b64``, ``py/float``, ``py/type``, ``py/function``) likewise
 consume no index.
 
+A hooked leaf ITSELF is registered, so two fields holding the same hooked object
+stay shared. Its ``encode``d PAYLOAD is opaque, though -- configgle does not walk
+inside it -- so an object shared between a hook payload and the surrounding tree
+is NOT deduplicated across that boundary (it round-trips by value, not identity).
+
 Leaf taxonomy
 -------------
 Matches ``copy_tree``/``_finalize_value``: primitives, ``bytes``, non-finite
@@ -230,7 +235,7 @@ def _resolve(path: str) -> Any:
 
 
 class _Encoder:
-    """Encodes a config tree into a jsonpickle-format JSON-encodable structure.
+    """Encode a config tree into a jsonpickle-format JSON-encodable structure.
 
     Every mutable object is numbered by encounter order (``_seen``); a repeat is
     emitted as ``{"py/id": n}`` -- jsonpickle's positional reference scheme.
@@ -493,7 +498,7 @@ class _Encoder:
 
 
 class _Decoder:
-    """Reverses ``_Encoder`` output back into live objects.
+    """Reverse ``_Encoder`` output back into live objects.
 
     Rebuilds the encoder's encounter order in ``_built`` so a ``py/id`` index
     resolves to the identical object.
