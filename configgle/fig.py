@@ -90,8 +90,13 @@ from configgle.custom_types import (
 from configgle.pprinting import (
     _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
     _SHORT_SEQUENCE_MAX_WIDTH,
-    pformat as _pformat,
-    pprint as _pprint,
+    pformat,
+    pprint,
+)
+from configgle.serialize import (
+    Hooks,
+    deserialize,
+    serialize,
 )
 from configgle.walk import (
     _copy_slots,
@@ -322,6 +327,57 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
         """
         return update(self, source, skip_missing=skip_missing, **kwargs)
 
+    def serialize(self, *, hooks: Hooks | None = None) -> Any:
+        """Serialize this config tree to an encodable dict tree.
+
+        Returns a JSON-encodable structure (nested dicts/lists/primitives), not
+        a string -- the caller picks the transport. The tree is
+        transport-agnostic: hand it to ``json.dumps``, ``yaml.safe_dump``,
+        ``msgpack``, or embed it in a larger structure. Captures the config
+        as-is: ``serialize`` does not finalize, so derived defaults are left for
+        a later ``finalize``/``make`` on the loaded tree.
+
+        Example:
+          >>> import json
+          >>> s = json.dumps(cfg.serialize(), indent=2)  # object -> JSON string
+          >>> cfg = SomeClass.Config.deserialize(json.loads(s))  # string -> config
+          >>> obj = cfg.make()
+
+        Args:
+          hooks: Optional ``{type: (encode, decode)}`` map for leaves JSON cannot
+            represent natively (tensors, arrays, etc.).
+
+        Returns:
+          tree: An encodable tree that ``deserialize`` reverses into live objects.
+
+        """
+        return serialize(self, hooks=hooks)
+
+    @classmethod
+    def deserialize(cls, tree: object, *, hooks: Hooks | None = None) -> Self:
+        """Reconstruct a config from a tree produced by ``serialize``.
+
+        Resolves config classes and callables by their recorded import path, so
+        the defining modules must be importable. This imports and calls code
+        named in the payload; deserialize only trusted data.
+
+        Example:
+          >>> import json
+          >>> s = json.dumps(cfg.serialize(), indent=2)  # object -> JSON string
+          >>> cfg = SomeClass.Config.deserialize(json.loads(s))  # string -> config
+          >>> obj = cfg.make()
+
+        Args:
+          tree: An encodable tree produced by ``serialize`` (e.g. from
+            ``json.loads`` of a stored string).
+          hooks: The same ``{type: (encode, decode)}`` map used to serialize.
+
+        Returns:
+          config: The reconstructed config tree.
+
+        """
+        return cast(Self, deserialize(tree, hooks=hooks))
+
     def pformat(
         self,
         indent: int = 8,
@@ -358,7 +414,7 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
           formatted: Pretty-printed string representation.
 
         """
-        return _pformat(
+        return pformat(
             self,
             indent=indent,
             width=width,
@@ -409,7 +465,7 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
           short_sequence_max_width: Max width for single-line sequences.
 
         """
-        _pprint(
+        pprint(
             self,
             stream=stream,
             indent=indent,

@@ -232,6 +232,24 @@ functions and as methods on any ``Maker`` subclass::
     cfg.pprint()         # method — prints to stdout
     s = cfg.pformat()    # method — returns string
 
+``serialize`` / ``deserialize`` -- Round-trip a config through an encodable
+dict tree (nested dicts/lists/primitives), not a string. The tree is
+transport-agnostic (``json``, ``yaml``, ``msgpack``, or embed it); JSON is
+the common case. Preserves nested configs, polymorphic slot types, DAG
+identity, and cycles. Does NOT finalize -- the loaded config is raw, ready
+for ``finalize``/``make``. Opaque leaves (tensors, etc.) need a
+``hooks={type: (encode, decode)}`` map. Available as module-level functions
+and as ``Maker`` methods::
+
+    import json
+
+    s = json.dumps(cfg.serialize(), indent=2)          # object -> JSON string
+    cfg = SomeClass.Config.deserialize(json.loads(s))  # JSON string -> config
+    obj = cfg.make()
+
+Deserialization imports the modules named in the payload, so treat a
+serialized config like ``pickle``: load only trusted data.
+
 ``Makeable`` -- Runtime-checkable ``Protocol`` defining the config
 interface (``make()``, ``finalize()``, ``update()``). Also aliased as
 ``Configurable``.
