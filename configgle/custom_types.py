@@ -93,7 +93,14 @@ class DataclassLike(Protocol):
 class Makeable(Protocol[_T_co]):
     """Protocol for objects with make(), finalize(), and update() methods."""
 
-    _finalized: bool
+    # Read-only: implementers store `_finalized` however they like (a writable
+    # slot on `Maker`, a mutable dataclass field on `InlineConfig`, or a frozen
+    # dataclass field). Configgle only ever *writes* it on concrete types (via
+    # `object.__setattr__`, which also bypasses frozen), never through a
+    # `Makeable`-typed variable, so a writable member would falsely reject
+    # frozen configs (`frozen=True` Figs) without buying any real capability.
+    @property
+    def _finalized(self) -> bool: ...
 
     # Ideally this would be a read-only class attribute -- covariant and
     # accessible on both class and instance. Python's type system has no such
