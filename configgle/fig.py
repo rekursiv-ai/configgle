@@ -305,6 +305,7 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
     def update(
         self,
         source: DataclassLike | Makeable[object] | None = None,
+        /,
         *,
         skip_missing: bool = False,
         **kwargs: Any,
@@ -822,6 +823,7 @@ def make[ParentT](config: Maker[ParentT]) -> ParentT:
 def update[MakerT: Maker[Any]](
     config: MakerT,
     source: DataclassLike | Makeable[object] | None = None,
+    /,
     *,
     skip_missing: bool = False,
     **kwargs: Any,

@@ -140,6 +140,7 @@ class InlineConfig[T]:
     def update(
         self,
         source: DataclassLike | Makeable[object] | None = None,
+        /,
         *,
         skip_missing: bool = False,
         **kwargs: object,
