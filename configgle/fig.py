@@ -116,6 +116,18 @@ __all__ = [
 
 
 _T = TypeVar("_T")
+
+# The "correct" thing to do is:
+#   _ParentT_co = TypeVar(
+#       "_ParentT_co",
+#       covariant=True,  # Covariance allows bare Fig to work for Intersections.
+#       default=Any,  # Only matters for non-ty; its a lie but ergonomic.
+#                     # The "truth" would be `default=object`.
+#   )
+# However, this is not possible until ty PRs
+#   https://github.com/astral-sh/ruff/pull/26545
+#   https://github.com/astral-sh/ruff/pull/26553
+# are merged. For now we just do,
 _ParentT = TypeVar("_ParentT", default=Any)
 
 
@@ -186,6 +198,12 @@ class MakerMeta(type):
             owner: type[_ParentT],
         ) -> Intersection[
             _T,
+            # Returning Maker (vs Makeable) allows bare Fig to work for Intersections.
+            #   type[Maker[_ParentT_co]],
+            # However, this is not possible until ty PRs
+            #   https://github.com/astral-sh/ruff/pull/26545
+            #   https://github.com/astral-sh/ruff/pull/26553
+            # are merged. For now we just do,
             type[Makeable[_ParentT]],
         ]:
             # This return has been reviewed extensively. Do not replace it with
