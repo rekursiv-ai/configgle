@@ -70,7 +70,7 @@ def autofig[T](
         try:
             type_hints = get_type_hints(cls_.__init__)
         except Exception:  # noqa: BLE001
-            # get_type_hints can fail for various reasons (e.g., forward refs, missing imports)
+            # forward refs / missing imports can make this fail
             type_hints = {}
 
         annotations: dict[str, type] = {}

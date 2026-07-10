@@ -30,12 +30,10 @@ class SupportsWrite(Protocol[_T_contra]):
     def write(self, s: _T_contra, /) -> object: ...
 
 
-# Default threshold for continuation pipes (lines)
 _DEFAULT_CONTINUATION_PIPE_THRESHOLD = (
     50  # config-globals: ignore -- formatting default.
 )
 
-# Maximum width for sequences to always stay on one line
 _SHORT_SEQUENCE_MAX_WIDTH = 40  # config-globals: ignore -- formatting default.
 
 
@@ -180,8 +178,7 @@ class FigPrinter(PrettyPrinter):
             sort_dicts=sort_dicts,
             underscore_numbers=underscore_numbers,
         )
-        # Explicitly set inherited private attrs for type checking
-        # (parent sets these same values, but type checkers don't see it)
+        # re-set inherited private attrs; type checkers don't see parent's writes
         self._indent_per_level: int = indent
         self._width: int = width
         self._finalize = finalize
@@ -270,7 +267,6 @@ class FigPrinter(PrettyPrinter):
             if f.repr
         ]
 
-        # Filter out default values if requested
         if self._hide_default_values:
             items = _filter_non_default_items(obj, items)
 
@@ -289,7 +285,6 @@ class FigPrinter(PrettyPrinter):
     ) -> None:
         """Override to use fixed indent and put each parameter on its own line."""
         if not self._extra_compact:
-            # PrettyPrinter private method
             super()._format_namespace_items(  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]  # ty: ignore[unresolved-attribute]
                 items,
                 stream,
@@ -348,18 +343,15 @@ class FigPrinter(PrettyPrinter):
         num_items: int,
     ) -> str:
         """Format a namespace value with collapsing and continuation pipes."""
-        # Format value to string
         temp_stream = io.StringIO()
         self._format(value, temp_stream, item_indent, allowance, context, level)
         formatted_value = temp_stream.getvalue()
 
-        # Try to collapse short multiline values onto one line
         formatted_value = _collapse_multiline_value(
             formatted_value,
             self._short_sequence_max_width,
         )
 
-        # Add continuation pipes if needed
         if _should_add_continuation_pipes(
             formatted_value,
             num_items,
@@ -387,7 +379,7 @@ class FigPrinter(PrettyPrinter):
             return
 
         one_line_str = self._try_format_items_on_one_line(items, context, level)
-        content_width = len(one_line_str) + 2  # Add 2 for surrounding brackets/parens
+        content_width = len(one_line_str) + 2
 
         if self._should_format_on_one_line(content_width, indent, allowance):
             stream.write(one_line_str)
@@ -416,8 +408,7 @@ class FigPrinter(PrettyPrinter):
         allowance: int,
     ) -> bool:
         """Determine if items should be formatted on one line."""
-        # Keep short sequences on one line regardless of nesting depth
-        # (content_width doesn't include indent, so short tuples stay compact even when deeply nested)
+        # short seqs stay one-line at any depth (content_width excludes indent)
         # For longer sequences, check if they fit within the available width
         return (
             content_width < self._short_sequence_max_width
@@ -491,12 +482,9 @@ def _collapse_multiline_value(formatted_value: str, max_width: int) -> str:
     if "\n" not in formatted_value:
         return formatted_value
 
-    # Remove newlines and collapse whitespace
     oneline = re.sub(r"\s+", " ", formatted_value.replace("\n", ""))
-    # Clean up spaces around parentheses
     oneline = oneline.replace("( ", "(").replace(" )", ")")
 
-    # Use collapsed version if short enough
     if len(oneline) <= max_width:
         return oneline
     return formatted_value
@@ -514,7 +502,7 @@ def _add_pipes_to_lines(lines: list[str], pipe_column: int) -> list[str]:
     if not lines:
         return lines
 
-    result = [lines[0]]  # First line unchanged
+    result = [lines[0]]
     for i, line in enumerate(lines[1:], 1):
         is_last = i == len(lines) - 1
         pipe_char = " " if is_last else "│"
@@ -546,11 +534,9 @@ def _filter_non_default_items(
 ) -> list[tuple[str, object]]:
     """Filter out items whose values match the default-constructed instance."""
     try:
-        # Get the class and instantiate a default instance
         cls = type(obj)
         default_obj = cls()
 
-        # Filter items - keep only non-default values
         filtered = list[tuple[str, object]]()
         for name, value in items:
             default_value = getattr(default_obj, name)
