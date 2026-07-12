@@ -437,6 +437,14 @@ def _plain_fn(a: int, b: int = 1) -> int:
     return a + b
 
 
+def _stale_redefined_fn(value: int) -> int:
+    return value + 1
+
+
+def _live_redefined_fn(value: int) -> int:
+    return value + 2
+
+
 def test_class_and_function_reference_roundtrip():
     """A bare class or function round-trips via jsonpickle py/type / py/function.
 
@@ -448,6 +456,24 @@ def test_class_and_function_reference_roundtrip():
     back = _roundtrip({"fn": _plain_fn, "cls": dict})
     assert back["fn"] is _plain_fn
     assert back["cls"] is dict
+
+
+def test_stale_function_import_path_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale function cannot borrow a live function's import path."""
+    monkeypatch.setattr(_stale_redefined_fn, "__name__", "_live_redefined_fn")
+    monkeypatch.setattr(
+        _stale_redefined_fn,
+        "__qualname__",
+        "_live_redefined_fn",
+    )
+    assert _stale_redefined_fn is not _live_redefined_fn
+    with pytest.raises(TypeError, match="does not resolve to the same object"):
+        serialize(_stale_redefined_fn)
+    assert serialize(_live_redefined_fn) == {
+        "py/function": "test_serialize._live_redefined_fn",
+    }
 
 
 def test_inline_config_roundtrip():

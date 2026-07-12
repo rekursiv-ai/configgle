@@ -212,7 +212,20 @@ def _dotted_name(obj: object) -> str:
             f"(module-level __qualname__). Local/lambda callables and local "
             f"classes/subclasses cannot be deserialized.",
         )
-    return f"{obj.__module__}.{obj.__qualname__}"
+    path = f"{obj.__module__}.{obj.__qualname__}"
+    try:
+        resolved = _resolve(path)
+    except (AttributeError, ImportError) as error:
+        raise TypeError(
+            f"Cannot serialize {obj!r}: import path {path!r} does not resolve "
+            "to the same object.",
+        ) from error
+    if resolved is not obj:
+        raise TypeError(
+            f"Cannot serialize {obj!r}: import path {path!r} does not resolve "
+            "to the same object.",
+        )
+    return path
 
 
 def _resolve(path: str) -> Any:
