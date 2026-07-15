@@ -825,7 +825,15 @@ def make[ParentT](config: Maker[ParentT]) -> ParentT:
       ValueError: If the config is not nested in a parent class.
 
     """
-    finalized = config.copy_tree().finalize()
+    # Finalize exactly once. ``copy_tree`` preserves ``_finalized``, so a config
+    # already finalized by an enclosing cascade -- the canonical parent whose
+    # ``__init__`` rebuilds a child via ``config.child.make()`` -- is built
+    # without re-running its ``finalize``. This is the idempotency contract for
+    # an un-mutated config: a non-idempotent body (e.g. one that prepends a path
+    # prefix) must not be applied twice. (Re-finalizing a config MUTATED after a
+    # prior finalize is out of contract and not guarded here.)
+    copied = config.copy_tree()
+    finalized = copied if getattr(copied, "_finalized", False) else copied.finalize()
     cls = finalized.parent_class
     if cls is None:  # pyright: ignore[reportUnnecessaryComparison] -- parent_class is non-None per its annotation, but a Maker not nested in a class has none at runtime; the guard is a real runtime check.
         raise ValueError("Maker must be nested in a parent class")
