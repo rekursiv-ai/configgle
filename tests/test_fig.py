@@ -1055,5 +1055,47 @@ def test_finalize_dag_finalizes_shared_child_once():
     assert root.a.n == 1  # finalized once, not twice
 
 
+class _RebuiltChild:
+    """Child whose config's ``finalize`` increments a counter (non-idempotent)."""
+
+    class Config(Fig["_RebuiltChild"]):
+        n: int = 0
+
+        @override
+        def finalize(self) -> Self:
+            self.n += 1  # non-idempotent: a second finalize is observable
+            return super().finalize()
+
+    def __init__(self, config: Config) -> None:
+        self.n = config.n
+
+
+class _RebuildingParent:
+    """Parent whose ``__init__`` rebuilds its child via ``child.make()``."""
+
+    class Config(Fig["_RebuildingParent"]):
+        child: _RebuiltChild.Config = field(default_factory=_RebuiltChild.Config)
+
+    def __init__(self, config: Config) -> None:
+        # Canonical build pattern: construct the nested component from its
+        # already-finalized config.
+        self.child = config.child.make()
+
+
+def test_parent_rebuilding_child_in_init_finalizes_child_once():
+    """A parent that builds its child via ``child.make()`` finalizes it once.
+
+    The canonical build pattern is a parent whose ``__init__`` constructs each
+    nested component with ``config.child.make()``. ``make()`` on the parent
+    already finalizes the whole tree (the child included) in its cascade; the
+    ``__init__`` rebuild must NOT finalize the child a second time. A
+    non-idempotent ``finalize`` (e.g. one that prepends a path prefix on every
+    call) is corrupted by a double finalize, so the contract is "exactly once
+    per ``make()`` boundary", matching the DAG shared-child guarantee.
+    """
+    built = _RebuildingParent.Config().make()
+    assert built.child.n == 1  # finalized once, not twice
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
