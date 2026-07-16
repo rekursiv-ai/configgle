@@ -44,7 +44,7 @@ test = [
 typecheck = [
     "basedpyright>=1.10",
     "basedtyping>=0.1.10",
-    "ty>=0.0.56",
+    "ty>=0.0.60",
     "typing_extensions",
 ]
 dev = [
