@@ -136,7 +136,7 @@ class HasConfig(Protocol[_T]):
     """Protocol for classes with a typed Config nested class."""
 
     # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.
-    Config: ClassVar[type[Makeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]
+    Config: ClassVar[type[Makeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form] -- spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct
 
 
 @runtime_checkable
@@ -153,7 +153,7 @@ class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInval
     #   - Drop ClassVar: loses the "class attribute" semantic in the Protocol.
     #   - @property: covariant but instance-only (no Cls.parent_class access).
     # Suppressed in both checkers as a deliberate design choice.
-    parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form]
+    parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars in ClassVar
 
     def __init__(self, *args: object, **kwargs: object) -> None: ...
     def __getattr__(self, name: str) -> Any: ...
@@ -167,4 +167,4 @@ class HasRelaxedConfig(Protocol[_T]):
     """Protocol for classes decorated with @autofig."""
 
     # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.
-    Config: ClassVar[type[RelaxedMakeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]
+    Config: ClassVar[type[RelaxedMakeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form] -- spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct

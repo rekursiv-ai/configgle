@@ -116,19 +116,12 @@ __all__ = [
 
 
 _T = TypeVar("_T")
-
-# The "correct" thing to do is:
-#   _ParentT_co = TypeVar(
-#       "_ParentT_co",
-#       covariant=True,  # Covariance allows bare Fig to work for Intersections.
-#       default=Any,  # Only matters for non-ty; its a lie but ergonomic.
-#                     # The "truth" would be `default=object`.
-#   )
-# However, this is not possible until ty PRs
-#   https://github.com/astral-sh/ruff/pull/26545
-#   https://github.com/astral-sh/ruff/pull/26553
-# are merged. For now we just do,
-_ParentT = TypeVar("_ParentT", default=Any)
+_ParentT_co = TypeVar(
+    "_ParentT_co",
+    covariant=True,  # Covariance allows bare Fig to work for Intersections.
+    default=Any,  # Only matters for non-ty; its a lie but ergonomic.
+    # The "truth" would be `default=object`.
+)
 
 
 class _IPythonPrinter(Protocol):
@@ -142,10 +135,10 @@ class _MakerParentClassDescriptor:
 
     def __get__(
         self,
-        obj: Makeable[_ParentT] | None,
-        owner: type[Makeable[_ParentT]],
-    ) -> type[_ParentT]:
-        return owner._parent_class()  # noqa: SLF001 -- reads the metaclass-bound parent reference; deliberate internal access  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType] -- _parent_class is bound dynamically by MakerMeta.__set_name__, invisible to the checker.
+        obj: Makeable[_ParentT_co] | None,
+        owner: type[Makeable[_ParentT_co]],
+    ) -> type[_ParentT_co]:
+        return owner._parent_class()  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType]  # ty: ignore[unresolved-attribute] -- MakerMeta.__set_name__ binds _parent_class dynamically
 
 
 class MakerMeta(type):
@@ -168,7 +161,7 @@ class MakerMeta(type):
 
     def _parent_class(cls) -> type | None: ...
 
-    def __set_name__(cls, owner: type[_ParentT], name: str) -> None:
+    def __set_name__(cls, owner: type[_ParentT_co], name: str) -> None:
         """Bind the parent class reference when Config is defined as a nested class.
 
         Python calls ``__set_name__`` on class-body attributes during class
@@ -182,7 +175,7 @@ class MakerMeta(type):
 
         """
 
-        def _returns_owner(_: MakerMeta) -> type[_ParentT]:
+        def _returns_owner(_: MakerMeta) -> type[_ParentT_co]:
             return owner
 
         cls._parent_class = MethodType(_returns_owner, cls)  # ty: ignore[invalid-assignment] -- assigning a bound MethodType over the declared classmethod stub; intentional dynamic binding.
@@ -195,24 +188,19 @@ class MakerMeta(type):
         def __get__(
             cls: _T,
             obj: object,
-            owner: type[_ParentT],
+            owner: type[_ParentT_co],
         ) -> Intersection[
             _T,
             # Returning Maker (vs Makeable) allows bare Fig to work for Intersections.
-            #   type[Maker[_ParentT_co]],
-            # However, this is not possible until ty PRs
-            #   https://github.com/astral-sh/ruff/pull/26545
-            #   https://github.com/astral-sh/ruff/pull/26553
-            # are merged. For now we just do,
-            type[Makeable[_ParentT]],
+            type[Maker[_ParentT_co]],
         ]:
             # This return has been reviewed extensively. Do not replace it with
             # casts or type-checker suppressions; package-local stubs define the
             # intended checker behavior for this descriptor path.
-            return cls  # ty: ignore[invalid-return-type] -- `cls` is only `_T` at source level; the `& type[Makeable[_ParentT]]` half of the intersection is a design assertion that ty's real Intersection cannot prove. Configgle's `ty_extensions` polyfill (where `Intersection[A, B] = A`) hides this when run under package-local ty config; root ty sees the real intersection and rejects the return. See fig.py module docstring for the design rationale.
+            return cls  # ty: ignore[invalid-return-type] -- `cls` is only `_T` at source level; the `& type[Makeable[_ParentT_co]]` half of the intersection is a design assertion that ty's real Intersection cannot prove. Configgle's `ty_extensions` polyfill (where `Intersection[A, B] = A`) hides this when run under package-local ty config; root ty sees the real intersection and rejects the return. See fig.py module docstring for the design rationale.
 
 
-class Maker(Generic[_ParentT], metaclass=MakerMeta):
+class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
     """Base class providing make/finalize/update capabilities for configs.
 
     When nested inside a parent class, enables the pattern:
@@ -224,7 +212,7 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
     if TYPE_CHECKING:
 
         @property
-        def parent_class(self) -> type[_ParentT]: ...
+        def parent_class(self) -> type[_ParentT_co]: ...
 
     else:
         parent_class = _MakerParentClassDescriptor()
@@ -232,7 +220,7 @@ class Maker(Generic[_ParentT], metaclass=MakerMeta):
     def __init__(self) -> None:
         self._finalized = False
 
-    def make(self) -> _ParentT:
+    def make(self) -> _ParentT_co:
         """Finalize this config and instantiate its parent class.
 
         Returns:
@@ -742,7 +730,7 @@ class FigMeta(_DataclassMeta, MakerMeta):
 # metaclass (https://github.com/astral-sh/ty/issues/3282). When fixed,
 # move @dataclass_transform back to FigMeta and remove it from here.
 @dataclass_transform(kw_only_default=True)
-class Fig(Maker[_ParentT], metaclass=FigMeta):
+class Fig(Maker[_ParentT_co], metaclass=FigMeta):
     """Dataclass with make/finalize/update for the nested Config pattern.
 
     Build with ``ParentClass.Config(...).make()``. See the module docstring for
@@ -765,7 +753,7 @@ class Fig(Maker[_ParentT], metaclass=FigMeta):
     __slots__: ClassVar[tuple[str, ...]] = ()
 
 
-class Makes(Generic[_ParentT]):
+class Makes(Generic[_ParentT_co]):
     """Type-only base for inherited Configs that fixes the make() return type.
 
     When a Config inherits from a parent Config, the make() return type is
@@ -796,9 +784,9 @@ class Makes(Generic[_ParentT]):
     if TYPE_CHECKING:
 
         @property
-        def parent_class(self) -> type[_ParentT]: ...
+        def parent_class(self) -> type[_ParentT_co]: ...
 
-        def make(self) -> _ParentT: ...
+        def make(self) -> _ParentT_co: ...
 
     def __class_getitem__(cls, params: object) -> object:
         class _NoMroAlias:

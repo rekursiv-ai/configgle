@@ -90,7 +90,7 @@ def _copy_immutable_container(
         return tuple(copied)
     # Namedtuple subclass: reconstructed by positional unpacking. Its field types
     # are erased at runtime, so neither checker can model ``type(value)(*copied)``.
-    return type(value)(*copied)  # ty: ignore[invalid-argument-type] -- namedtuple field types erased.  # pyright: ignore[reportArgumentType] -- namedtuple field types erased.
+    return type(value)(*copied)  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- namedtuple field types are erased
 
 
 def _copy_slots(value: object, visited: dict[int, object]) -> object:

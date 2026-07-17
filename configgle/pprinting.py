@@ -263,7 +263,7 @@ class FigPrinter(PrettyPrinter):
         indent += len(cls_name) + 1
         items = [
             (f.name, getattr(obj, f.name))
-            for f in dataclasses.fields(obj)  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type]
+            for f in dataclasses.fields(obj)  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type] -- pprint dispatch guarantees a dataclass instance
             if f.repr
         ]
 
@@ -285,7 +285,7 @@ class FigPrinter(PrettyPrinter):
     ) -> None:
         """Override to use fixed indent and put each parameter on its own line."""
         if not self._extra_compact:
-            super()._format_namespace_items(  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]  # ty: ignore[unresolved-attribute]
+            super()._format_namespace_items(  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]  # ty: ignore[unresolved-attribute] -- private PrettyPrinter method is absent from typeshed
                 items,
                 stream,
                 indent,

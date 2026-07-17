@@ -94,9 +94,9 @@ def autofig[T](
         )
 
         Config.__set_name__(cls_, "Config")
-        cls_.Config = Config  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
+        cls_.Config = Config  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute] -- autofig installs Config dynamically
 
-        return cls_  # pyright: ignore[reportReturnType]
+        return cls_  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type] -- cls_ gains .Config at runtime, structurally satisfying HasRelaxedConfig; unrepresentable statically
 
     if cls is None:
         # Called with arguments: @autofig(require_defaults=True)
