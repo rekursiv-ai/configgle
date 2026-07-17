@@ -84,9 +84,9 @@ def test_original_init_preserved():
             self.a = a
             self.b = b
 
-    baz = Baz(a=10, b="direct")  # pyright: ignore[reportCallIssue]
-    assert baz.a == 10  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
-    assert baz.b == "direct"  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    baz = Baz(a=10, b="direct")  # pyright: ignore[reportCallIssue]  # ty: ignore[unknown-argument] -- autofig-decorated; original __init__ invisible under HasRelaxedConfig
+    assert baz.a == 10  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # ty: ignore[unresolved-attribute] -- autofig-decorated; real attrs invisible under HasRelaxedConfig
+    assert baz.b == "direct"  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # ty: ignore[unresolved-attribute] -- autofig-decorated; real attrs invisible under HasRelaxedConfig
 
 
 def test_require_defaults():
@@ -113,7 +113,7 @@ def test_autofig_with_broken_type_hints():
         ns,
     )
     Cls = ns["B"]
-    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType, reportUnknownVariableType]  # ty: ignore[no-matching-overload]
+    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType, reportUnknownVariableType]  # ty: ignore[no-matching-overload] -- exec erases the generated class type
     config = decorated.Config(x=42)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
     assert config.make().x == 42  # pyright: ignore[reportUnknownMemberType]
 

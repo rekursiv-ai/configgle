@@ -83,7 +83,7 @@ def test_cloudpickle():
     assert cfg.b == cfg_.b
     assert cfg.c == cfg_.c
     with pytest.raises(AttributeError):
-        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]
+        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[invalid-assignment] -- test deliberately assigns an invalid field
 
 
 def test_pickle_parent_class_restored():
@@ -666,7 +666,7 @@ def test_update_source_with_attribute_error():
     cfg = Config()
     source = BadSource()
     # Should skip y since it raises AttributeError
-    cfg.update(source, skip_missing=True)  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type]
+    cfg.update(source, skip_missing=True)  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type] -- malformed source exercises skip_missing
     assert cfg.x == 1
 
 
