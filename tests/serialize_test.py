@@ -452,7 +452,7 @@ def test_class_and_function_reference_roundtrip():
     """
     tree = serialize({"fn": _plain_fn, "cls": dict})
     assert tree["cls"] == {"py/type": "builtins.dict"}
-    assert tree["fn"] == {"py/function": "test_serialize._plain_fn"}
+    assert tree["fn"] == {"py/function": f"{__name__}._plain_fn"}
     back = _roundtrip({"fn": _plain_fn, "cls": dict})
     assert back["fn"] is _plain_fn
     assert back["cls"] is dict
@@ -472,7 +472,7 @@ def test_stale_function_import_path_is_rejected(
     with pytest.raises(TypeError, match="does not resolve to the same object"):
         serialize(_stale_redefined_fn)
     assert serialize(_live_redefined_fn) == {
-        "py/function": "test_serialize._live_redefined_fn",
+        "py/function": f"{__name__}._live_redefined_fn",
     }
 
 
