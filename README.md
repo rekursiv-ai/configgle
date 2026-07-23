@@ -1,15 +1,24 @@
 # configgle🤭
+
+[![PyPI version](https://img.shields.io/pypi/v/configgle.svg)](https://pypi.org/project/configgle/)
+[![CI](https://github.com/rekursiv-ai/configgle/actions/workflows/package-validation.yml/badge.svg?branch=main)](https://github.com/rekursiv-ai/configgle/actions/workflows/package-validation.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
+
 Hierarchical experiment configuration using pure Python dataclasses with typed
 factory methods, covariant protocols, inheritance support, and tooling for
 pretty printing, autodecorating, updating, and semi-deep copying.
 
-## Installation
+> *If you're tired of YAML files and stringly-typed keys for ML experiment config and want plain,
+> typed Python dataclasses your IDE and type-checker actually understand.*
+
+## Install
 
 ```bash
 python -m pip install configgle
 ```
 
-## Example
+## Quickstart
 
 ```python
 from configgle import Fig
@@ -440,6 +449,16 @@ If you find our work useful, please consider citing:
       url={https://github.com/rekursiv-ai/configgle},
 }
 ```
+
+## See also
+
+Sibling libraries in the [rekursiv-ai](https://github.com/rekursiv-ai) family:
+
+- [priml](https://github.com/rekursiv-ai/priml) — Composable PyTorch building blocks: models, optimizers, losses, and a step-based training loop.
+- [trackinizer](https://github.com/rekursiv-ai/trackinizer) — Centralized agent database for tracking inquiries, work, and the evidence behind conclusions.
+- [sagent](https://github.com/rekursiv-ai/sagent) — The self-mutating multi-provider coding-agent CLI and typed Python library.
+- [madcatter](https://github.com/rekursiv-ai/madcatter) — Rich-based Markdown renderer for the terminal; ships the `mdcat` CLI.
+- [wesearch](https://github.com/rekursiv-ai/wesearch) — Web search, resilient page fetch, and scholarly-paper lookup without a browser stack.
 
 ## License
 
