@@ -18,16 +18,20 @@ from typing import TypeVar, Protocol, ClassVar
 
 _T = TypeVar("_T")
 
+
 class HasConfig(Protocol[_T]):
     Config: ClassVar[type[_T]]
+
 
 def decorator(cls: type[_T]) -> type[HasConfig[_T]]:
     cls.Config = type("Config", (), {})
     return cls  # type: ignore
 
+
 @decorator
 class Foo:
     pass
+
 
 # basedpyright: Foo is type[HasConfig[Foo]] ✓
 # ty: Foo is <class 'Foo'> ✗
@@ -49,13 +53,17 @@ Foo.Config  # ty error: Class `Foo` has no attribute `Config`
 ```python
 from typing_extensions import TypeIs
 
+
 class Finalizable(Protocol):
     def finalize(self) -> Self: ...
 
+
 _T = TypeVar("_T")
+
 
 def needs_finalize(x: object) -> TypeIs[Finalizable]:
     return hasattr(x, "finalize")
+
 
 def process(value: _T) -> _T:
     if needs_finalize(value):
@@ -83,6 +91,7 @@ def process(value: _T) -> _T:
 @dataclasses.dataclass(init=False, repr=False, eq=False)
 class DataclassLike(Protocol):
     pass
+
 
 # ty error: Protocol class `DataclassLike` cannot be decorated with `@dataclass`
 ```

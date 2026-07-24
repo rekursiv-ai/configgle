@@ -149,6 +149,7 @@ ignore = [
     "ANN",     # Flake8 annotations. (We use pyright for type checking.)
     "C90",     # McCabe complexity. (One function slightly over threshold.)
     "COM812",  # Missing trailing comma. (select=ALL warning is unfixable.)
+    "CPY001",  # Missing copyright notice. (License is in LICENSE, not per-file.)
                # https://github.com/astral-sh/ruff/issues/9216
 
     # Relax docstring rules.

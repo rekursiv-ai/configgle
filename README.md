@@ -14,6 +14,7 @@ python -m pip install configgle
 ```python
 from configgle import Fig
 
+
 class Model:
     class Config(Fig):
         hidden_size: int = 256
@@ -21,6 +22,7 @@ class Model:
 
     def __init__(self, config: Config):
         self.config = config
+
 
 # Create and modify config
 cfg = Model.Config()
@@ -39,6 +41,7 @@ tweak a baseline:
 def exp000() -> Model.Config:
     return Model.Config()
 
+
 def exp001() -> Model.Config:
     cfg = exp000()
     cfg.hidden_size = 512
@@ -52,12 +55,14 @@ Or use `@autofig` to auto-generate the Config from `__init__`:
 from configgle import autofig
 from torch import nn
 
+
 @autofig
 class Model(nn.Module):
     def __init__(self, hidden_size: int = 256, num_layers: int = 4):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+
 
 # Config is auto-generated from __init__ signature
 model = Model.Config(hidden_size=512).make()
@@ -95,6 +100,7 @@ class Model:
     def __init__(self, config: Config):
         self.hidden_size = config.hidden_size
 
+
 model = Model.Config(hidden_size=512).make()  # inferred as Model
 ```
 
@@ -110,6 +116,7 @@ class Model:
 
     def __init__(self, config: Config):
         self.hidden_size = config.hidden_size
+
 
 model: Model = Model.Config(hidden_size=512).make()  # returns Model, not object
 ```
@@ -134,6 +141,7 @@ normally be the parent. Use `Makes` to re-bind it (again, only needed for `based
 ```python
 from configgle import Makes
 
+
 class Animal:
     class Config(Fig["Animal"]):
         name: str = "animal"
@@ -142,6 +150,7 @@ class Animal:
         self.config = config
         self.name = config.name
 
+
 class Dog(Animal):
     class Config(Makes["Dog"], Animal.Config):
         breed: str = "mutt"
@@ -149,6 +158,7 @@ class Dog(Animal):
     def __init__(self, config: Config):
         super().__init__(config)
         self.breed = config.breed
+
 
 dog: Dog = Dog.Config(name="Rex", breed="labrador").make()  # returns Dog, not Animal
 ```
@@ -167,8 +177,10 @@ covariant, `Makeable[Dog]` is assignable to `Makeable[Animal]`:
 ```python
 from configgle import Makeable
 
+
 def train(config: Makeable[Animal]) -> Animal:
     return config.make()
+
 
 # All valid:
 train(Animal.Config())
@@ -189,15 +201,16 @@ values up):
 from configgle import Configurable  # Just an alias to Makeable.
 from dataclasses import field
 
+
 class Encoder:
     class Config(Fig):
         c_in: int = 256
         mlp: Configurable[nn.Module] = field(default_factory=MLP.Config)
 
         def finalize(self) -> Self:
-            self.mlp.c_in = self.c_in   # pre: push down into the child
-            self = super().finalize()   # children finalize here
-            self.out = self.mlp.out     # post: derive up from the child
+            self.mlp.c_in = self.c_in  # pre: push down into the child
+            self = super().finalize()  # children finalize here
+            self.out = self.mlp.out  # post: derive up from the child
             return self
 ```
 
@@ -233,9 +246,9 @@ from configgle import InlineConfig
 import torch.nn as nn
 
 cfg = InlineConfig(nn.Linear, in_features=256, out_features=128, bias=False)
-cfg.out_features = 64     # attribute-style access to kwargs
-layer = cfg.make()        # calls nn.Linear(in_features=256, out_features=64, bias=False)
-y = layer(x)              # use the constructed module
+cfg.out_features = 64  # attribute-style access to kwargs
+layer = cfg.make()  # calls nn.Linear(in_features=256, out_features=64, bias=False)
+y = layer(x)  # use the constructed module
 ```
 
 `PartialConfig` is shorthand for `InlineConfig(functools.partial, fn, ...)`
@@ -246,8 +259,10 @@ from configgle import PartialConfig
 import torch.nn.functional as F
 
 cfg = PartialConfig(F.cross_entropy, label_smoothing=0.1)
-loss_fn = cfg.make()      # returns functools.partial(F.cross_entropy, label_smoothing=0.1)
-loss = loss_fn(logits, targets)  # calls F.cross_entropy(logits, targets, label_smoothing=0.1)
+loss_fn = cfg.make()  # returns functools.partial(F.cross_entropy, label_smoothing=0.1)
+loss = loss_fn(
+    logits, targets
+)  # calls F.cross_entropy(logits, targets, label_smoothing=0.1)
 ```
 
 Nested configs in args/kwargs are finalized and `make()`-d recursively, so
@@ -273,6 +288,7 @@ printing, and scrubs memory addresses:
 ```python
 from configgle import Configurable, Fig, pformat
 
+
 class MLP:
     class Config(Fig):
         c_in: int = 256
@@ -280,7 +296,9 @@ class MLP:
         num_layers: int = 2
         dropout: float = 0.1
         use_bias: bool = True
+
     def __init__(self, config: Config): ...
+
 
 class Model:
     class Config(Fig):
@@ -288,7 +306,9 @@ class Model:
         num_layers: int = 4
         mlp: Configurable[nn.Module] = field(default_factory=MLP.Config)
         output_mlp: Configurable[nn.Module] = field(default_factory=MLP.Config)
+
     def __init__(self, config: Config): ...
+
 
 def exp001():
     cfg = Model.Config()
@@ -303,6 +323,7 @@ def exp001():
     cfg.output_mlp.c_out = 256
     cfg.output_mlp.dropout = 0.3
     return cfg
+
 
 print(pformat(exp001(), continuation_pipe=0))
 # Model.Config(
@@ -325,8 +346,8 @@ one line. `pformat` and `pprint` are also available as methods on any `Fig` conf
 
 ```python
 cfg = exp001()
-cfg.pprint()         # prints to stdout
-s = cfg.pformat()    # returns string
+cfg.pprint()  # prints to stdout
+s = cfg.pformat()  # returns string
 ```
 
 ### `Dataclass` base

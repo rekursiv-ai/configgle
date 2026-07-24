@@ -244,7 +244,7 @@ class FigPrinter(PrettyPrinter):
                 warnings.warn(str(e), stacklevel=2)
         return obj
 
-    def _pprint_dataclass(
+    def _pprint_dataclass(  # noqa: PLR0917 -- pprint override; CPython dispatches positionally, keyword-only params break it.
         self,
         obj: object,
         stream: SupportsWrite[str],
@@ -274,7 +274,7 @@ class FigPrinter(PrettyPrinter):
         self._format_namespace_items(items, stream, indent, allowance, context, level)
         stream.write(")")
 
-    def _format_namespace_items(
+    def _format_namespace_items(  # noqa: PLR0917 -- pprint override; CPython dispatches positionally, keyword-only params break it.
         self,
         items: list[tuple[str, object]],
         stream: SupportsWrite[str],
@@ -319,11 +319,11 @@ class FigPrinter(PrettyPrinter):
             else:
                 formatted_value = self._format_namespace_value(
                     ent,
-                    context,
-                    level,
-                    item_indent,
-                    allowance if last else 1,
-                    len(items),
+                    context=context,
+                    level=level,
+                    item_indent=item_indent,
+                    allowance=allowance if last else 1,
+                    num_items=len(items),
                 )
                 write(formatted_value)
 
@@ -336,6 +336,7 @@ class FigPrinter(PrettyPrinter):
     def _format_namespace_value(
         self,
         value: object,
+        *,
         context: dict[int, int],
         level: int,
         item_indent: int,
