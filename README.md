@@ -1,4 +1,11 @@
 # configgle🤭
+
+[![PyPI version](https://img.shields.io/pypi/v/configgle.svg)](https://pypi.org/project/configgle/)
+[![CI](https://github.com/rekursiv-ai/configgle/actions/workflows/package-validation.yml/badge.svg?branch=main)](https://github.com/rekursiv-ai/configgle/actions/workflows/package-validation.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Discord](https://img.shields.io/discord/1530237005311639592?logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/2GZFPPvCqn)
+
 Hierarchical experiment configuration using pure Python dataclasses with typed
 factory methods, covariant protocols, inheritance support, and tooling for
 pretty printing, autodecorating, updating, and semi-deep copying.
