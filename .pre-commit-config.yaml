@@ -58,7 +58,7 @@ repos:
   # Validates uv.lock matches pyproject.toml (no network needed).
   # Run `uv lock` manually when changing dependencies.
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.22
+    rev: 0.11.32
     hooks:
       - id: uv-lock
         stages: [pre-commit]
