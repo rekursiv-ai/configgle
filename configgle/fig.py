@@ -530,6 +530,7 @@ class _DataclassParams:
 
     def __init__(
         self,
+        *,
         init: bool = True,
         repr: bool = True,
         eq: bool = True,
