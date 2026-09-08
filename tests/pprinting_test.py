@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
-from typing import Self, cast, override
+from typing import Self, override
 
 import ast
 import copy
@@ -628,18 +628,13 @@ class TestCollapseMultiline:
         assert ast.literal_eval(collapsed) == ast.literal_eval(multiline)
 
 
-class _AmbiguousComparison:
-    def __bool__(self) -> bool:
-        raise ValueError("ambiguous comparison")
-
-
 class _AmbiguousValue:
     __hash__ = object.__hash__
 
     @override
     def __eq__(self, other: object) -> bool:
         del other
-        return cast(bool, _AmbiguousComparison())
+        raise ValueError("ambiguous comparison")
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
