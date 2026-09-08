@@ -774,11 +774,6 @@ class FigMeta(_DataclassMeta, MakerMeta):
         ) -> FigMeta: ...
 
 
-# @dataclass_transform is on Fig (not FigMeta) to work around a ty bug
-# where Intersection[_T, type[Generic[TypeVar]]] in MakerMeta.__get__
-# breaks dataclass_transform field inheritance when applied to the
-# metaclass (https://github.com/astral-sh/ty/issues/3282). When fixed,
-# move @dataclass_transform back to FigMeta and remove it from here.
 @dataclass_transform(kw_only_default=True)
 class Fig(Maker[_ParentT_co], metaclass=FigMeta):
     """Dataclass with make/finalize/update for the nested Config pattern.
@@ -876,9 +871,9 @@ def make[ParentT](config: Maker[ParentT]) -> ParentT:
     if cls is None:  # pyright: ignore[reportUnnecessaryComparison] -- parent_class is non-None per its annotation, but a Maker not nested in a class has none at runtime; the guard is a real runtime check.
         raise ValueError("Maker must be nested in a parent class")
     if getattr(type(finalized), "make_with_kwargs", False):
+        assert isinstance(finalized, DataclassLike)
         kwargs = {
-            f.name: getattr(finalized, f.name)
-            for f in dataclasses.fields(cast(DataclassLike, cast(object, finalized)))
+            f.name: getattr(finalized, f.name) for f in dataclasses.fields(finalized)
         }
         return cast(_MakesFromKwargs[ParentT], cls)(**kwargs)
     return cast(_MakesFromConfig[ParentT], cls)(finalized)

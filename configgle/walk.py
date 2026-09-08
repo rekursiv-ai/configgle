@@ -202,16 +202,22 @@ def copy_tree[ValueT](
         return cast(ValueT, _copy_immutable_container(container, visited))
 
     # Mutable containers (list, dict, set): always copy so an in-place mutation
-    # never reaches the original.
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        copied = [copy_tree(v, visited) for v in value]
-    elif isinstance(value, Mapping):
-        copied = {
-            copy_tree(k, visited): copy_tree(v, visited)
-            for k, v in cast(Mapping[object, object], value).items()
-        }
-    elif isinstance(value, AbstractSet):
-        copied = {copy_tree(v, visited) for v in cast(AbstractSet[object], value)}
+    # never reaches the original. Narrowed through ``object`` because
+    # subtracting the classes excluded above from an unsolved ``ValueT``
+    # empties the surviving ABC intersections.
+    node = cast(object, value)
+    if isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
+        copied = [copy_tree(v, visited) for v in node]
+    elif isinstance(node, Mapping):
+        # Bound here rather than off the narrowed union below: that union's
+        # mapping arm carries an unsolved key type into ``type(...)``.
+        mapping = cast(Mapping[object, object], node)
+        rebuild_container = cast(Callable[[object], ValueT], type(mapping))
+        return rebuild_container(
+            {copy_tree(k, visited): copy_tree(v, visited) for k, v in mapping.items()}
+        )
+    elif isinstance(node, AbstractSet):
+        copied = {copy_tree(v, visited) for v in node}
     else:
         # Only recurse into data containers (dataclasses or classes with their
         # own ``__slots__``). Plain objects without config data (loggers, file
@@ -229,7 +235,7 @@ def copy_tree[ValueT](
     # ``type(value)`` statically resolves to ``type[object]`` and the call reads
     # as ``object.__init__``. Name the real contract: a one-argument iterable
     # constructor whose element type is erased at runtime.
-    ctor = cast(Callable[[object], ValueT], type(cast(object, value)))
+    ctor = cast(Callable[[object], ValueT], type(node))
     return ctor(copied)
 
 
@@ -266,28 +272,34 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
     if isinstance(value, (type, int, float, str, bytes, bool, type(None))):
         return value
 
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        finalized_items: list[object] = [_finalize_value(v) for v in value]
-        if isinstance(value, tuple):
+    node = cast(object, value)  # See ``copy_tree``.
+    if isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
+        finalized_items: list[object] = [_finalize_value(v) for v in node]
+        if isinstance(node, tuple):
             # Preserve the original tuple/namedtuple when no element changed
             # identity (an in-place finalize); rebuild only to carry a replaced
             # element. Matches ``_copy_immutable_container``.
-            if all(f is o for f, o in zip(finalized_items, value, strict=True)):
+            if all(f is o for f, o in zip(finalized_items, node, strict=True)):
                 return value
-            if type(value) is tuple:
-                return tuple(finalized_items)  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type] -- ValueT is a tuple here, but the checkers cannot prove the reconstructed tuple matches ValueT.
-            return type(value)(*finalized_items)  # pyright: ignore[reportArgumentType] -- namedtuple reconstruction: positional args are the finalized fields, untypeable generically.
+            if type(node) is tuple:
+                # One iterable argument for a plain tuple; a namedtuple takes
+                # its fields positionally instead.
+                return cast(Callable[[object], ValueT], tuple)(finalized_items)
+            rebuild = cast(Callable[..., ValueT], type(node))
+            return rebuild(*finalized_items)
         finalized = finalized_items
-    elif isinstance(value, Mapping):
-        finalized = {
-            _finalize_value(k): _finalize_value(v)
-            for k, v in cast(Mapping[object, object], value).items()
-        }
-    elif isinstance(value, AbstractSet):
+    elif isinstance(node, Mapping):
+        # Bound here rather than off the narrowed union below: that union's
+        # mapping arm carries an unsolved key type into ``type(...)``.
+        mapping = cast(Mapping[object, object], node)
+        rebuild_container = cast(Callable[[object], ValueT], type(mapping))
+        finalized = {_finalize_value(k): _finalize_value(v) for k, v in mapping.items()}
+        return rebuild_container(finalized)
+    elif isinstance(node, AbstractSet):
         # An ``eq=False`` Fig is hashable and can be a set member, so its
         # elements are finalized and the set is rebuilt. (A default ``eq=True``
         # Fig is unhashable and cannot appear here.)
-        finalized = {_finalize_value(v) for v in cast(AbstractSet[object], value)}
+        finalized = {_finalize_value(v) for v in node}
     else:
         # Only recurse into data containers (dataclasses or classes with their
         # own __slots__). Skip plain objects like loggers, file handles, etc.
@@ -309,7 +321,7 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
 
     # Reconstruct the container with the finalized items.
     # See ``copy_tree``: the narrowed union erases the concrete container type.
-    ctor = cast(Callable[[object], ValueT], type(cast(object, value)))
+    ctor = cast(Callable[[object], ValueT], type(node))
     return ctor(finalized)
 
 

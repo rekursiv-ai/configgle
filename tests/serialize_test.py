@@ -1042,7 +1042,7 @@ def test_shared_list_keeps_wrapper_for_identity():
     # Same list object in a second field (typed loosely; runtime shares identity).
     object.__setattr__(cfg, "items", shared)
     back = _roundtrip(cfg)
-    assert back.nums is cast(list[int], back.items)
+    assert back.nums is back.items
     assert back.nums == [1, 2]
 
 
