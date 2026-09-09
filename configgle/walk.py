@@ -198,7 +198,7 @@ def copy_tree[ValueT](
     # mutable element inside it was copied. They cannot be mutated in place, so
     # the only reason to rebuild one is to carry a freshly copied element.
     if isinstance(value, (tuple, frozenset)):
-        container = cast("tuple[object, ...] | frozenset[object]", value)
+        container = cast(tuple[object, ...] | frozenset[object], value)
         return cast(ValueT, _copy_immutable_container(container, visited))
 
     # Mutable containers (list, dict, set): always copy so an in-place mutation
