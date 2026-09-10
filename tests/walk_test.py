@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import field
 from typing import NamedTuple, Self, cast, override
 
+import random
+import socket
+import types
+
+from configgle.custom_types import LateBound
 from configgle.fig import Fig
 from configgle.walk import (
     _get_object_attribute_names,
+    bind_late,
     copy_tree,
 )
 
@@ -369,6 +376,116 @@ def test_copy_tree_dag_in_list():
     copied = copy_tree(root)
     assert copied.items[0] is copied.items[1]
     assert copied.items[0] is not shared
+
+
+def test_bind_late_does_not_walk_into_an_imported_module():
+    """A module-valued attribute is a leaf, not a subtree to search.
+
+    ``random`` (or any module) reached from a built object exposes the whole
+    imported graph; walking it hits third-party objects whose permissive
+    ``__getattr__`` synthesizes a callable ``modules`` and hijacks the walk
+    (``pytest.mark`` raised ``TypeError``; ``wandb``'s disabled shim raised
+    ``KeyError``).
+    """
+
+    class Trap:
+        """Stands in for ``pytest.mark``: any attribute read is a landmine."""
+
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"bind_late must not probe {name!r} here")
+
+    module = types.ModuleType("fake_module_with_a_trap")
+    # ``vars(module)[...]``, not ``module.trap = ...``: a fresh ``ModuleType``
+    # declares no attributes, so the literal form is a static error.
+    vars(module)["trap"] = Trap()
+
+    class Holder:
+        def __init__(self) -> None:
+            self.rng = module
+
+    bind_late(Holder())
+
+
+def test_bind_late_does_not_probe_modules_through_instance_getattr():
+    """``modules`` is a METHOD, so it is looked up on the class, never the instance.
+
+    ``wandb``'s disabled shim is a ``dict`` subclass whose ``__getattr__``
+    forwards to ``__getitem__``, so an instance-level probe raised ``KeyError``
+    rather than reporting "no such method".
+    """
+
+    class Shim(dict[str, object]):
+        def __getattr__(self, key: str) -> object:
+            return self[key]  # raises KeyError for any absent name
+
+    class Holder:
+        def __init__(self) -> None:
+            self.client = Shim()
+
+    bind_late(Holder())
+
+
+def test_bind_late_does_not_bind_a_foreign_object_that_merely_has_bind():
+    """``LateBound`` is runtime-checkable, so it matches on the METHOD NAME alone.
+
+    A live ``socket`` has ``bind(address)``; reached from a built tree, the walk
+    called ``sock.bind(root)`` and raised ``TypeError: a bytes-like object is
+    required``. Structural intent needs an explicit opt-in, not a name collision.
+    """
+    with socket.socket() as sock:
+
+        class Holder:
+            def __init__(self) -> None:
+                self.transport = sock
+
+        bind_late(Holder())  # must not call sock.bind
+
+
+def test_bind_late_walks_a_torch_style_module_subtree():
+    """The class-level probe must still find a real ``modules()`` method."""
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    class Net:
+        """Duck-typed stand-in for ``nn.Module`` (this package stays torch-free)."""
+
+        def __init__(self, children: list[object]) -> None:
+            self._children = children
+
+        def modules(self) -> Iterator[object]:
+            yield self
+            yield from self._children
+
+    root = Net([Late()])
+    bind_late(root)
+    assert seen == [root]
+
+
+def test_bind_late_still_binds_through_ordinary_attributes():
+    """The module skip must not cost the walk its normal reach."""
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    class Inner:
+        def __init__(self) -> None:
+            self.late = Late()
+            self.rng = random  # a module sits beside the real subtree
+
+    class Root:
+        def __init__(self) -> None:
+            self.inner = Inner()
+
+    root = Root()
+    bind_late(root)
+    assert seen == [root]
 
 
 if __name__ == "__main__":

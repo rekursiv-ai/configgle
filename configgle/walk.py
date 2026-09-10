@@ -28,14 +28,16 @@ from collections.abc import (
     Sequence,
     Set as AbstractSet,
 )
+from types import FunctionType, ModuleType
 from typing import cast
 
 import copy
 
-from configgle.custom_types import Finalizeable, Makeable
+from configgle.custom_types import Finalizeable, LateBound, Makeable
 
 
 __all__ = [
+    "bind_late",
     "copy_tree",
 ]
 
@@ -323,6 +325,54 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
     # See ``copy_tree``: the narrowed union erases the concrete container type.
     ctor = cast(Callable[[object], ValueT], type(node))
     return ctor(finalized)
+
+
+def bind_late(root: object) -> None:
+    """Call ``bind(root)`` on every ``LateBound`` reachable from ``root``, once.
+
+    Walks the BUILT tree, not a config tree, so the shapes differ from
+    ``copy_tree``: a torch module exposes its subtree through ``modules()``
+    (duck-typed, so this module stays torch-free), and otherwise attributes and
+    containers are followed as ``_finalize_value`` follows them.
+
+    Args:
+      root: The outermost built object; what every ``bind`` receives.
+
+    """
+    seen = set[int]()
+    stack: list[object] = [root]
+    while stack:
+        node = stack.pop()
+        if id(node) in seen or isinstance(
+            node,
+            (type, int, float, str, bytes, bool, type(None), ModuleType, FunctionType),
+        ):
+            continue
+        seen.add(id(node))
+        if isinstance(node, LateBound):
+            node.bind(root)
+        # ``modules`` is looked up on the TYPE: an instance attribute of that
+        # name is data, and a dynamic ``__getattr__`` (a module namespace, a
+        # marker registry) would manufacture one.
+        modules = getattr(type(node), "modules", None)
+        if callable(modules):
+            stack.extend(cast(Iterator[object], modules(node)))
+        elif isinstance(node, Mapping):
+            stack.extend(cast(Mapping[object, object], node).values())
+        elif isinstance(node, (Sequence, AbstractSet)):
+            stack.extend(cast(Iterator[object], node))
+        elif (
+            hasattr(type(node), "__dataclass_fields__")
+            or "__slots__" in type(node).__dict__
+            or type(node).__module__ != "builtins"
+        ):
+            # A user-defined object is walked as a data carrier; a builtin
+            # (a random.Random, a logger's lock) is a leaf.
+            for name in _get_object_attribute_names(node):
+                try:
+                    stack.append(getattr(node, name))
+                except AttributeError:
+                    continue
 
 
 def _make_value[ValueT](

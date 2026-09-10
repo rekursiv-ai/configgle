@@ -23,6 +23,7 @@ __all__ = [
     "Finalizeable",
     "HasConfig",
     "HasRelaxedConfig",
+    "LateBound",
     "Makeable",
     "MutableNamespace",
     "RelaxedConfigurable",
@@ -40,6 +41,31 @@ class Finalizeable(Protocol):
     """
 
     def finalize(self) -> Self: ...
+
+
+class LateBound:
+    """A built object that needs a sibling it could not see at construction.
+
+    A config is hermetic, so an object built from one knows nothing of its
+    neighbours. ``make`` closes that gap once: after the OUTERMOST build
+    completes it walks the built tree and calls ``bind(root)`` on every
+    implementer, passing the root object. The implementer holds a configured
+    accessor (a dotted path, say) and applies it to ``root`` itself; a parent
+    writes no line, and the reference may point at something built later.
+
+    Root-relative, by construction: ``make`` never learns which object built
+    which, so a path names where the target lives in the outermost tree.
+
+    A nominal base, NOT a ``runtime_checkable`` Protocol: ``isinstance`` on a
+    runtime-checkable protocol tests member NAMES only, so every object with an
+    unrelated ``bind`` matched -- a live ``socket`` has ``bind(address)``, and
+    the walk called ``sock.bind(root)``. Subclassing is the opt-in.
+    """
+
+    def bind(self, root: object) -> None:
+        """Wire this object to the finished tree rooted at ``root``."""
+        del root
+        raise NotImplementedError
 
 
 @runtime_checkable
