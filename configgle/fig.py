@@ -59,6 +59,7 @@ from a child AFTER it (read its finalized value). Pushdown dominates, so
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextvars import ContextVar
 from types import CellType, MethodType
 from typing import (
     IO,
@@ -102,6 +103,7 @@ from configgle.walk import (
     _copy_slots,
     _finalize_value,
     _get_object_attribute_names,
+    bind_late,
 )
 
 
@@ -870,13 +872,31 @@ def make[ParentT](config: Maker[ParentT]) -> ParentT:
     cls = finalized.parent_class
     if cls is None:  # pyright: ignore[reportUnnecessaryComparison] -- parent_class is non-None per its annotation, but a Maker not nested in a class has none at runtime; the guard is a real runtime check.
         raise ValueError("Maker must be nested in a parent class")
-    if getattr(type(finalized), "make_with_kwargs", False):
-        assert isinstance(finalized, DataclassLike)
-        kwargs = {
-            f.name: getattr(finalized, f.name) for f in dataclasses.fields(finalized)
-        }
-        return cast(_MakesFromKwargs[ParentT], cls)(**kwargs)
-    return cast(_MakesFromConfig[ParentT], cls)(finalized)
+    # Bind at the OUTERMOST make only. A parent's ``__init__`` builds children
+    # through inner ``make`` calls; binding there would hand each child itself
+    # as root, before its siblings exist. So the flag is raised around the
+    # whole construction, and only the call that raised it binds. A ContextVar,
+    # so a build on another thread is its own outermost.
+    outermost = not _building.get()
+    token = _building.set(True)
+    try:
+        if getattr(type(finalized), "make_with_kwargs", False):
+            assert isinstance(finalized, DataclassLike)
+            kwargs = {
+                f.name: getattr(finalized, f.name)
+                for f in dataclasses.fields(finalized)
+            }
+            instance = cast(_MakesFromKwargs[ParentT], cls)(**kwargs)
+        else:
+            instance = cast(_MakesFromConfig[ParentT], cls)(finalized)
+        if outermost:
+            bind_late(instance)
+    finally:
+        _building.reset(token)
+    return instance
+
+
+_building = ContextVar[bool]("configgle_building", default=False)
 
 
 def update[MakerT: Maker[Any]](

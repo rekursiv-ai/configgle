@@ -7,12 +7,14 @@ from typing import NamedTuple, Self, cast, override
 import dataclasses
 import io
 import logging
+import operator
 import pickle
+import threading
 
 import cloudpickle
 import pytest
 
-from configgle import InlineConfig, Makeable, PartialConfig
+from configgle import InlineConfig, LateBound, Makeable, PartialConfig
 from configgle.fig import (
     Fig,
     Maker,
@@ -1155,6 +1157,115 @@ class _RebuildingParent:
         # Canonical build pattern: construct the nested component from its
         # already-finalized config.
         self.child = config.child.make()
+
+
+class _Table:
+    """A leaf that owns a value another leaf borrows."""
+
+    class Config(Fig["_Table"]):
+        value: int = 0
+
+    def __init__(self, config: Config) -> None:
+        self.value = config.value
+
+
+class _Borrower(LateBound):
+    """A LateBound leaf: reads a sibling named by path on the finished root."""
+
+    class Config(Fig["_Borrower"]):
+        tied: str = ""
+
+    def __init__(self, config: Config) -> None:
+        self.tied = config.tied
+        self.bound_to: object = None
+        self.bind_calls = 0
+
+    @override
+    def bind(self, root: object) -> None:
+        self.bind_calls += 1
+        self.bound_to = operator.attrgetter(self.tied)(root) if self.tied else root
+
+
+class _Root:
+    """A parent that builds its children in ``__init__`` via inner ``make``."""
+
+    class Config(Fig["_Root"]):
+        table: _Table.Config = field(default_factory=_Table.Config)
+        head: _Borrower.Config = field(default_factory=_Borrower.Config)
+        parts: list[Makeable[object]] = field(default_factory=list[Makeable[object]])
+
+    def __init__(self, config: Config) -> None:
+        # Built BEFORE ``table``: the reference points forward, so nothing
+        # available at the borrower's own construction could resolve it.
+        self.head = config.head.make()
+        self.table = config.table.make()
+        self.parts = [part.make() for part in config.parts]
+
+
+def test_make_binds_late_bound_leaves_against_the_outermost_root():
+    """``bind(root)`` runs once per leaf, after the whole tree is built.
+
+    The borrower is built BEFORE the table it points at, so nothing available
+    at its own construction could have resolved the reference. Only the
+    outermost ``make`` binds; the root's inner ``make`` calls do not, else the
+    leaf would be bound against itself (or bound twice).
+    """
+    cfg = _Root.Config()
+    cfg.table.value = 7
+    cfg.head.tied = "table"
+
+    root = cfg.make()
+
+    assert root.head.bound_to is root.table
+    assert root.head.bind_calls == 1
+
+
+def test_make_binds_late_bound_leaves_reached_through_containers():
+    cfg = _Root.Config()
+    cfg.head.tied = "table"
+    cfg.parts = [_Borrower.Config(tied="table")]
+
+    root = cfg.make()
+
+    borrower = root.parts[0]
+    assert isinstance(borrower, _Borrower)
+    assert borrower.bound_to is root.table
+    assert borrower.bind_calls == 1
+
+
+def test_make_binding_walk_treats_foreign_objects_as_leaves():
+    """The bind walk follows data carriers only; it never probes a stranger.
+
+    A built object routinely holds a module, a function, or a stdlib object,
+    and ``getattr(x, "modules")`` on one of those is not free: a module or a
+    registry with a dynamic ``__getattr__`` manufactures an attribute on
+    demand (pytest turns ``pytest.mark.modules`` into a warning-as-error).
+    """
+
+    class Probe:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"probed for {name!r}")
+
+    class Holder:
+        class Config(Fig["Holder"]):
+            pass
+
+        def __init__(self, config: Config) -> None:
+            del config
+            self.module = pytest
+            self.function = test_make_binding_walk_treats_foreign_objects_as_leaves
+            self.lock = threading.Lock()
+            self.probe = Probe()
+
+    Holder.Config().make()
+
+
+def test_make_of_a_bare_late_bound_leaf_binds_it_to_itself():
+    """A leaf made on its own IS the root; ``bind`` sees itself."""
+    borrower = _Borrower.Config().make()
+
+    assert borrower.bound_to is borrower
+    assert borrower.bind_calls == 1
 
 
 def test_parent_rebuilding_child_in_init_finalizes_child_once():
