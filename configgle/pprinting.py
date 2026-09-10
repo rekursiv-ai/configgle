@@ -545,6 +545,8 @@ def _qualify_function_repr(current: object, text: str, ancestors: set[int]) -> s
 
 def _replace_unquoted_function_repr(text: str, bare: str, qualified: str) -> str:
     """Replace one exact function repr outside rendered string tokens."""
+    if bare not in text:
+        return text
     string_spans = _string_token_spans(text)
     for match in re.finditer(re.escape(bare), text):
         if not any(
@@ -696,8 +698,11 @@ def _filter_non_default_items(
 
 def _mask_memory_addresses(text: str) -> str:
     """Replace object-repr memory addresses outside string tokens."""
+    matches = list(re.finditer(r"(?<= at )0x[0-9a-fA-F]+", text))
+    if not matches:
+        return text
     string_spans = _string_token_spans(text)
-    for match in reversed(list(re.finditer(r"(?<= at )0x[0-9a-fA-F]+", text))):
+    for match in reversed(matches):
         if any(
             match.start() < end and match.end() > start for start, end in string_spans
         ):
