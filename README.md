@@ -468,81 +468,154 @@ cfg_ = pickle.loads(cloudpickle.dumps(cfg))
 model = cfg_.make()  # parent_class is preserved
 ```
 
+## Lineage
+
+The nested-`Config` shape is not new. Two production training codebases use
+it, and one cites the other:
+
+- **[AXLearn](https://github.com/apple/axlearn)** (Apple, 2023). Its
+  [ML API Style](https://github.com/apple/axlearn/blob/main/docs/ml_api_style.md)
+  sets the rules configgle follows: every layer has a `Config` member class,
+  a composite layer's config holds its children's configs as fields, and a
+  child's `input_dim` is set by the parent. `axlearn/common/config.py`
+  supplies `Configurable.Config.instantiate()`, `default_config()`, and
+  `config_for_function` / `config_for_class` for signature-derived configs.
+- **[torchtitan](https://github.com/pytorch/torchtitan)** (Meta, 2026-02-23).
+  [PR #2386](https://github.com/pytorch/torchtitan/pull/2386) replaced its
+  TOML job config with a `Configurable` base whose nested
+  `@dataclass(kw_only=True, slots=True) class Config` builds the owner via
+  `build()`. The author's note credits AXLearn's style doc. Model configs
+  then grew methods -- `get_nparams_and_flops(model, seq_len)` -- which is
+  the same move as a `finalize()` override: computation that belongs with
+  the config, not the module.
+
+configgle was written without knowledge of either and released 2026-02-02,
+three weeks before torchtitan's refactor merged. It adds a `finalize()`
+cascade for derived fields (AXLearn has validators; torchtitan's
+`update_from_config` carries a `TODO` calling itself an encapsulation
+violation), `pprint` as a diff against class defaults, `LateBound` for
+references across the built tree, and ships as a library with no framework
+attached. Both appear in the comparison below.
+
 ## Comparison
 
-| | [configgle](https://github.com/rekursiv-ai/configgle) | [Hydra](https://github.com/facebookresearch/hydra) | [Sacred](https://github.com/IDSIA/sacred) | [OmegaConf](https://github.com/omry/omegaconf) | [Gin](https://github.com/google/gin-config) | [ml_collections](https://github.com/google/ml_collections) | [Fiddle](https://github.com/google/fiddle) | [Confugue](https://github.com/cifkao/confugue) |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Python-based | ✅ | 🟡 | 🟡 | 🟡 | ❌ | ✅ | ✅ | 🟡 |
-| YAML-based | 🚫 | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
-| CLI overrides | ✅ | ✅ | ✅ | 🟡 | 🟡 | ✅ | ✅ | ❌ |
-| Sweeps / multirun | 🚫 | ✅ | ❌ | ❌ | ❌ | ❌ | 🟡 | ❌ |
-| Typed `make()`/`build()` return | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Derived fields | ✅ | 🟡 | 🟡 | 🟡 | ❌ | 🟡 | ❌ | ❌ |
-| Config from signature | ✅ | 🟡 | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| De/serialize to/from JSON/YAML/etc | ✅ | 🟡 | 🟡 | 🟡 | ❌ | 🟡 | 🟡 | ❌ |
-| `pickle`/`cloudpickle` | ✅ | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | 🟡 |
-| Active | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ | ✅ | ❌ |
-| GitHub stars | 11 | 10.6k | 4.4k | 2.4k | 2.2k | 1.0k | 386 | 21 |
+|                                             | [configgle] | [AXLearn] | [torchtitan] | [Hydra] | [Sacred] | [OmegaConf] | [Gin] | [ml_collections] | [Fiddle] | [Confugue] |
+| ------------------------------------------- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Python-based configuration                  |  ✅   |  ✅   |  ✅   |  🟡   |  🟡   |  🟡   |  ❌   |  ✅   |  ✅   |  🟡   |
+| YAML-based configuration                    |  🚫   |  🚫   |  🚫   |  ✅   |  ✅   |  ✅   |  ❌   |  ❌   |  ❌   |  ✅   |
+| Installable without a trainer               |  ✅   |  ❌   |  ❌   |  ✅   |  ✅   |  ✅   |  ✅   |  ✅   |  ✅   |  ✅   |
+| Set a nested field from the command line    |  ✅   |  ❌   |  ✅   |  ✅   |  ✅   |  🟡   |  🟡   |  ✅   |  ✅   |  ❌   |
+| Nested `Config` builds its class            |  ✅   |  ❌   |  ✅   |  ❌   |  ❌   |  ❌   |  ❌   |  ❌   |  ❌   |  ❌   |
+| Type checker knows what `make()` returns    |  ✅   |  ✅   |  🟡   |  ❌   |  ❌   |  ❌   |  ❌   |  ❌   |  ✅   |  ❌   |
+| Derived fields cascade to children          |  ✅   |  🟡   |  🟡   |  🟡   |  🟡   |  🟡   |  ❌   |  🟡   |  ❌   |  ❌   |
+| Config schema generated from `__init__`     |  ✅   |  ✅   |  ❌   |  🟡   |  ❌   |  ❌   |  ❌   |  ❌   |  ✅   |  ❌   |
+| Print only fields that differ from defaults |  ✅   |  ✅   |  ❌   |  ❌   |  ❌   |  ❌   |  🟡   |  ❌   |  🟡   |  ❌   |
+| Weight tying by path                        |  ✅   |  ❌   |  🟡   |  ❌   |  ❌   |  ❌   |  ❌   |  ❌   |  🟡   |  ❌   |
+| To plain dict and back to typed config      |  ✅   |  🟡   |  🟡   |  🟡   |  🟡   |  🟡   |  ❌   |  🟡   |  🟡   |  ❌   |
+| Survives `pickle`/`cloudpickle`             |  ✅   |  🟡   |  🟡   |  🟡   |  🟡   |  ✅   |  🟡   |  🟡   |  ✅   |  🟡   |
+| Commits in the last six months              |  ✅   |  ✅   |  ✅   |  ✅   |  🟡   |  ✅   |  ✅   |  ✅   |  ✅   |  ❌   |
+| GitHub stars                                |  --   | 2.4k  | 5.7k  | 10.6k | 4.4k  | 2.4k  | 2.2k  | 1.0k  |  386  |  21   |
+
+[configgle]: https://github.com/rekursiv-ai/configgle
+[AXLearn]: https://github.com/apple/axlearn
+[torchtitan]: https://github.com/pytorch/torchtitan
+[Hydra]: https://github.com/facebookresearch/hydra
+[Sacred]: https://github.com/IDSIA/sacred
+[OmegaConf]: https://github.com/omry/omegaconf
+[Gin]: https://github.com/google/gin-config
+[ml_collections]: https://github.com/google/ml_collections
+[Fiddle]: https://github.com/google/fiddle
+[Confugue]: https://github.com/cifkao/confugue
 
 ✅ = yes, 🟡 = partial/caveat, ❌ = no, 🚫 = intentionally no.
 
 Corrections welcome --
 [open a PR](https://github.com/rekursiv-ai/configgle/pulls).
 
-(🚫 appears only for configgle because we cannot report why another library chose its featureset.)
+(🚫 is used only where a project states the reason in writing: configgle
+here, and AXLearn and torchtitan on the YAML row.)
 
 <details>
 <summary><b>What each row means.</b></summary>
 
-- **Python-based** -- configs are written as Python.
+- **Python-based configuration.**
   - 🟡 Python is a second path beside the primary YAML one.
-- **YAML-based** -- configs are *authored* as YAML. Independent of the row
-  above, not its opposite: Gin is neither, it has its own `.gin` DSL.
+- **YAML-based configuration.** Independent of the row above, not its
+  opposite: Gin is neither, it has its own `.gin` DSL.
   - 🚫 An experiment should manifest in exactly one Python function that returns
     its config. A YAML file splits that function in two, so reproducing a run
     means reconstructing which file, which defaults list, and which CLI
     overrides composed it. YAML (and JSON, etc) as transport is supported:
     `deserialize(yaml.safe_load(...))` returns a live typed config. It is just
     not where an experiment is written down.
-- **CLI overrides** -- set a nested field from the command line, e.g.
+  - 🚫 AXLearn's style doc: configs are Python objects "because config
+    objects can be logged and manipulated." torchtitan #2386 dropped TOML
+    because "everything needs to be registered explicitly before it can be
+    used" and a typo like `training.stpes` "silently becomes a default
+    value."
+- **Installable without a trainer.** AXLearn's `config.py` and torchtitan's
+  `configurable.py` ship inside their trainers and import them.
+- **Set a nested field from the command line**, e.g.
   `--override mlp.dropout=0.2`.
   - 🟡 OmegaConf parses the flags but leaves you to merge them
     (`OmegaConf.from_cli`); Gin needs a separate flags integration.
-- **Sweeps / multirun** -- launch many runs from one command. Only Hydra's
-  `--multirun` is first-class.
-  - 🟡 Fiddle's `DEFINE_fiddle_sweep` is absent from the 0.3.0 wheel and emits
-    configs without running them.
-  - 🚫 An experiment should manifest in exactly one Python function that
-    returns its config. A sweep syntax makes a run's config exist only as a
-    command line, so no single function returns it.
-    Write the loop over config functions, i.e., a factory of functions -- each
-    arm stays a function you can import, print, and diff.
-- **Typed `make()`/`build()` return** -- the type checker knows the built object
-  is a `Model`, not `Any`.
-- **Derived fields** -- one field computed from others, e.g. `out_dim` following
-  `channels_in`. configgle's `finalize()` is a hook you override that cascades
-  into child configs.
+  - ❌ AXLearn selects a named config function with `--config` and takes
+    per-run values through its own `absl` flags; nested fields are not
+    reachable from the command line.
+- **Nested `Config` builds its class**, with no field or argument naming it.
+  configgle's `MakerMeta.__get__` does this via the descriptor protocol;
+  torchtitan's `__init_subclass__` sets `_owner`. AXLearn requires
+  `default_config()` to stamp `klass`; Fiddle names the class at the call
+  site (`fdl.Config(MyClass)`).
+- **Type checker knows what `make()` returns.** configgle's inference is
+  `ty`-only; `basedpyright` needs `Fig["Model"]` (see
+  [Type-safe `make()`](#type-safe-make)).
+  - 🟡 torchtitan's `build()` is unannotated and `_owner` is `ClassVar[type
+    | None]`, so both checkers see `Any`.
+- **Derived fields cascade to children**, e.g.
+  `out_dim` following `channels_in`. configgle's `finalize()` is a hook you
+  override; it runs on the parent, then on every child config.
   - 🟡 Recomputed only at a conversion boundary: Hydra and OmegaConf re-run
     `__post_init__`, Sacred re-executes config scopes, ml_collections has lazy
-    `FieldReference`.
-- **Config from signature** -- the config schema is generated from a class's
-  `__init__` parameters, so adding an argument needs no config edit
-  (configgle's `@autofig`, Fiddle's `@auto_config`).
+    `FieldReference`. torchtitan's `update_from_config` is called once from
+    the trainer and carries a `TODO` calling itself an encapsulation
+    violation.
+  - 🟡 AXLearn validates on assignment (`register_validator`) and lets a
+    parent `Config` set a child's `input_dim` in a method the caller runs
+    (the pattern its style doc recommends); nothing recomputes on its own.
+- **Config schema generated from `__init__`**, so adding an argument needs no
+  config edit
+  (configgle's `@autofig`, Fiddle's `@auto_config`, AXLearn's
+  `config_for_class`).
   - 🟡 Hydra's `configen` is an experimental codegen tool, not a decorator.
-- **De/serialize to/from JSON/YAML/etc** -- both halves: out to plain containers
-  (*not* a string, so you pick the transport), and back to live *typed* objects.
+- **Print only fields that differ from defaults** (`pprint`).
+  - ✅ AXLearn's `debug_string(omit_default_values=...)` omits `None` and
+    `REQUIRED` by default and takes any set of values to hide.
+  - 🟡 Gin's `config_str` and Fiddle's `printing` render the whole tree.
+- **Weight tying by path** -- a built object names a sibling; the reference
+  lives in the config and is wired after the outermost build (`LateBound`),
+  so a tied head prints as `TiedLinear.Config(tied="in_proj")` and no parent
+  writes the alias.
+  - 🟡 torchtitan has `enable_weight_tying: bool` on the root config, and
+    `Decoder.__init__` assigns `tok_embeddings.weight = lm_head.weight`.
+    Fiddle's `build` memoizes by config identity, so one `fdl.Config`
+    instance referenced from two places builds one object; the tie is
+    expressed by sharing the config, not by naming a path.
+- **To plain dict and back to typed config** -- both halves: out to plain
+  containers (*not* a string, so you pick the transport), and back to live
+  *typed* objects.
   - 🟡 Fiddle and ml_collections emit only a string; Hydra, OmegaConf, and
-    Sacred reload to untyped dicts.
-- **`pickle`/`cloudpickle`** -- configs survive a round trip through pickle,
-  which distributed workflows need.
+    Sacred reload to untyped dicts. AXLearn and torchtitan have `to_dict`
+    and no way back.
+- **Survives `pickle`/`cloudpickle`.**
   - 🟡 Works for plain configs but not every construct, or needs cloudpickle.
-- **Active** -- commits, not releases. A quiet release cadence is not
-  abandonment; Gin and Fiddle ship rarely but still take commits.
-  - ✅ Commits in the last six months.
+    AXLearn and torchtitan configs are plain `attrs`/dataclass objects, so
+    pickle works where every field value does; neither documents it.
+- **Commits in the last six months.** Commits, not releases: Gin and Fiddle
+  ship rarely but still take commits.
   - 🟡 Commits in the last year.
-  - ❌ Neither.
-- **GitHub stars** -- for context. configgle is new; most of these libraries
-  have years of production use behind them.
+- **GitHub stars** -- for context. configgle's own count is on the repo
+  page; most of these libraries have years of production use behind them.
 
 </details>
 
@@ -551,7 +624,33 @@ Corrections welcome --
 
 Release dates, commit dates, and star counts verified 2026-08-05 (PyPI JSON API
 and the GitHub repos/commits APIs); configgle itself was at 1.3.6, released the
-same day.
+same day. AXLearn and torchtitan were checked 2026-09-10.
+
+**[AXLearn](https://github.com/apple/axlearn)** (Apple) -- not on PyPI; last commit 2026-07-08.
+`axlearn/common/config.py` (first commit 2023-07-09) defines `Configurable`
+with a nested `@config_class class Config(InstantiableConfig[C])` built on
+`attrs`; `cfg.instantiate()` calls `self.klass(self)`. Configs are mutated
+in place with `cfg.set(...)` or copied with `clone`, and every field is
+validated on assignment. `config_for_function` / `config_for_class` derive a
+config from a signature. `REQUIRED` marks a field with no default and raises
+at `instantiate`. `visit` walks the tree; `to_dict` and `debug_string` are
+output-only. Runs are selected by `--config <name>` naming a
+`TrainerConfigFn`; nested overrides go through Python, not flags. Its
+[ML API Style](https://github.com/apple/axlearn/blob/main/docs/ml_api_style.md)
+is the design document the nested-`Config` pattern comes from.
+
+**[torchtitan](https://github.com/pytorch/torchtitan)** (Meta) -- not on PyPI; last commit 2026-09-10.
+`torchtitan/config/configurable.py` (added 2026-02-23 in
+[#2386](https://github.com/pytorch/torchtitan/pull/2386), which credits
+AXLearn) defines `Configurable` with a nested
+`@dataclass(kw_only=True, slots=True) class Config`; `cfg.build()` calls
+`self._owner(config=replace(self))`, with `_owner` wired by
+`__init_subclass__`. `traverse(config_cls)` yields
+`(fqn, config, parent, attr)` for in-place replacement of a subtree. CLI
+overrides come from `tyro` as `section.key=value`. `to_dict` is output-only.
+Derived values are applied by `update_from_config`, which the source marks
+`TODO: This function violates encapsulation`. Model configs also carry
+`get_nparams_and_flops(model, seq_len)`.
 
 **[Hydra](https://github.com/facebookresearch/hydra)** (Meta) -- PyPI 1.3.4 released 2026-07-04; last commit 2026-08-04.
 YAML-centric with optional "structured configs" (Python dataclasses registered
@@ -561,8 +660,7 @@ object is also accepted -- and returns `Any`. Composition is done via defaults
 lists (usually YAML, optionally a `defaults` field on a dataclass), not class
 inheritance; dataclass inheritance works at the schema level. `configen` is an
 experimental code-generation tool (latest release v0.9.0.dev8) that produces
-structured configs from class signatures. Its `--multirun` sweeper is the most
-complete in this table.
+structured configs from class signatures.
 
 **[Sacred](https://github.com/IDSIA/sacred)** -- PyPI 0.8.7 released 2024-11-26; last commit 2025-10-22.
 Experiment management framework. Config is defined via `@ex.config` scopes
