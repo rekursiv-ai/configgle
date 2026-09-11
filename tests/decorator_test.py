@@ -4,7 +4,7 @@ from configgle.decorator import autofig
 from configgle.fig import Fig
 
 
-# ty regression canary: as of ty 0.0.49 (astral-sh/ty#143) class decorator
+# ``ty`` regression canary: as of ty 0.0.49 (astral-sh/ty#143) class decorator
 # return types are honored, so `.Config` resolves with no suppression here.
 # If ty regresses, this line emits unresolved-attribute and ty check fails.
 @autofig
@@ -97,7 +97,7 @@ def test_require_defaults():
         def __init__(self, x: int):
             self.x = x
 
-    # Should work - require_defaults=False allows parameters without defaults
+    # Should work - require_defaults=False allows parameters without defaults.
     config = NoDefaults.Config(x=42)
     instance = config.make()
     assert instance.x == 42
@@ -105,8 +105,8 @@ def test_require_defaults():
 
 def test_autofig_with_broken_type_hints():
     """Test autofig when get_type_hints fails (e.g., unresolvable forward refs)."""
-    # exec creates a class whose annotations reference 'Nonexistent' —
-    # a name absent from the exec namespace — so get_type_hints will raise.
+    # ``exec`` creates a class whose annotations reference 'Nonexistent' --
+    # a name absent from the exec namespace -- so get_type_hints will raise.
     ns: dict[str, object] = {}
     exec(  # noqa: S102
         "class B:\n    def __init__(self, x: 'Nonexistent' = 0):\n        self.x = x\n",

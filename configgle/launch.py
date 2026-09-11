@@ -55,13 +55,6 @@ from configgle.custom_types import Makeable
 __all__ = ["main", "resolve_config"]
 
 
-@runtime_checkable
-class _Runnable(Protocol):
-    """An object with a no-argument ``run()``, invoked after ``make()``."""
-
-    def run(self) -> None: ...
-
-
 def resolve_config(path: str) -> Makeable[object]:
     """Import a dotted ``module.function`` path and call it to build a config.
 
@@ -114,7 +107,12 @@ def resolve_config(path: str) -> Makeable[object]:
 
 
 def main() -> int:
-    """The main function. Return the process exit code."""
+    """Run the program; return the process exit code.
+
+    Returns:
+      result: The int.
+
+    """
     parser = argparse.ArgumentParser(
         description=(__doc__ or "").strip(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -150,3 +148,10 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
 # This module is imported, never run directly, so it carries no run guard and
 # no shebang. `__main__.py` is the sole executable; run it via
 # `python -m configgle`.
+
+
+@runtime_checkable
+class _Runnable(Protocol):
+    """An object with a no-argument ``run()``, invoked after ``make()``."""
+
+    def run(self) -> None: ...

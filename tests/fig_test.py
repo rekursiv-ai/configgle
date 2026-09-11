@@ -92,13 +92,13 @@ def test_pickle_parent_class_restored():
     """Test that parent_class is correctly restored after pickle."""
     cfg = Parent.Config()
 
-    # Verify parent_class is set before pickling
+    # Verify parent_class is set before pickling.
     assert Parent.Config.parent_class is Parent
 
-    # Pickle and unpickle
+    # Pickle and unpickle.
     cfg_ = pickle.loads(pickle.dumps(cfg))
 
-    # Verify parent_class is restored after unpickling
+    # Verify parent_class is restored after unpickling.
     assert type(cfg_).parent_class is Parent  # pyright: ignore[reportUnknownMemberType]  # parent_class untyped
     assert cfg_.make().__class__ is Parent
 
@@ -107,45 +107,45 @@ def test_cloudpickle_parent_class_restored():
     """Test that parent_class is correctly restored after cloudpickle."""
     cfg = Child.Config()
 
-    # Verify parent_class is set before pickling
+    # Verify parent_class is set before pickling.
     assert Child.Config.parent_class is Child
 
-    # Cloudpickle and unpickle
+    # Cloudpickle and unpickle.
     cfg_ = cast(Child.Config, pickle.loads(cloudpickle.dumps(cfg)))
 
-    # Verify parent_class is restored after unpickling
+    # Verify parent_class is restored after unpickling.
     assert type(cfg_).parent_class is Child
     assert cfg_.make().__class__ is Child
 
 
 def test_pickle_nested_class_with_parent():
     """Test pickling the parent class that contains the nested Config."""
-    # When we pickle the parent class itself, Config should be preserved
+    # When we pickle the parent class itself, Config should be preserved.
     Parent_pickled = pickle.loads(pickle.dumps(Parent))
 
-    # Verify the Config class is accessible
+    # Verify the Config class is accessible.
     assert hasattr(Parent_pickled, "Config")
     assert Parent_pickled.Config.parent_class is Parent_pickled
 
-    # Verify we can create and use the config
+    # Verify we can create and use the config.
     cfg = Parent_pickled.Config(a=3.14, b=2.71)
     instance = cfg.make()
     assert instance.__class__ is Parent_pickled
-    # Note: Parent.Config.finalize() sets a=-1, so we check the finalized value
+    # Note: Parent.Config.finalize() sets a=-1, so we check the finalized value.
     assert instance.a == -1
     assert instance.b == 2.71
 
 
 def test_cloudpickle_nested_class_with_parent():
     """Test cloudpickling the parent class that contains the nested Config."""
-    # When we cloudpickle the parent class itself, Config should be preserved
+    # When we cloudpickle the parent class itself, Config should be preserved.
     Child_pickled = cast(type[Child], pickle.loads(cloudpickle.dumps(Child)))
 
-    # Verify the Config class is accessible
+    # Verify the Config class is accessible.
     assert hasattr(Child_pickled, "Config")
     assert Child_pickled.Config.parent_class is Child_pickled
 
-    # Verify we can create and use the config
+    # Verify we can create and use the config.
     cfg = Child_pickled.Config(a=1.0, b=2.0, c=3.0j)
     instance = cfg.make()
     assert instance.__class__ is Child_pickled
@@ -170,17 +170,17 @@ def test_make_without_parent():
 
 def test_default_bool_and_repr():
     """Test _Default.__bool__ and __repr__."""
-    # Test truthy value
+    # Test truthy value.
     d_true = _Default(True)
     assert bool(d_true) is True
     assert repr(d_true) == "True"
 
-    # Test falsy value
+    # Test falsy value.
     d_false = _Default(False)
     assert bool(d_false) is False
     assert repr(d_false) == "False"
 
-    # Test non-boolean values
+    # Test non-boolean values.
     d_int = _Default(42)
     assert bool(d_int) is True
     assert repr(d_int) == "42"
@@ -205,7 +205,7 @@ def test_dataclass_params_iter():
     """Test _DataclassParams.__iter__ with slot inheritance."""
     params = _DataclassParams()
     keys = list(params)
-    # Should have all the standard dataclass params
+    # Should have all the standard dataclass params.
     assert "init" in keys
     assert "repr" in keys
     assert "eq" in keys
@@ -218,24 +218,24 @@ def test_dataclass_params_create():
     """Test _DataclassParams.create with defaults and overrides."""
     existing = _DataclassParams(init=True, repr=True, frozen=False)
 
-    # Override with explicit values
+    # Override with explicit values.
     new = _DataclassParams.create(existing, init=False, frozen=True)
     assert new.init is False
     assert new.frozen is True
-    # Should inherit from existing when not specified
+    # Should inherit from existing when not specified.
     assert new.repr is True
 
     # Test with _Default values
     # When v is _Default, the condition (v is missing or isinstance(v, _Default))
-    # is True, so it falls through to try existing
+    # is True, so it falls through to try existing.
     new2 = _DataclassParams.create(
         existing,
         init=_Default(False),
         frozen=_Default(True),
     )
-    # Should inherit from existing since _Default causes fallthrough
-    assert new2.init is True  # From existing
-    assert new2.frozen is False  # From existing
+    # Should inherit from existing since _Default causes fallthrough.
+    assert new2.init is True  # From existing.
+    assert new2.frozen is False  # From existing.
 
 
 def test_fig_update():
@@ -243,18 +243,19 @@ def test_fig_update():
 
     class TestConfig(Fig):
         x: int = 1
+
         y: float = 2.0
 
     cfg = TestConfig()
     assert cfg.x == 1
     assert cfg.y == 2.0
 
-    # Update with kwargs
+    # Update with kwargs.
     cfg.update(x=10, y=20.0)
     assert cfg.x == 10
     assert cfg.y == 20.0
 
-    # Update from another dataclass
+    # Update from another dataclass.
     cfg2 = TestConfig(x=100, y=200.0)
     cfg.update(cfg2)
     assert cfg.x == 100
@@ -263,8 +264,8 @@ def test_fig_update():
     # Update with both source and kwargs (kwargs override)
     cfg4 = TestConfig()
     cfg4.update(cfg2, x=5)
-    assert cfg4.x == 5  # From kwargs
-    assert cfg4.y == 200.0  # From source
+    assert cfg4.x == 5  # From kwargs.
+    assert cfg4.y == 200.0  # From source.
 
 
 def test_fig_finalize():
@@ -276,7 +277,7 @@ def test_fig_finalize():
     cfg = TestConfig()
     finalized = cfg.finalize()
 
-    # finalize is in-place: it returns the same object, now finalized.
+    # Finalize is in-place: it returns the same object, now finalized.
     assert finalized is cfg
     assert getattr(cfg, "_finalized", False) is True
 
@@ -326,8 +327,8 @@ def test_make_does_not_mutate_original():
 
     cfg = Thing.Config()
     obj = cfg.make()
-    assert obj.x == 42  # finalized value reached the instance
-    assert cfg.x == 1  # original config untouched
+    assert obj.x == 42  # finalized value reached the instance.
+    assert cfg.x == 1  # original config untouched.
     assert getattr(cfg, "_finalized", False) is False
 
 
@@ -348,7 +349,7 @@ def test_finalize_cascades_into_children_in_place():
 
     cfg = Outer()
     finalized = cfg.finalize()
-    # finalize is in place: root identity preserved, child finalized in place.
+    # Finalize is in place: root identity preserved, child finalized in place.
     assert finalized is cfg
     assert cfg.inner.v == 7
     assert getattr(cfg.inner, "_finalized", False) is True
@@ -384,7 +385,7 @@ def test_dataclass_params_iter_skip_seen():
     """Test _DataclassParams.__iter__ skips already seen slots (line 162)."""
     params = _DataclassParams()
     keys = list(params)
-    # Should not have duplicates
+    # Should not have duplicates.
     assert len(keys) == len(set(keys))
 
 
@@ -393,10 +394,10 @@ def test_dataclass_params_create_missing_value():
     existing = _DataclassParams(init=True, repr=True)
 
     # Create new params without specifying all fields
-    # The function should skip fields where v is missing
+    # The function should skip fields where v is missing.
     new = _DataclassParams.create(existing)
 
-    # Should inherit from existing
+    # Should inherit from existing.
     assert new.init is True
     assert new.repr is True
 
@@ -406,6 +407,7 @@ def test_fig_update_skip_missing():
 
     class TestConfig(Fig):
         x: int = 1
+
         y: float = 2.0
 
     cfg = TestConfig()
@@ -417,9 +419,9 @@ def test_fig_update_skip_missing():
 
     # Try to update non-existent field with skip_missing=True (should skip it)
     cfg.update(skip_missing=True, x=100, z=999)
-    assert cfg.x == 100  # x was updated
-    assert cfg.y == 20  # y unchanged
-    assert not hasattr(cfg, "z")  # z was skipped
+    assert cfg.x == 100  # x was updated.
+    assert cfg.y == 20  # y unchanged.
+    assert not hasattr(cfg, "z")  # z was skipped.
 
 
 class Animal:
@@ -566,6 +568,7 @@ def test_makeable_requires_more_than_the_three_methods():
 
     class EveryMember(ThreeMethods):
         _finalized = False
+
         parent_class = None
 
         def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
@@ -581,7 +584,7 @@ def test_require_defaults_error_message():
     with pytest.raises(TypeError, match="has no default value"):
 
         class Bad(Fig, require_defaults=True):  # pyright: ignore[reportUnusedClass]
-            x: int  # No default
+            x: int  # No default.
 
 
 def test_fig_forwards_mixin_class_keywords() -> None:
@@ -633,6 +636,7 @@ def test_finalize_with_namedtuple():
 
     class Point(NamedTuple):
         x: int
+
         y: int
 
     class Config(Fig):
@@ -664,7 +668,7 @@ def test_finalize_skips_non_data_objects():
         logger: logging.Logger = logging.getLogger("test")
 
     cfg = Config()
-    # Should not crash when encountering a logger
+    # Should not crash when encountering a logger.
     finalized = cfg.finalize()
     assert finalized.logger is not None
 
@@ -692,15 +696,16 @@ def test_update_source_with_attribute_error():
 
         def __init__(self):
             self.x = 1
-            # y is intentionally uninitialized
+            # ``y`` is intentionally uninitialized.
 
     class Config(Fig):
         x: int = 0
+
         y: int = 0
 
     cfg = Config()
     source = BadSource()
-    # Should skip y since it raises AttributeError
+    # Should skip y since it raises AttributeError.
     cfg.update(source, skip_missing=True)  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type] -- malformed source exercises skip_missing
     assert cfg.x == 1
 
@@ -776,10 +781,11 @@ def test_finalize_with_uninitialized_slot():
 
     class Config(Fig, slots=False):
         __slots__ = ("_lazy",)
+
         x: int = 1
 
     cfg = Config()
-    # _lazy slot is not initialized — finalize should skip it
+    # _lazy slot is not initialized -- finalize should skip it.
     finalized = cfg.finalize()
     assert finalized.x == 1
 
@@ -792,6 +798,7 @@ def test_update_source_skip_missing_filters_source_fields():
 
     class BigSource(Fig):
         x: int = 99
+
         extra: str = "not in target"
 
     cfg = SmallConfig()
@@ -808,9 +815,9 @@ def test_dataclass_params_create_missing_from_both():
         __slots__ = ("custom_field",)  # pyright: ignore[reportUninitializedInstanceVariable]
 
     existing = SparseParams()
-    # custom_field is NOT set on existing → getattr returns missing → continue
+    # custom_field is NOT set on existing → getattr returns missing → continue.
     new = _DataclassParams.create(existing)
-    assert new.init is True  # Standard fields still work
+    assert new.init is True  # Standard fields still work.
 
 
 def test_finalize_value_recurses_into_slotted_object_with_nested_config():
@@ -841,7 +848,7 @@ def test_finalize_value_slotted_object_with_uninitialized_slot():
 
         def __init__(self):
             self.initialized = 42
-            # uninitialized is intentionally not set
+            # Uninitialized is intentionally not set.
 
     class Config(Fig):
         w: Wrapper = field(default_factory=Wrapper)
@@ -857,6 +864,7 @@ def test_pformat_method():
     class MyClass:
         class Config(Fig):
             x: int = 0
+
             y: str = "hello"
 
         def __init__(self, config: Config):
@@ -904,10 +912,11 @@ def test_dataclass_params_create_missing_attr():
     """Test _DataclassParams.create skips keys missing from both kwargs and existing."""
     # Create an uninitialized _DataclassParams (no __init__ call, so slots are unset)
     existing = object.__new__(_DataclassParams)
-    # Only set a subset of attributes
+    # Only set a subset of attributes.
     existing.init = True
     existing.repr = True
-    # All other slots are unset — getattr with default returns missing, so they're skipped
+    # All other slots are unset -- getattr with default returns missing, so
+    # they're skipped.
     result = _DataclassParams.create(existing)
     assert result.init is True
     assert result.repr is True
@@ -938,7 +947,7 @@ def test_make_twice_leaves_source_unmutated():
     second = cfg.make()
     assert first.n == 1
     assert second.n == 1
-    assert cfg.n == 0  # source config never mutated
+    assert cfg.n == 0  # source config never mutated.
 
 
 def test_failed_child_finalize_leaves_parent_retryable() -> None:
@@ -984,7 +993,7 @@ def test_pformat_after_finalize_does_not_re_finalize():
     cfg = Cfg()
     cfg.finalize()
     assert cfg.n == 1
-    cfg.pformat()  # _try_to_finalize guards on _finalized; must not re-apply
+    cfg.pformat()  # _try_to_finalize guards on _finalized; must not re-apply.
     assert cfg.n == 1
 
 
@@ -1061,7 +1070,7 @@ def test_finalize_finalizes_hashable_fig_dict_key():
     key = next(iter(finalized.d))
     assert key.v == 99
     assert finalized.d[key] == "val"
-    assert key is not source_key  # key copied, source isolated
+    assert key is not source_key  # key copied, source isolated.
     assert source_key.v == 0
 
 
@@ -1087,8 +1096,8 @@ def test_finalize_preserves_unchanged_tuple_identity():
     holder = Holder()
     original_tuple = holder.t
     holder.finalize()
-    assert holder.t is original_tuple  # identity preserved
-    assert holder.t[0].v == 99  # element finalized in place
+    assert holder.t is original_tuple  # identity preserved.
+    assert holder.t[0].v == 99  # element finalized in place.
 
 
 def test_finalize_finalizes_dict_with_leaf_keys():
@@ -1123,13 +1132,14 @@ def test_finalize_dag_finalizes_shared_child_once():
 
     class Root(Fig):
         a: Leaf = field(default_factory=Leaf)
+
         b: Leaf = field(default_factory=Leaf)
 
     shared = Leaf()
     root = Root(a=shared, b=shared)
     root.finalize()
     assert root.a is root.b
-    assert root.a.n == 1  # finalized once, not twice
+    assert root.a.n == 1  # finalized once, not twice.
 
 
 class _RebuiltChild:
@@ -1140,7 +1150,7 @@ class _RebuiltChild:
 
         @override
         def finalize(self) -> Self:
-            self.n += 1  # non-idempotent: a second finalize is observable
+            self.n += 1  # non-idempotent: a second finalize is observable.
             return super().finalize()
 
     def __init__(self, config: Config) -> None:
@@ -1191,7 +1201,9 @@ class _Root:
 
     class Config(Fig["_Root"]):
         table: _Table.Config = field(default_factory=_Table.Config)
+
         head: _Borrower.Config = field(default_factory=_Borrower.Config)
+
         parts: list[Makeable[object]] = field(default_factory=list[Makeable[object]])
 
     def __init__(self, config: Config) -> None:
@@ -1280,7 +1292,7 @@ def test_parent_rebuilding_child_in_init_finalizes_child_once():
     per ``make()`` boundary", matching the DAG shared-child guarantee.
     """
     built = _RebuildingParent.Config().make()
-    assert built.child.n == 1  # finalized once, not twice
+    assert built.child.n == 1  # finalized once, not twice.
 
 
 if __name__ == "__main__":

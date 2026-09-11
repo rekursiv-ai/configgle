@@ -2,7 +2,7 @@
 # provides the same API for other type checkers and at runtime.
 # Intersection[A, B] approximates as A since basedpyright lacks native
 # intersection support.
-# See: https://github.com/astral-sh/ruff/tree/main/crates/ty_vendored/ty_extensions
+# See: https://github.com/astral-sh/ruff/tree/main/crates/ty_vendored/ty_extensions.
 from typing import TypeVar
 
 

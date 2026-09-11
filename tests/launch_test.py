@@ -25,6 +25,7 @@ class Child:
 class Trainer:
     class Config(Fig["Trainer"]):
         steps: int = 100
+
         child: Child.Config = field(default_factory=Child.Config)
 
     def __init__(self, config: Config):
@@ -32,7 +33,7 @@ class Trainer:
 
 
 def baseline() -> Makeable[Trainer]:
-    """Factory returning a fresh config, as the launcher expects."""
+    """Return a fresh config, as the launcher expects a factory to."""
     return Trainer.Config()
 
 

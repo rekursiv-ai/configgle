@@ -45,17 +45,21 @@ class InlineConfig[T]:
     """
 
     parent_class: None = dataclasses.field(default=None, init=False, repr=False)
+
     func: Callable[..., T]
+
     _finalized: bool = dataclasses.field(
         default=False,
         init=False,
         repr=False,
     )
+
     _args: MutableSequence[object] = dataclasses.field(
         default_factory=list[object],
         init=False,
         repr=False,
     )
+
     _kwargs: MutableMapping[str, object] = dataclasses.field(
         default_factory=dict[str, object],
         init=False,
@@ -99,6 +103,9 @@ class InlineConfig[T]:
         Args:
           visited: Shared ``id(obj) -> copy`` map so shared/cyclic references
             stay consistent; supplied by the free ``copy_tree`` during recursion.
+
+        Returns:
+          r: The Self.
 
         """
         if visited is None:

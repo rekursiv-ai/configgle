@@ -61,6 +61,7 @@ class Coord(NamedTuple):
     """A namedtuple: reduced by value, so it takes no reference index."""
 
     lat: float
+
     lon: float
 
 
@@ -130,21 +131,21 @@ class Cyclic:
 
 
 def _shared_leaf_pair() -> Pair.Config:
-    """A config whose two slots hold the SAME child."""
+    """Return a config whose two slots hold the SAME child."""
     config = Pair.Config()
     config.b = config.a
     return config
 
 
 def _self_cycle() -> Cyclic.Config:
-    """A config that is its own peer."""
+    """Return a config that is its own peer."""
     config = Cyclic.Config()
     config.peer = config
     return config
 
 
 def _nested_branch() -> Branch.Config:
-    """A branch with a non-default leaf."""
+    """Return a branch with a non-default leaf."""
     config = Branch.Config()
     config.leaf.k = 3
     return config
@@ -157,7 +158,7 @@ def _shared_list() -> dict[str, object]:
 
 
 def _cyclic_list() -> list[object]:
-    """A list containing itself."""
+    """Return a list containing itself."""
     cycle: list[object] = [1]
     cycle.append(cycle)
     return cycle
@@ -321,7 +322,7 @@ def _decode_graph(tree: object, *, hooks: GraphHooks) -> object:
 
 
 def _hooks() -> GraphHooks:
-    """The hook table the golden cases serialize under."""
+    """Return the hook table the golden cases serialize under."""
     return {Weight: (_encode_weight, Weight)}
 
 

@@ -30,21 +30,21 @@ def test_inline_config():
     def add(a: int, b: int) -> int:
         return a + b
 
-    # Test basic creation
+    # Test basic creation.
     cfg = InlineConfig(add, 1, 2)
     assert cfg.func == add
     assert cfg._args == [1, 2]
     assert cfg._kwargs == {}
 
-    # Test make
+    # Test make.
     result = cfg.make()
     assert result == 3
 
-    # Test with kwargs
+    # Test with kwargs.
     cfg2 = InlineConfig(add, a=5, b=10)
     assert cfg2.make() == 15
 
-    # Test with mixed args and kwargs
+    # Test with mixed args and kwargs.
     cfg3 = InlineConfig(add, 3, b=7)
     assert cfg3.make() == 10
 
@@ -64,11 +64,11 @@ def test_inline_config_with_nested_make():
     def multiply(cfg: SimpleConfig) -> int:
         return cfg.value * 2
 
-    # Test with object that has finalize but not make
+    # Test with object that has finalize but not make.
     cfg = SimpleConfig(5)
     inline_cfg = InlineConfig(multiply, cfg)
 
-    # Make should call finalize on nested objects
+    # Make should call finalize on nested objects.
     result = inline_cfg.make()
     assert result == 10
 
@@ -97,7 +97,7 @@ def test_inline_config_finalize():
     finalized = cfg.finalize()  # pyright: ignore[reportUnknownVariableType]  # InlineConfig[Unknown]
 
     assert finalized._finalized is True
-    # Should finalize nested configs
+    # Should finalize nested configs.
     assert finalized._args[0]._finalized is True  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # ty: ignore[unresolved-attribute] -- dynamic _args element type is unknown
 
 
@@ -213,8 +213,8 @@ def test_inline_config_attr_access():
         return a + b
 
     cfg = InlineConfig(func)
-    cfg.a = 5  # Should go to kwargs
-    cfg.b = 10  # Should go to kwargs
+    cfg.a = 5  # Should go to kwargs.
+    cfg.b = 10  # Should go to kwargs.
 
     assert cfg.a == 5
     assert cfg.b == 10
@@ -239,7 +239,7 @@ def test_inline_config_delattr():
     assert cfg._kwargs == {}
 
     # Should raise error if trying to delete non-existent
-    # The __delattr__ tries kwargs first, then falls through to object.__delattr__
+    # The __delattr__ tries kwargs first, then falls through to object.__delattr__.
     with pytest.raises(AttributeError):
         del cfg.nonexistent
 
@@ -262,13 +262,13 @@ def test_partial_config():
     def multiply(a: int, b: int, c: int = 1) -> int:
         return a * b * c
 
-    # Create partial with some args
+    # Create partial with some args.
     cfg = PartialConfig(multiply, 2, c=10)
     partial_func = cfg.make()
 
-    # Should create a functools.partial
+    # Should create a functools.partial.
     result = partial_func(b=3)
-    assert result == 60  # 2 * 3 * 10
+    assert result == 60  # 2 * 3 * 10.
 
 
 def test_inline_config_update_from_dataclass():
@@ -277,6 +277,7 @@ def test_inline_config_update_from_dataclass():
     @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
     class Source:
         a: int = 10
+
         b: str = "hello"
 
     cfg = InlineConfig(lambda a, b: f"{a}-{b}")  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
@@ -301,7 +302,7 @@ def test_inline_config_update_from_non_dataclass():
     cfg.update(Source())  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type] -- test source intentionally lacks the update Protocol
     assert cfg.x == 42
     assert cfg.y == "data"
-    # Methods should NOT be copied
+    # Methods should NOT be copied.
     assert "method" not in cfg._kwargs
 
 
@@ -316,6 +317,7 @@ def test_inline_config_update_skip_missing_filters_source_and_kwargs() -> None:
     @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
     class Source:
         existing: int = 20
+
         source_only: int = 30
 
     cfg = InlineConfig(lambda **kwargs: kwargs, existing=10)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
@@ -339,8 +341,8 @@ def test_inline_config_update_non_dataclass_with_property():
 
     cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
     cfg.update(TrickySource())  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type] -- malformed source exercises attribute filtering
-    # broken should be skipped (AttributeError), data should be skipped (callable check)
-    # Actually properties return their values, not the property object itself
+    # Broken should be skipped (AttributeError), data should be skipped (callable check)
+    # Actually properties return their values, not the property object itself.
     assert cfg.data == 42
     assert "broken" not in cfg._kwargs
 
@@ -348,8 +350,8 @@ def test_inline_config_update_non_dataclass_with_property():
 def test_inline_config_recursive_repr():
     """Test InlineConfig.__repr__ with self-referencing kwargs."""
     cfg = InlineConfig(lambda x: x)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]
-    cfg.self_ref = cfg  # Create self-reference
-    # Should not infinitely recurse — @reprlib.recursive_repr handles it
+    cfg.self_ref = cfg  # Create self-reference.
+    # Should not infinitely recurse -- @reprlib.recursive_repr handles it.
     repr_str = repr(cfg)  # pyright: ignore[reportUnknownArgumentType]  # InlineConfig[Unknown]
     assert "..." in repr_str or "InlineConfig" in repr_str
 
@@ -405,13 +407,13 @@ def test_dynamic_namespace_rejects_fig():
 def test_setattr_fallback_before_kwargs_initialized():
     """Test __setattr__ fallback when _kwargs is not yet set."""
 
-    # Subclass without slots so object.__setattr__ can succeed
+    # Subclass without slots so object.__setattr__ can succeed.
     class DictConfig(InlineConfig[object]):
         pass
 
     cfg = object.__new__(DictConfig)
     # _kwargs slot is unset, so setting an arbitrary attr falls through
-    # the except AttributeError path to object.__setattr__
+    # the except AttributeError path to object.__setattr__.
     cfg.custom = "value"
     assert object.__getattribute__(cfg, "custom") == "value"
 
