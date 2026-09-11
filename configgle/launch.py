@@ -110,7 +110,7 @@ def main() -> int:
     """Run the program; return the process exit code.
 
     Returns:
-      result: The int.
+      result: Process exit code (0 on success).
 
     """
     parser = argparse.ArgumentParser(

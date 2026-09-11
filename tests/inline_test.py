@@ -277,7 +277,6 @@ def test_inline_config_update_from_dataclass():
     @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
     class Source:
         a: int = 10
-
         b: str = "hello"
 
     cfg = InlineConfig(lambda a, b: f"{a}-{b}")  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
@@ -317,7 +316,6 @@ def test_inline_config_update_skip_missing_filters_source_and_kwargs() -> None:
     @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
     class Source:
         existing: int = 20
-
         source_only: int = 30
 
     cfg = InlineConfig(lambda **kwargs: kwargs, existing=10)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType]

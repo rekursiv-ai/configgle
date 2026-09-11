@@ -41,12 +41,7 @@ class Finalizeable(Protocol):
     """
 
     def finalize(self) -> Self:
-        """Finalize.
-
-        Returns:
-          result: The Self.
-
-        """
+        """Finalize."""
         ...
 
 
@@ -70,12 +65,7 @@ class LateBound:
     """
 
     def bind(self, root: object) -> None:
-        """Wire this object to the finished tree rooted at ``root``.
-
-        Args:
-          root: Root.
-
-        """
+        """Wire this object to the finished tree rooted at ``root``."""
         del root
         raise NotImplementedError
 
@@ -163,33 +153,15 @@ class Makeable(Protocol[_T_co]):
         ...
 
     def make(self) -> _T_co:
-        """Make.
-
-        Returns:
-          result: The _T_co.
-
-        """
+        """Make."""
         ...
 
     def finalize(self) -> Self:
-        """Finalize.
-
-        Returns:
-          result: The Self.
-
-        """
+        """Finalize."""
         ...
 
     def copy_tree(self, visited: dict[int, object] | None = ...) -> Self:
-        """Copy tree.
-
-        Args:
-          visited: Visited.
-
-        Returns:
-          result: The Self.
-
-        """
+        """Copy tree."""
         ...
 
     def update(
@@ -200,17 +172,7 @@ class Makeable(Protocol[_T_co]):
         skip_missing: bool = False,
         **kwargs: object,
     ) -> Self:
-        """Accumulate one batch.
-
-        Args:
-          source: Source.
-          skip_missing: Skip missing.
-          **kwargs: Kwargs.
-
-        Returns:
-          result: The Self.
-
-        """
+        """Accumulate one batch."""
         ...
 
 
