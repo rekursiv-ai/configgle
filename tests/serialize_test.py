@@ -40,7 +40,6 @@ def _decode_graph(tree: object, *, hooks: GraphHooks | None = None) -> object:
 class Leaf:
     class Config(Fig["Leaf"]):
         v: int = 0
-
         name: str = "leaf"
 
     def __init__(self, config: Config) -> None:
@@ -50,7 +49,6 @@ class Leaf:
 class Nested:
     class Config(Fig["Nested"]):
         leaf: Leaf.Config = field(default_factory=Leaf.Config)
-
         scale: float = 1.0
 
     def __init__(self, config: Config) -> None:
@@ -60,13 +58,9 @@ class Nested:
 class Containers:
     class Config(Fig["Containers"]):
         items: list[Leaf.Config] = field(default_factory=list[Leaf.Config])
-
         mapping: dict[str, Leaf.Config] = field(default_factory=dict[str, Leaf.Config])
-
         pair: tuple[int, str] = (1, "a")
-
         tags: frozenset[str] = frozenset()
-
         nums: list[int] = field(default_factory=lambda: [1, 2, 3])
 
     def __init__(self, config: Config) -> None:
@@ -97,13 +91,11 @@ class Holder:
 
 class Point(Dataclass):
     x: int = 0
-
     y: int = 0
 
 
 class Coord(NamedTuple):
     lat: float
-
     lon: float
 
 
@@ -118,7 +110,6 @@ class WithCoord:
 class DagRoot:
     class Config(Fig["DagRoot"]):
         a: Leaf.Config = field(default_factory=Leaf.Config)
-
         b: Leaf.Config = field(default_factory=Leaf.Config)
 
     def __init__(self, config: Config) -> None:
@@ -197,7 +188,6 @@ class HasUnpicklable:
 class Cyclic:
     class Config(Fig["Cyclic"], slots=False):
         peer: object = None
-
         v: int = 0
 
     def __init__(self, config: Config) -> None:
@@ -207,7 +197,6 @@ class Cyclic:
 class TwoWeights:
     class Config(Fig["TwoWeights"]):
         a: Weight = field(default_factory=lambda: Weight([0.0]))
-
         b: Weight = field(default_factory=lambda: Weight([0.0]))
 
     def __init__(self, config: Config) -> None:
@@ -240,26 +229,22 @@ class WithFloat:
 
 class Color(enum.IntEnum):
     RED = 1
-
     BLUE = 2
 
 
 class Suit(enum.StrEnum):
     HEARTS = "hearts"
-
     SPADES = "spades"
 
 
 class PlainEnum(enum.Enum):
     A = enum.auto()
-
     B = enum.auto()
 
 
 class WithEnums:
     class Config(Fig["WithEnums"]):
         color: Color = Color.RED  # config-globals: ignore -- enum member, not a global.
-
         suit: Suit = Suit.HEARTS  # config-globals: ignore -- enum member, not a global.
 
     def __init__(self, config: Config) -> None:
@@ -279,9 +264,7 @@ class WithReducibleLeaves:
         # Third-party / stdlib leaves configgle does not know about, handled by
         # the __reduce__ fallback without importing their libraries.
         path: object = None
-
         dec: object = None
-
         proxy: object = None
 
     def __init__(self, config: Config) -> None:
@@ -309,7 +292,6 @@ class ReducesToDict:
 class Derived:
     class Config(Fig["Derived"]):
         base: int = 2
-
         doubled: int = -1
 
         @override
@@ -327,7 +309,6 @@ class Hashable:
     # and still hold a field pointing back at the containing set (a cycle).
     class Config(Fig["Hashable"], eq=False):
         peers: object = None  # holds a frozenset or set pointing back at self.
-
         tag: int = 0
 
     def __init__(self, config: Config) -> None:
@@ -337,11 +318,8 @@ class Hashable:
 class ImmutableDag:
     class Config(Fig["ImmutableDag"]):
         a: tuple[int, ...] = ()
-
         b: tuple[int, ...] = ()
-
         s: frozenset[int] = frozenset()
-
         t: frozenset[int] = frozenset()
 
     def __init__(self, config: Config) -> None:
@@ -419,7 +397,6 @@ def test_tuple_and_frozenset_roundtrip():
 class WithSet:
     class Config(Fig["WithSet"]):
         s: set[int] = field(default_factory=lambda: {1, 2})
-
         keyed: dict[int, str] = field(default_factory=lambda: {1: "a", 2: "b"})
 
     def __init__(self, config: Config) -> None:

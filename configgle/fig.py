@@ -563,9 +563,7 @@ class _Default:
 
 class _DataclassParams:
     __mro__: ClassVar[list[type]]
-
     __name__: ClassVar[str]
-
     __slots__: ClassVar[tuple[str, ...]] = (
         "eq",
         "frozen",
@@ -680,9 +678,7 @@ class _DataclassMeta(type):
     """
 
     __classcell__: CellType | None = None
-
     __dataclass_params__: _DataclassParams = _DataclassParams()
-
     make_with_kwargs: ClassVar[bool]
 
     def __new__(
@@ -847,18 +843,12 @@ class Makes(Generic[_ParentT_co]):
             ...
 
         def make(self) -> _ParentT_co:
-            """Make.
-
-            Returns:
-              result: The _ParentT_co.
-
-            """
+            """Make."""
             ...
 
     def __class_getitem__(cls, params: object) -> object:
         class _NoMroAlias:
             __origin__ = cls
-
             __args__ = (params,)
 
             @classmethod

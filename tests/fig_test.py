@@ -243,7 +243,6 @@ def test_fig_update():
 
     class TestConfig(Fig):
         x: int = 1
-
         y: float = 2.0
 
     cfg = TestConfig()
@@ -407,7 +406,6 @@ def test_fig_update_skip_missing():
 
     class TestConfig(Fig):
         x: int = 1
-
         y: float = 2.0
 
     cfg = TestConfig()
@@ -568,7 +566,6 @@ def test_makeable_requires_more_than_the_three_methods():
 
     class EveryMember(ThreeMethods):
         _finalized = False
-
         parent_class = None
 
         def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
@@ -636,7 +633,6 @@ def test_finalize_with_namedtuple():
 
     class Point(NamedTuple):
         x: int
-
         y: int
 
     class Config(Fig):
@@ -700,7 +696,6 @@ def test_update_source_with_attribute_error():
 
     class Config(Fig):
         x: int = 0
-
         y: int = 0
 
     cfg = Config()
@@ -781,7 +776,6 @@ def test_finalize_with_uninitialized_slot():
 
     class Config(Fig, slots=False):
         __slots__ = ("_lazy",)
-
         x: int = 1
 
     cfg = Config()
@@ -798,7 +792,6 @@ def test_update_source_skip_missing_filters_source_fields():
 
     class BigSource(Fig):
         x: int = 99
-
         extra: str = "not in target"
 
     cfg = SmallConfig()
@@ -864,7 +857,6 @@ def test_pformat_method():
     class MyClass:
         class Config(Fig):
             x: int = 0
-
             y: str = "hello"
 
         def __init__(self, config: Config):
@@ -1132,7 +1124,6 @@ def test_finalize_dag_finalizes_shared_child_once():
 
     class Root(Fig):
         a: Leaf = field(default_factory=Leaf)
-
         b: Leaf = field(default_factory=Leaf)
 
     shared = Leaf()
@@ -1201,9 +1192,7 @@ class _Root:
 
     class Config(Fig["_Root"]):
         table: _Table.Config = field(default_factory=_Table.Config)
-
         head: _Borrower.Config = field(default_factory=_Borrower.Config)
-
         parts: list[Makeable[object]] = field(default_factory=list[Makeable[object]])
 
     def __init__(self, config: Config) -> None:

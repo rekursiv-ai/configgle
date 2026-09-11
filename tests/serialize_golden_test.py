@@ -61,7 +61,6 @@ class Coord(NamedTuple):
     """A namedtuple: reduced by value, so it takes no reference index."""
 
     lat: float
-
     lon: float
 
 

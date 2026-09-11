@@ -151,19 +151,14 @@ class _Child:
 class _Parent:
     class Config(Fig["_Parent"]):
         child: _Child.Config = field(default_factory=_Child.Config)
-
         children: list[_Child.Config] = field(
             default_factory=lambda: [_Child.Config(), _Child.Config()]
         )
-
         mapping: dict[str, _Child.Config] = field(
             default_factory=lambda: {"a": _Child.Config()}
         )
-
         nums: list[int] = field(default_factory=lambda: [1, 2, 3])
-
         leaf: _Leaf = field(default_factory=lambda: _Leaf("shared"))
-
         scalar: int = 7
 
     def __init__(self, config: Config) -> None:
@@ -303,7 +298,6 @@ def test_copy_tree_preserves_namedtuple_type():
 
     class Pair(NamedTuple):
         a: int
-
         b: int
 
     pair = Pair(1, 2)
@@ -342,7 +336,6 @@ def test_copy_tree_preserves_dag_identity():
 
     class Root(Fig):
         a: Leaf = field(default_factory=Leaf)
-
         b: Leaf = field(default_factory=Leaf)
 
     shared = Leaf()

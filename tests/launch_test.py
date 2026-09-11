@@ -25,7 +25,6 @@ class Child:
 class Trainer:
     class Config(Fig["Trainer"]):
         steps: int = 100
-
         child: Child.Config = field(default_factory=Child.Config)
 
     def __init__(self, config: Config):

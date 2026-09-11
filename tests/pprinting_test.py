@@ -464,16 +464,13 @@ def test_pretty_printer_no_finalize():
 @dataclasses.dataclass(kw_only=True, slots=True)
 class _SimpleData:
     x: int = 1
-
     y: str = "hello"
-
     description: str = "a somewhat long default description value"
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
 class _NestedData:
     inner: _SimpleData = dataclasses.field(default_factory=_SimpleData)
-
     values: list[int] = dataclasses.field(default_factory=lambda: [1, 2, 3])
 
 
@@ -647,7 +644,6 @@ class _AmbiguousValue:
 @dataclasses.dataclass(kw_only=True, slots=True)
 class _MixedDefaults:
     ordinary: int = 1
-
     ambiguous: _AmbiguousValue = dataclasses.field(default_factory=_AmbiguousValue)
 
 
@@ -671,7 +667,6 @@ class TestFilterNonDefaultItems:
         @dataclasses.dataclass(kw_only=True, slots=True)
         class SideEffectData:
             value: int = 1
-
             items: list[int] = dataclasses.field(
                 default_factory=functools.partial(_default_items, factory_calls),
             )
@@ -843,9 +838,7 @@ def test_format_namespace_items_context_cycle():
     class MyClass:
         class Config(Fig):
             a: str = "a" * 40
-
             b: str = "b" * 40
-
             cyclic: object = None
 
         def __init__(self, config: Config):

@@ -15,9 +15,8 @@ import zipfile
 def main() -> int:
     """Run the program; return the process exit code.
 
-
     Returns:
-      result: The int.
+      result: Exit code; 0 if all required files present in wheel, 1 otherwise.
 
     """
     wheel = next(Path("dist").glob("configgle-*.whl"))
