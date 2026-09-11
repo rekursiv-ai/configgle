@@ -84,7 +84,7 @@ class MutableNamespace(Protocol):
 
     """
 
-    def __getattr__(self, name: str) -> Any: ...
+    def __getattr__(self, name: str) -> Any: ...  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
     @override
     def __setattr__(self, name: str, value: object) -> None: ...
 
@@ -204,7 +204,7 @@ class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInval
     parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars in ClassVar
 
     def __init__(self, *args: object, **kwargs: object) -> None: ...
-    def __getattr__(self, name: str) -> Any: ...
+    def __getattr__(self, name: str) -> Any: ...  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
 
 
 RelaxedConfigurable = RelaxedMakeable
