@@ -70,7 +70,7 @@ def autofig[T](
         try:
             type_hints = get_type_hints(cls_.__init__)
         except Exception:  # noqa: BLE001
-            # forward refs / missing imports can make this fail
+            # Forward refs / missing imports can make this fail.
             type_hints = {}
 
         annotations: dict[str, type] = {}
@@ -101,5 +101,5 @@ def autofig[T](
     if cls is None:
         # Called with arguments: @autofig(require_defaults=True)
         return decorator
-    # Called without arguments: @autofig
+    # Called without arguments: @autofig.
     return decorator(cls)

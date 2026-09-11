@@ -1,6 +1,6 @@
 """Custom types for config module."""
 
-# ty type system feature overview: https://github.com/astral-sh/ty/issues/1889
+# ``ty`` type system feature overview: https://github.com/astral-sh/ty/issues/1889.
 
 from __future__ import annotations
 
@@ -40,7 +40,14 @@ class Finalizeable(Protocol):
     avoids that issue.
     """
 
-    def finalize(self) -> Self: ...
+    def finalize(self) -> Self:
+        """Finalize.
+
+        Returns:
+          result: The Self.
+
+        """
+        ...
 
 
 class LateBound:
@@ -63,7 +70,12 @@ class LateBound:
     """
 
     def bind(self, root: object) -> None:
-        """Wire this object to the finished tree rooted at ``root``."""
+        """Wire this object to the finished tree rooted at ``root``.
+
+        Args:
+          root: Root.
+
+        """
         del root
         raise NotImplementedError
 
@@ -91,7 +103,7 @@ _T_co = TypeVar("_T_co", covariant=True, default=object)
 _T = TypeVar("_T")
 
 
-# class _DataclassParamsProtocol(Protocol):
+# ``class`` _DataclassParamsProtocol(Protocol):
 #     """Protocol for dataclasses._DataclassParams (private, Python 3.10+)."""
 #
 #     init: bool
@@ -103,7 +115,7 @@ _T = TypeVar("_T")
 #     match_args: bool  # Python 3.10+
 #     kw_only: bool  # Python 3.10+
 #     slots: bool  # Python 3.10+
-#     weakref_slot: bool  # Python 3.11+
+#     weakref_slot: bool  # Python 3.11+.
 
 
 @runtime_checkable
@@ -146,11 +158,40 @@ class Makeable(Protocol[_T_co]):
     # The tradeoff is that type[Makeable[X]].parent_class doesn't work
     # through protocol-typed variables. Use a cast for that rare case.
     @property
-    def parent_class(self) -> type[_T_co] | None: ...
+    def parent_class(self) -> type[_T_co] | None:
+        """Parent class."""
+        ...
 
-    def make(self) -> _T_co: ...
-    def finalize(self) -> Self: ...
-    def copy_tree(self, visited: dict[int, object] | None = ...) -> Self: ...
+    def make(self) -> _T_co:
+        """Make.
+
+        Returns:
+          result: The _T_co.
+
+        """
+        ...
+
+    def finalize(self) -> Self:
+        """Finalize.
+
+        Returns:
+          result: The Self.
+
+        """
+        ...
+
+    def copy_tree(self, visited: dict[int, object] | None = ...) -> Self:
+        """Copy tree.
+
+        Args:
+          visited: Visited.
+
+        Returns:
+          result: The Self.
+
+        """
+        ...
+
     def update(
         self,
         source: DataclassLike | Makeable[object] | None = None,
@@ -158,7 +199,19 @@ class Makeable(Protocol[_T_co]):
         *,
         skip_missing: bool = False,
         **kwargs: object,
-    ) -> Self: ...
+    ) -> Self:
+        """Accumulate one batch.
+
+        Args:
+          source: Source.
+          skip_missing: Skip missing.
+          **kwargs: Kwargs.
+
+        Returns:
+          result: The Self.
+
+        """
+        ...
 
 
 Configurable = Makeable
@@ -182,7 +235,7 @@ class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInval
 
     # Semantically correct but spec-illegal: PEP 526 forbids type variables
     # inside ClassVar. We need a class-level attribute whose type varies per
-    # parameterization — a concept the type system can't express. Alternatives:
+    # parameterization -- a concept the type system can't express. Alternatives:
     #   - Drop ClassVar: loses the "class attribute" semantic in the Protocol.
     #   - @property: covariant but instance-only (no Cls.parent_class access).
     # Suppressed in both checkers as a deliberate design choice.

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
-from typing import Self, override
+from typing import Final, Self, override
 
 import ast
 import copy
@@ -36,6 +36,10 @@ from configgle.pprinting import (
 )
 
 
+_THIS: Final = Path(__file__).resolve()
+_CWD: Final = _THIS.parent
+
+
 class MockConfigurable:
     """Mock configurable object for testing."""
 
@@ -63,11 +67,11 @@ def test_pformat_with_options():
     """Test pformat with various options."""
     obj = {"a": 1_000_000, "b": 2_000_000}
 
-    # Test with underscore_numbers
+    # Test with underscore_numbers.
     result = pformat(obj, underscore_numbers=True)
     assert "1_000_000" in result
 
-    # Test without underscore_numbers
+    # Test without underscore_numbers.
     result = pformat(obj, underscore_numbers=False)
     assert "1000000" in result
     assert "1_000_000" not in result
@@ -171,7 +175,7 @@ def test_owned_files_have_no_long_nested_functions() -> None:
     # Located through the imported module, not as a sibling file: the export
     # moves tests to ``tests/`` and sources into the package, so the two stop
     # sharing a directory.
-    paths = [Path(__file__), Path(inspect.getfile(pprinting))]
+    paths = [_THIS, Path(inspect.getfile(pprinting))]
 
     assert {path.name: _long_nested_functions(path) for path in paths} == {
         "pprinting.py": [],
@@ -191,7 +195,7 @@ def test_pformat_finalize():
         assert "MockConfigurable" in result
         assert len(w) == 0
 
-    # With finalize=False - should not warn
+    # With finalize=False - should not warn.
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         result = pformat(cfg, finalize=False)
@@ -429,11 +433,11 @@ def test_pretty_printer_try_to_finalize_with_error():
     pp = FigPrinter(finalize=True)
     cfg = BadConfig()
 
-    # Should catch the error and warn
+    # Should catch the error and warn.
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         _result = pp._try_to_finalize(cfg)
-        # Should warn about the error
+        # Should warn about the error.
         assert len(w) >= 1
         assert "Cannot finalize" in str(w[0].message)
 
@@ -447,7 +451,7 @@ def test_pretty_printer_no_finalize():
     pp = FigPrinter(finalize=False)
     cfg = Config()
 
-    # Should not finalize
+    # Should not finalize.
     result = pp._try_to_finalize(cfg)
     assert result is cfg
 
@@ -460,13 +464,16 @@ def test_pretty_printer_no_finalize():
 @dataclasses.dataclass(kw_only=True, slots=True)
 class _SimpleData:
     x: int = 1
+
     y: str = "hello"
+
     description: str = "a somewhat long default description value"
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
 class _NestedData:
     inner: _SimpleData = dataclasses.field(default_factory=_SimpleData)
+
     values: list[int] = dataclasses.field(default_factory=lambda: [1, 2, 3])
 
 
@@ -476,9 +483,9 @@ class TestPprintDataclass:
     def test_pformat_dataclass_with_defaults_hidden(self):
         """Dataclass fields matching defaults should be hidden."""
         obj = _SimpleData()
-        # Use narrow width to force PrettyPrinter to use _pprint_dataclass dispatch
+        # Use narrow width to force PrettyPrinter to use _pprint_dataclass dispatch.
         result = pformat(obj, extra_compact=True, hide_default_values=True, width=40)
-        # All fields are defaults, so should get compact empty parens
+        # All fields are defaults, so should get compact empty parens.
         assert "_SimpleData()" in result
 
     def test_pformat_dataclass_with_non_defaults(self):
@@ -586,10 +593,10 @@ class TestContinuationPipes:
         """Pipes should be placed at correct column."""
         lines = ["first", "  second", "  third", "  last"]
         result = _add_pipes_to_lines(lines, 0)
-        assert result[0] == "first"  # First line unchanged
+        assert result[0] == "first"  # First line unchanged.
         assert result[1].startswith("│")
         assert result[2].startswith("│")
-        assert result[3].startswith(" ")  # Last line gets space
+        assert result[3].startswith(" ")  # Last line gets space.
 
     def test_add_pipes_empty(self):
         """Empty lines list returns empty."""
@@ -640,6 +647,7 @@ class _AmbiguousValue:
 @dataclasses.dataclass(kw_only=True, slots=True)
 class _MixedDefaults:
     ordinary: int = 1
+
     ambiguous: _AmbiguousValue = dataclasses.field(default_factory=_AmbiguousValue)
 
 
@@ -663,6 +671,7 @@ class TestFilterNonDefaultItems:
         @dataclasses.dataclass(kw_only=True, slots=True)
         class SideEffectData:
             value: int = 1
+
             items: list[int] = dataclasses.field(
                 default_factory=functools.partial(_default_items, factory_calls),
             )
@@ -726,8 +735,8 @@ class TestUtilityFunctions:
     def test_replace_char_at_column(self):
         """Character should be replaced at column if whitespace."""
         assert _replace_char_at_column("  hello", 0, "│") == "│ hello"
-        assert _replace_char_at_column("hello", 0, "│") == "hello"  # Not whitespace
-        assert _replace_char_at_column("x", 5, "│") == "x"  # Out of bounds
+        assert _replace_char_at_column("hello", 0, "│") == "hello"  # Not whitespace.
+        assert _replace_char_at_column("x", 5, "│") == "x"  # Out of bounds.
 
 
 class TestPprintListDispatch:
@@ -743,10 +752,10 @@ class TestPprintListDispatch:
             )
 
         obj = WithList()
-        # width=40 forces multiline formatting
+        # width=40 forces multiline formatting.
         result = pformat(obj, extra_compact=True, hide_default_values=False, width=40)
         assert "items=" in result
-        # The list should be formatted with brackets
+        # The list should be formatted with brackets.
         assert "[" in result
         assert "]" in result
 
@@ -790,7 +799,7 @@ class TestPprintDataclassWithPipes:
         result = pformat(
             obj,
             extra_compact=True,
-            continuation_pipe=0,  # Always add pipes
+            continuation_pipe=0,  # Always add pipes.
             hide_default_values=False,
             width=40,
         )
@@ -814,7 +823,7 @@ class TestPprintDataclassWithPipes:
 
 def test_format_items_one_line():
     """Test _format_items one-line path when list triggers dispatch but content is short."""
-    # repr ~47 chars exceeds width=30, triggering _pprint_list dispatch.
+    # ``repr`` ~47 chars exceeds width=30, triggering _pprint_list dispatch.
     # But content_width < short_sequence_max_width=100, so _format_items writes one line.
     items = [100, 200, 300, 400, 500, 600, 700, 800, 900]
     result = pformat(
@@ -834,7 +843,9 @@ def test_format_namespace_items_context_cycle():
     class MyClass:
         class Config(Fig):
             a: str = "a" * 40
+
             b: str = "b" * 40
+
             cyclic: object = None
 
         def __init__(self, config: Config):
@@ -842,13 +853,13 @@ def test_format_namespace_items_context_cycle():
 
     cfg = MyClass.Config()
     finalized = cfg.finalize()
-    # Create a cycle — the multiline formatter must detect it
+    # Create a cycle -- the multiline formatter must detect it.
     object.__setattr__(finalized, "cyclic", finalized)
     printer = FigPrinter(
         extra_compact=True,
         hide_default_values=False,
         finalize=False,
-        width=40,  # Force multiline so _format_namespace_items is entered
+        width=40,  # Force multiline so _format_namespace_items is entered.
     )
     result = printer.pformat(finalized)
     assert "..." in result
@@ -866,15 +877,15 @@ def test_format_items_multiline_context_cycle():
 
     cfg = MyClass.Config()
     finalized = cfg.finalize()
-    # Create list with self-reference to trigger cycle detection
+    # Create list with self-reference to trigger cycle detection.
     items: list[object] = [1, 2]
-    items.append(items)  # self-referential list
+    items.append(items)  # self-referential list.
     object.__setattr__(finalized, "items", items)
     printer = FigPrinter(
         extra_compact=True,
         hide_default_values=False,
         finalize=False,
-        width=10,  # Force multiline
+        width=10,  # Force multiline.
         short_sequence_max_width=5,
     )
     result = printer.pformat(finalized)

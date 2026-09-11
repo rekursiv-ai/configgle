@@ -132,6 +132,17 @@ class _IPythonPrinter(Protocol):
     def text(self, text: str) -> None: ...
 
 
+class _MakerParentClassDescriptor:
+    """Descriptor that narrows parent_class return type via Generic inference."""
+
+    def __get__(
+        self,
+        obj: Makeable[_ParentT_co] | None,
+        owner: type[Makeable[_ParentT_co]],
+    ) -> type[_ParentT_co]:
+        return owner._parent_class()  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType]  # ty: ignore[unresolved-attribute] -- MakerMeta.__set_name__ binds _parent_class dynamically
+
+
 # `parent_class` is typed `type[ParentT]`, and the typing spec only guarantees a
 # zero-argument constructor for an unbounded `type[T]`, so calling it with the
 # config is unprovable from that annotation alone. These callback protocols name
@@ -147,17 +158,6 @@ class _MakesFromKwargs(Protocol[_ParentT_co]):
     """Parent class whose ``__init__`` takes its Config's fields as kwargs."""
 
     def __call__(self, **kwargs: object) -> _ParentT_co: ...
-
-
-class _MakerParentClassDescriptor:
-    """Descriptor that narrows parent_class return type via Generic inference."""
-
-    def __get__(
-        self,
-        obj: Makeable[_ParentT_co] | None,
-        owner: type[Makeable[_ParentT_co]],
-    ) -> type[_ParentT_co]:
-        return owner._parent_class()  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType]  # ty: ignore[unresolved-attribute] -- MakerMeta.__set_name__ binds _parent_class dynamically
 
 
 class MakerMeta(type):
@@ -228,10 +228,13 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
     """
 
     __slots__: ClassVar[tuple[str, ...]] = ("_finalized",)
+
     if TYPE_CHECKING:
 
         @property
-        def parent_class(self) -> type[_ParentT_co]: ...
+        def parent_class(self) -> type[_ParentT_co]:
+            """Parent class."""
+            ...
 
     else:
         parent_class = _MakerParentClassDescriptor()
@@ -325,18 +328,22 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         # silently build from underived defaults.
         try:
             for name in _get_object_attribute_names(self):
-                try:
-                    value = getattr(self, name)
-                except AttributeError:
-                    continue
-                finalized_value = _finalize_value(value)
-                if finalized_value is not value:
-                    object.__setattr__(self, name, finalized_value)
+                self._finalize_attribute(name)
         except Exception:
             object.__setattr__(self, "_finalized", False)
             raise
 
         return self
+
+    def _finalize_attribute(self, name: str) -> None:
+        """Finalize one attribute in place; a slot never set is left alone."""
+        try:
+            value = getattr(self, name)
+        except AttributeError:
+            return
+        finalized_value = _finalize_value(value)
+        if finalized_value is not value:
+            object.__setattr__(self, name, finalized_value)
 
     def update(
         self,
@@ -344,7 +351,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         /,
         *,
         skip_missing: bool = False,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> Self:
         """Update this config's attributes in place from a source and/or kwargs.
 
@@ -556,7 +563,9 @@ class _Default:
 
 class _DataclassParams:
     __mro__: ClassVar[list[type]]
+
     __name__: ClassVar[str]
+
     __slots__: ClassVar[tuple[str, ...]] = (
         "eq",
         "frozen",
@@ -638,10 +647,10 @@ class _DataclassParams:
         new = _DataclassParams()
         missing = object()
         for k in new:
-            # Check kwargs first
+            # Check kwargs first.
             v = kwargs.get(k, missing)
             if v is missing or isinstance(v, _Default):
-                # Fall back to existing
+                # Fall back to existing.
                 v = getattr(existing, k, missing)
             if v is missing:
                 continue
@@ -665,13 +674,15 @@ class _DataclassMeta(type):
     args prevent accidental positional misuse.
 
     ``slots=True`` because configs are allocated frequently and slots give
-    both memory savings and faster attribute access, and — importantly —
+    both memory savings and faster attribute access, and -- importantly --
     prevent typos from silently creating new attributes
     (``cfg.lrr = 0.01`` raises ``AttributeError``).
     """
 
     __classcell__: CellType | None = None
+
     __dataclass_params__: _DataclassParams = _DataclassParams()
+
     make_with_kwargs: ClassVar[bool]
 
     def __new__(
@@ -772,7 +783,7 @@ class FigMeta(_DataclassMeta, MakerMeta):
             name: str,
             bases: tuple[type, ...],
             attrs: dict[str, object],
-            **kwargs: Any,
+            **kwargs: object,
         ) -> FigMeta: ...
 
 
@@ -819,7 +830,7 @@ class Makes(Generic[_ParentT_co]):
 
         dog: Dog = Dog.Config(breed="mutt").make()  # returns Dog, not Animal
 
-    At runtime, Makes["X"] contributes nothing to the MRO — it exists
+    At runtime, Makes["X"] contributes nothing to the MRO -- it exists
     purely for static type checking.
 
     Workaround for Python's lack of Intersection types. If Intersection
@@ -831,13 +842,23 @@ class Makes(Generic[_ParentT_co]):
     if TYPE_CHECKING:
 
         @property
-        def parent_class(self) -> type[_ParentT_co]: ...
+        def parent_class(self) -> type[_ParentT_co]:
+            """Parent class."""
+            ...
 
-        def make(self) -> _ParentT_co: ...
+        def make(self) -> _ParentT_co:
+            """Make.
+
+            Returns:
+              result: The _ParentT_co.
+
+            """
+            ...
 
     def __class_getitem__(cls, params: object) -> object:
         class _NoMroAlias:
             __origin__ = cls
+
             __args__ = (params,)
 
             @classmethod
@@ -905,7 +926,7 @@ def update[MakerT: Maker[Any]](
     /,
     *,
     skip_missing: bool = False,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> MakerT:
     """Update a config's attributes in place from a source and/or overrides.
 

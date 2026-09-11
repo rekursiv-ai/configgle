@@ -190,7 +190,7 @@ class FigPrinter(PrettyPrinter):
             sort_dicts=sort_dicts,
             underscore_numbers=underscore_numbers,
         )
-        # re-set inherited private attrs; type checkers don't see parent's writes
+        # re-set inherited private attrs; type checkers don't see parent's writes.
         self._indent_per_level: int = indent
         self._width: int = width
         self._finalize = finalize
@@ -264,13 +264,11 @@ class FigPrinter(PrettyPrinter):
             level,
         )
 
+    # ``finalize`` mutates in place, so the tree is copied first (via ``copy_tree``,
+    # which duplicates the config spine but aliases heavy leaves like tensors) to keep
+    # printing side-effect-free.
     def _try_to_finalize(self, obj: _T) -> _T:
-        """Copy the config tree then finalize it for display purposes.
-
-        ``finalize`` mutates in place, so the tree is copied first (via
-        ``copy_tree``, which duplicates the config spine but aliases heavy
-        leaves like tensors) to keep printing side-effect-free.
-        """
+        """Copy the config tree then finalize it for display purposes."""
         if (
             self._finalize
             and isinstance(obj, Finalizeable)
@@ -295,6 +293,9 @@ class FigPrinter(PrettyPrinter):
                 warnings.warn(f"{type(e).__name__}: {e}", stacklevel=2)
         return obj
 
+    # CPython's PrettyPrinter dispatches to ``_pprint_dataclass`` for dataclass
+    # instances. We override it to hide default-valued fields and use our extra-compact
+    # layout.
     def _pprint_dataclass(  # noqa: PLR0917 -- pprint override; CPython dispatches positionally, keyword-only params break it.
         self,
         obj: object,
@@ -304,12 +305,7 @@ class FigPrinter(PrettyPrinter):
         context: dict[int, int],
         level: int,
     ) -> None:
-        """Format a dataclass instance.
-
-        CPython's PrettyPrinter dispatches to ``_pprint_dataclass`` for
-        dataclass instances. We override it to hide default-valued fields
-        and use our extra-compact layout.
-        """
+        """Format a dataclass instance."""
         cls_name = obj.__class__.__qualname__
         indent += len(cls_name) + 1
         items = [
@@ -460,8 +456,8 @@ class FigPrinter(PrettyPrinter):
         allowance: int,
     ) -> bool:
         """Determine if items should be formatted on one line."""
-        # short seqs stay one-line at any depth (content_width excludes indent)
-        # For longer sequences, check if they fit within the available width
+        # Short seqs stay one-line at any depth (content_width excludes indent)
+        # For longer sequences, check if they fit within the available width.
         return (
             content_width < self._short_sequence_max_width
             or indent + content_width + allowance <= self._width

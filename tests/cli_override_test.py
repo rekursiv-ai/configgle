@@ -12,6 +12,7 @@ class ChildJob:
 
     class Config(Fig["ChildJob"]):
         lr: float = 1e-3
+
         steps: int = 10
 
     def __init__(self, config: Config):
@@ -24,7 +25,9 @@ class NestedJob:
 
     class Config(Fig["NestedJob"]):
         name: str = ""
+
         enabled: bool = False
+
         child: ChildJob.Config = field(default_factory=ChildJob.Config)
 
     def __init__(self, config: Config):
@@ -42,6 +45,7 @@ class FrozenJob:
 
     class Config(Fig["FrozenJob"], frozen=True):
         name: str = ""
+
         inner: FrozenInner = field(default_factory=FrozenInner)
 
     def __init__(self, config: Config):

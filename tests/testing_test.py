@@ -71,7 +71,8 @@ def test_assert_pprint_golden_pins_rendering_policy(
 ) -> None:
     seen: dict[str, object] = {}
 
-    def pformat(_config: Maker[object], **kwargs: object) -> str:
+    def pformat(config: Maker[object], **kwargs: object) -> str:
+        del config
         seen.update(kwargs)
         return "rendered"
 

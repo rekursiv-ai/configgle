@@ -251,8 +251,8 @@ functions and as methods on any ``Maker`` subclass::
     from configgle import pformat
     print(pformat(cfg))  # module-level
 
-    cfg.pprint()         # method — prints to stdout
-    s = cfg.pformat()    # method — returns string
+    cfg.pprint()         # method -- prints to stdout
+    s = cfg.pformat()    # method -- returns string
 
 ``serialize`` / ``deserialize`` -- Round-trip a config through an encodable
 dict tree (nested dicts/lists/primitives), not a string. The tree is

@@ -34,6 +34,18 @@ class B:
 
 
 def foo(val: Intersection[A, B]) -> None:
-    reveal_type(val)  # Unknown
-    reveal_type(val.x)  # Unknown
-    reveal_type(val.y)  # Unknown
+    """Reveal what basedpyright infers for an intersection and its members.
+
+    Args:
+      val: A value typed as both ``A`` and ``B``.
+
+    """
+    reveal_type(val)  # Unknown.
+    reveal_type(val.x)  # Unknown.
+    reveal_type(val.y)  # Unknown.
+
+
+if __name__ == "__main__":
+    from configgle.lib.testing.main import test_main
+
+    test_main(__file__)

@@ -87,26 +87,11 @@ def apply_overrides(config: Makeable[object], overrides: list[str]) -> None:
         object.__setattr__(node, leaf, value)
 
 
+# Validates ``key`` against ``node``'s resolved type hints -- a declared field, never an
+# arbitrary attribute or method -- so each hop of an override path is checked uniformly.
+# The annotation drives leaf casting; the value continues the traversal.
 def _override_field(node: object, key: str, path: str) -> tuple[object, object]:
-    """Return ``(annotation, value)`` of ``node``'s declared field ``key``.
-
-    Validates ``key`` against ``node``'s resolved type hints -- a declared
-    field, never an arbitrary attribute or method -- so each hop of an
-    override path is checked uniformly. The annotation drives leaf casting;
-    the value continues the traversal.
-
-    Args:
-      node: The config node to look ``key`` up on.
-      key: The field name for this hop of the path.
-      path: The full dotted path, for error messages.
-
-    Returns:
-      field: The declared ``(annotation, value)`` pair for ``key``.
-
-    Raises:
-      ValueError: ``node`` is not a dataclass, or has no declared field ``key``.
-
-    """
+    """Return ``(annotation, value)`` of ``node``'s declared field ``key``."""
     if not dataclasses.is_dataclass(node):
         raise ValueError(
             f"Override path `{path}` traverses non-config "
@@ -121,16 +106,7 @@ def _override_field(node: object, key: str, path: str) -> tuple[object, object]:
 
 
 def _parse_override_value(raw: str) -> object:
-    """Parse a raw override value as a JSON literal, else the bare string.
-
-    Args:
-      raw: The right-hand side of a ``PATH=VALUE`` override.
-
-    Returns:
-      parsed: The decoded JSON literal, or ``raw`` unchanged when it is not
-        valid JSON (a bare string such as ``run_a``).
-
-    """
+    """Parse a raw override value as a JSON literal, else the bare string."""
     try:
         return json.loads(raw)
     except json.JSONDecodeError:

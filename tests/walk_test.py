@@ -31,7 +31,7 @@ def test_get_object_attribute_names_filters_int_indices():
     assert set(names) == {"x", "y"}
 
     # Test with list (should yield nothing - no string attributes)
-    # This protects against the bug where integer indices would be stringified
+    # This protects against the bug where integer indices would be stringified.
     lst = [1, 2, 3]
     names = list(_get_object_attribute_names(lst))
     assert names == []
@@ -76,16 +76,16 @@ def test_get_object_attribute_names_slots_and_dict_combined():
     """An object with both __slots__ and __dict__ yields the union, deduped."""
 
     class Both:
-        __slots__ = ("__dict__", "slotted")  # __dict__ in slots enables both
+        __slots__ = ("__dict__", "slotted")  # __dict__ in slots enables both.
 
         def __init__(self):
             self.slotted = 1
-            self.dynamic = 2  # lands in __dict__
+            self.dynamic = 2  # lands in __dict__.
 
     obj = Both()
     names = list(_get_object_attribute_names(obj))
     assert set(names) == {"slotted", "dynamic"}
-    assert len(names) == len(set(names))  # no duplicates
+    assert len(names) == len(set(names))  # no duplicates.
 
 
 def test_get_object_attribute_names_yields_unset_slot():
@@ -108,14 +108,15 @@ def test_get_object_attribute_names_yields_unset_slot():
 
 
 def test_get_object_attribute_names_skips_internal_attrs():
-    """``_finalized`` is never yielded, even when a real attribute (a ``__dict__``
-    entry or a slot) by that name exists.
+    """``_finalized`` is never yielded, even when a real attribute.
+
+    A ``__dict__`` entry or a slot) by that name exists.
     """
 
     class Internal:
         def __init__(self):
             self.real = 1
-            self._finalized = True  # bookkeeping, must not be yielded
+            self._finalized = True  # bookkeeping, must not be yielded.
 
     obj = Internal()
     names = set(_get_object_attribute_names(obj))
@@ -150,14 +151,19 @@ class _Child:
 class _Parent:
     class Config(Fig["_Parent"]):
         child: _Child.Config = field(default_factory=_Child.Config)
+
         children: list[_Child.Config] = field(
             default_factory=lambda: [_Child.Config(), _Child.Config()]
         )
+
         mapping: dict[str, _Child.Config] = field(
             default_factory=lambda: {"a": _Child.Config()}
         )
+
         nums: list[int] = field(default_factory=lambda: [1, 2, 3])
+
         leaf: _Leaf = field(default_factory=lambda: _Leaf("shared"))
+
         scalar: int = 7
 
     def __init__(self, config: Config) -> None:
@@ -198,9 +204,9 @@ def test_copy_tree_copies_leaf_container_but_aliases_leaves():
     """A list of pure leaves is copied (mutable), its int elements shared."""
     cfg = _Parent.Config()
     copied = copy_tree(cfg)
-    assert copied.nums is not cfg.nums  # the list itself is fresh
+    assert copied.nums is not cfg.nums  # the list itself is fresh.
     copied.nums.append(4)
-    assert cfg.nums == [1, 2, 3]  # original list unaffected
+    assert cfg.nums == [1, 2, 3]  # original list unaffected.
 
 
 def test_copy_tree_aliases_non_config_leaves():
@@ -225,7 +231,7 @@ def test_copy_tree_recurses_slotted_objects():
     holder = Holder(inner)
     copied = copy_tree(holder)
     assert copied is not holder
-    assert copied.inner is not inner  # the Fig inside was copied
+    assert copied.inner is not inner  # the Fig inside was copied.
 
 
 def test_copy_tree_aliases_primitives():
@@ -286,10 +292,10 @@ def test_copy_tree_rebuilds_immutable_container_with_copied_fig():
     """A tuple of Figs is rebuilt to carry the copied (mutable) Fig elements."""
     block = (_Child.Config(), _Child.Config())
     copied = copy_tree(block)
-    assert copied is not block  # rebuilt because an element was copied
+    assert copied is not block  # rebuilt because an element was copied.
     assert copied[0] is not block[0]
     copied[0].v = 9
-    assert block[0].v == 0  # original Fig untouched
+    assert block[0].v == 0  # original Fig untouched.
 
 
 def test_copy_tree_preserves_namedtuple_type():
@@ -297,6 +303,7 @@ def test_copy_tree_preserves_namedtuple_type():
 
     class Pair(NamedTuple):
         a: int
+
         b: int
 
     pair = Pair(1, 2)
@@ -323,7 +330,7 @@ def test_copy_tree_delegates_to_custom_method():
 
     cfg = Custom.Config()
     copied = copy_tree(cfg)
-    assert sentinel == ["called"]  # the override ran
+    assert sentinel == ["called"]  # the override ran.
     assert copied is not cfg
 
 
@@ -335,14 +342,15 @@ def test_copy_tree_preserves_dag_identity():
 
     class Root(Fig):
         a: Leaf = field(default_factory=Leaf)
+
         b: Leaf = field(default_factory=Leaf)
 
     shared = Leaf()
     root = Root(a=shared, b=shared)
     assert root.a is root.b
     copied = copy_tree(root)
-    assert copied.a is copied.b  # identity preserved across the copy
-    assert copied.a is not shared  # but it is a fresh copy
+    assert copied.a is copied.b  # identity preserved across the copy.
+    assert copied.a is not shared  # but it is a fresh copy.
 
 
 def test_copy_tree_handles_cycles():
@@ -354,12 +362,12 @@ def test_copy_tree_handles_cycles():
     a = Node()
     b = Node()
     a.peer = b
-    b.peer = a  # cycle: a -> b -> a
+    b.peer = a  # cycle: a -> b -> a.
     copied = copy_tree(a)
     assert copied is not a
     peer = cast(Node, copied.peer)
     assert peer is not b
-    assert cast(Node, peer.peer) is copied  # cycle re-closed onto the copy
+    assert cast(Node, peer.peer) is copied  # cycle re-closed onto the copy.
 
 
 def test_copy_tree_dag_in_list():
@@ -416,7 +424,7 @@ def test_bind_late_does_not_probe_modules_through_instance_getattr():
 
     class Shim(dict[str, object]):
         def __getattr__(self, key: str) -> object:
-            return self[key]  # raises KeyError for any absent name
+            return self[key]  # raises KeyError for any absent name.
 
     class Holder:
         def __init__(self) -> None:
@@ -438,7 +446,7 @@ def test_bind_late_does_not_bind_a_foreign_object_that_merely_has_bind():
             def __init__(self) -> None:
                 self.transport = sock
 
-        bind_late(Holder())  # must not call sock.bind
+        bind_late(Holder())  # must not call sock.bind.
 
 
 def test_bind_late_walks_a_torch_style_module_subtree():
@@ -477,7 +485,7 @@ def test_bind_late_still_binds_through_ordinary_attributes():
     class Inner:
         def __init__(self) -> None:
             self.late = Late()
-            self.rng = random  # a module sits beside the real subtree
+            self.rng = random  # a module sits beside the real subtree.
 
     class Root:
         def __init__(self) -> None:
