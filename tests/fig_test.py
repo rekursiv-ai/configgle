@@ -589,7 +589,10 @@ def test_fig_forwards_mixin_class_keywords() -> None:
         option = ""
 
         def __init_subclass__(
-            cls, *, option: str | None = None, **kwargs: object
+            cls,
+            *,
+            option: str | None = None,
+            **kwargs: object,
         ) -> None:
             super().__init_subclass__(**kwargs)
             if option is not None:

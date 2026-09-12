@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 __all__ = ["InlineConfig", "PartialConfig"]
 
 _INLINE_CONFIG_SLOTS = frozenset(
-    ("parent_class", "func", "_finalized", "_args", "_kwargs")
+    ("parent_class", "func", "_finalized", "_args", "_kwargs"),
 )
 
 

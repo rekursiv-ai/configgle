@@ -114,7 +114,8 @@ def _docstring_example() -> str:
     # a per-call `.replace` becomes a no-op whose line then re-wraps, and
     # `ruff format --check` fails in the exported tree.
     return textwrap.dedent(body).replace(
-        "from configgle import", f"from {launch.__name__.rsplit('.', 1)[0]} import"
+        "from configgle import",
+        f"from {launch.__name__.rsplit('.', 1)[0]} import",
     )
 
 

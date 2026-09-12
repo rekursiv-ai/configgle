@@ -565,7 +565,7 @@ def _string_token_spans(text: str) -> list[tuple[int, int]]:
                     (
                         line_offsets[token.start[0] - 1] + token.start[1],
                         line_offsets[token.end[0] - 1] + token.end[1],
-                    )
+                    ),
                 )
     except tokenize.TokenError:
         pass
@@ -586,7 +586,7 @@ def _function_repr_children(value: object) -> list[object]:
             cast(
                 list[object] | tuple[object, ...] | set[object] | frozenset[object],
                 value,
-            )
+            ),
         )
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return [
@@ -607,7 +607,7 @@ def _get_level_indents(level: int, indent_per_level: int) -> tuple[int, int]:
 def _collapse_multiline_value(formatted_value: str, max_width: int) -> str:
     """Collapse multiline value to a single line if short enough."""
     if "\n" not in formatted_value or _contains_repeated_string_whitespace(
-        formatted_value
+        formatted_value,
     ):
         return formatted_value
 
