@@ -47,7 +47,7 @@ def assert_pprint_golden(
         golden.write_text(rendered, encoding="utf-8")
     if missing:
         raise AssertionError(
-            f"Missing golden regenerated at {golden}; inspect it, then rerun the test."
+            f"Missing golden regenerated at {golden}; inspect it, then rerun the test.",
         )
     expected = golden.read_text(encoding="utf-8")
     if expected == rendered:
@@ -58,8 +58,8 @@ def assert_pprint_golden(
             rendered.splitlines(keepends=True),
             fromfile=str(golden),
             tofile=f"{name} (rendered)",
-        )
+        ),
     )
     raise AssertionError(
-        f"{name} changed; rerun with {_ENV_REGENERATE}=1 if intended.\n{diff}"
+        f"{name} changed; rerun with {_ENV_REGENERATE}=1 if intended.\n{diff}",
     )

@@ -46,7 +46,8 @@ _SKIP_ATTRS = frozenset(("__weakref__", "__dict__", "_finalized"))
 
 
 def copy_tree[ValueT](
-    value: ValueT, visited: dict[int, object] | None = None
+    value: ValueT,
+    visited: dict[int, object] | None = None,
 ) -> ValueT:
     """Copy a config tree down through Figs/containers, aliasing leaf values.
 
@@ -117,7 +118,7 @@ def copy_tree[ValueT](
         mapping = cast(Mapping[object, object], node)
         rebuild_container = cast(Callable[[object], ValueT], type(mapping))
         return rebuild_container(
-            {copy_tree(k, visited): copy_tree(v, visited) for k, v in mapping.items()}
+            {copy_tree(k, visited): copy_tree(v, visited) for k, v in mapping.items()},
         )
     elif isinstance(node, AbstractSet):
         copied = {copy_tree(v, visited) for v in node}

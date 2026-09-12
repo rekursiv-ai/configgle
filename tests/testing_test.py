@@ -173,7 +173,7 @@ def test_assert_pprint_golden_rejects_mismatch_under_optimized_python(
             name="example",
             config=Example.Config(),
         )
-        """
+        """,
     )
 
     result = subprocess.run(  # noqa: S603 -- fixed argv; the script is a literal built above

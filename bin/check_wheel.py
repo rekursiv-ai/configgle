@@ -29,11 +29,11 @@ def main() -> int:
             "configgle/py.typed",
             "ty_extensions/__init__.py",
         }
-        - names
+        - names,
     )
     if missing:
         raise SystemExit(
-            "wheel is missing required wheel entries: " + ", ".join(missing)
+            "wheel is missing required wheel entries: " + ", ".join(missing),
         )
     return 0
 

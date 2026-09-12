@@ -152,10 +152,10 @@ class _Parent:
     class Config(Fig["_Parent"]):
         child: _Child.Config = field(default_factory=_Child.Config)
         children: list[_Child.Config] = field(
-            default_factory=lambda: [_Child.Config(), _Child.Config()]
+            default_factory=lambda: [_Child.Config(), _Child.Config()],
         )
         mapping: dict[str, _Child.Config] = field(
-            default_factory=lambda: {"a": _Child.Config()}
+            default_factory=lambda: {"a": _Child.Config()},
         )
         nums: list[int] = field(default_factory=lambda: [1, 2, 3])
         leaf: _Leaf = field(default_factory=lambda: _Leaf("shared"))

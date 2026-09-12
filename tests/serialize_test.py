@@ -731,7 +731,8 @@ def test_picklable_leaf_roundtrips_without_a_hook():
 
     # A hook still overrides the default reduce encoding when supplied.
     via_hook = _decode_graph(
-        encode_graph(cfg, hooks=_WEIGHT_HOOKS), hooks=_WEIGHT_HOOKS
+        encode_graph(cfg, hooks=_WEIGHT_HOOKS),
+        hooks=_WEIGHT_HOOKS,
     )
     assert isinstance(via_hook, HasWeight.Config)
     assert via_hook.weight.data == [1.0, 2.0]
@@ -799,7 +800,10 @@ def test_immutable_container_dag_roundtrips_by_value():
     shared_tuple = (1, 2, 3)
     shared_set = frozenset({4, 5})
     cfg = ImmutableDag.Config(
-        a=shared_tuple, b=shared_tuple, s=shared_set, t=shared_set
+        a=shared_tuple,
+        b=shared_tuple,
+        s=shared_set,
+        t=shared_set,
     )
     back = _roundtrip(cfg)
     assert back.a == back.b == (1, 2, 3)
