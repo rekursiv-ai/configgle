@@ -211,6 +211,7 @@ class InlineConfig[T]:
         object.__delattr__(self, key)
 
     def __getattr__(self, key: str) -> Any:  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
+        """Get a dynamic attribute from kwargs or instance."""
         try:
             return object.__getattribute__(self, "_kwargs")[key]
         except (TypeError, AttributeError, KeyError):

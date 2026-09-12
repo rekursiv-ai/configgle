@@ -1,3 +1,5 @@
+"""Type system extensions for basedpyright and basedmypy."""
+
 # Polyfill for ty_extensions.Intersection.
 # provides the same API for other type checkers and at runtime.
 # Intersection[A, B] approximates as A since basedpyright lacks native
