@@ -293,7 +293,7 @@ class _GraphEncoder:
         """
         index = len(self._seen)
         self._seen[id(value)] = index
-        self._alive.append(value)  # keep alive so id() is not reused.
+        self._alive.append(value)  # Keep alive so id() is not reused.
         return index
 
     def hook_for(

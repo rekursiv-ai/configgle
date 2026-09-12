@@ -253,7 +253,7 @@ class WithEnums:
 
 class WithPlainEnum:
     class Config(Fig["WithPlainEnum"]):
-        e: object = None  # a plain (non-scalar) Enum: an opaque leaf.
+        e: object = None  # `a` plain (non-scalar) Enum: an opaque leaf.
 
     def __init__(self, config: Config) -> None:
         del config
@@ -308,7 +308,7 @@ class Hashable:
     # eq=False makes the config hashable, so it can be a set/frozenset member
     # and still hold a field pointing back at the containing set (a cycle).
     class Config(Fig["Hashable"], eq=False):
-        peers: object = None  # holds a frozenset or set pointing back at self.
+        peers: object = None  # Holds a frozenset or set pointing back at self.
         tag: int = 0
 
     def __init__(self, config: Config) -> None:
@@ -747,7 +747,7 @@ def test_self_cycle_roundtrips():
     register a node before recursing into its children.
     """
     cfg = Cyclic.Config(v=5)
-    cfg.peer = cfg  # a -> a.
+    cfg.peer = cfg  # `a` -> a.
     back = _roundtrip(cfg)
     assert back.peer is back
     assert back.v == 5
@@ -768,7 +768,7 @@ def test_mutual_cycle_roundtrips():
 def test_cycle_through_list_roundtrips():
     """CFG-1: a cycle through a mutable container also terminates."""
     cfg = Cyclic.Config()
-    cfg.peer = [cfg]  # a -> [a].
+    cfg.peer = [cfg]  # `a` -> [a].
     back = _roundtrip(cfg)
     assert cast(list[object], back.peer)[0] is back
 
@@ -782,7 +782,7 @@ def test_cycle_through_frozenset_member_roundtrips():
     not-yet-built id.
     """
     a = Hashable.Config(tag=1)
-    a.peers = frozenset({a})  # a in a.peers.
+    a.peers = frozenset({a})  # `a` in a.peers.
     back = _roundtrip(a)
     assert next(iter(cast(frozenset[object], back.peers))) is back
     assert back.tag == 1
@@ -815,7 +815,7 @@ def test_cycle_through_tuple_target_roundtrips():
     """
     cfg = Cyclic.Config(v=1)
     holder: tuple[object, ...] = (cfg,)
-    cfg.peer = holder  # cfg -> (cfg,) -> cfg.
+    cfg.peer = holder  # `cfg` -> (cfg,) -> cfg.
     back = cast(tuple[object, ...], _roundtrip(holder))
     inner = cast(Cyclic.Config, back[0])
     assert cast(tuple[object, ...], inner.peer)[0] is inner
@@ -829,7 +829,7 @@ def test_cycle_through_frozenset_from_mutable_anchor_roundtrips():
     be reserved-then-filled, so it cannot be a cycle TARGET (same limit as pickle).
     """
     cfg = Hashable.Config(tag=1)
-    cfg.peers = frozenset({cfg})  # cfg -> frozenset({cfg}) -> cfg.
+    cfg.peers = frozenset({cfg})  # `cfg` -> frozenset({cfg}) -> cfg.
     back = _roundtrip(cfg)
     inner = cast(frozenset[object], back.peers)
     assert next(iter(inner)) is back
@@ -839,7 +839,7 @@ def test_cycle_through_set_target_roundtrips():
     """NEW-2: a mutable set IS a cycle target -- identity preserved on decode."""
     cfg = Hashable.Config(tag=2)
     holder: set[object] = {cfg}
-    cfg.peers = holder  # cfg -> {cfg} -> cfg; set is mutable, so id-shared.
+    cfg.peers = holder  # `cfg` -> {cfg} -> cfg; set is mutable, so id-shared.
     back = _roundtrip(holder)
     inner = cast(Hashable.Config, next(iter(back)))
     assert inner.peers is back
@@ -954,11 +954,11 @@ def test_reduce_leaf_identity_split():
     """
     stateful = _StatefulLeaf([1, 2])
     back_stateful = _roundtrip({"a": stateful, "b": stateful})
-    assert back_stateful["a"] is back_stateful["b"]  # identity via py/id.
+    assert back_stateful["a"] is back_stateful["b"]  # `identity` via py/id.
 
     fs = frozenset({3, 4})
     back_fs = _roundtrip({"a": fs, "b": fs})
-    assert back_fs["a"] == back_fs["b"] == frozenset({3, 4})  # value, not identity.
+    assert back_fs["a"] == back_fs["b"] == frozenset({3, 4})  # `value`, not identity.
 
 
 def test_cycle_through_frozenset_target_terminates_by_value():
@@ -1011,7 +1011,7 @@ def test_non_finite_float_before_shared_mutable_keeps_refs():
     shared: list[int] = [1, 2]
     back = _roundtrip([float("inf"), shared, shared])
     assert back[0] == float("inf")
-    assert back[1] is back[2]  # the shared list's py/id still resolves correctly.
+    assert back[1] is back[2]  # The shared list's py/id still resolves correctly.
     assert back[1] == [1, 2]
 
 

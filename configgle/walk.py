@@ -289,7 +289,7 @@ def _copy_immutable_container(
     items: list[object] = list(value)
     copied: list[object] = [copy_tree(item, visited) for item in items]
     if all(c is o for c, o in zip(copied, items, strict=True)):
-        return value  # nothing inside changed -- keep the immutable original.
+        return value  # Nothing inside changed -- keep the immutable original.
     if isinstance(value, frozenset):
         return frozenset(copied)
     if type(value) is tuple:

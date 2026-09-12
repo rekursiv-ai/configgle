@@ -326,8 +326,8 @@ def test_make_does_not_mutate_original():
 
     cfg = Thing.Config()
     obj = cfg.make()
-    assert obj.x == 42  # finalized value reached the instance.
-    assert cfg.x == 1  # original config untouched.
+    assert obj.x == 42  # `finalized` value reached the instance.
+    assert cfg.x == 1  # Original config untouched.
     assert getattr(cfg, "_finalized", False) is False
 
 
@@ -417,9 +417,9 @@ def test_fig_update_skip_missing():
 
     # Try to update non-existent field with skip_missing=True (should skip it)
     cfg.update(skip_missing=True, x=100, z=999)
-    assert cfg.x == 100  # x was updated.
-    assert cfg.y == 20  # y unchanged.
-    assert not hasattr(cfg, "z")  # z was skipped.
+    assert cfg.x == 100  # `x` was updated.
+    assert cfg.y == 20  # `y` unchanged.
+    assert not hasattr(cfg, "z")  # Z was skipped.
 
 
 class Animal:
@@ -939,7 +939,7 @@ def test_make_twice_leaves_source_unmutated():
     second = cfg.make()
     assert first.n == 1
     assert second.n == 1
-    assert cfg.n == 0  # source config never mutated.
+    assert cfg.n == 0  # `source` config never mutated.
 
 
 def test_failed_child_finalize_leaves_parent_retryable() -> None:
@@ -1062,7 +1062,7 @@ def test_finalize_finalizes_hashable_fig_dict_key():
     key = next(iter(finalized.d))
     assert key.v == 99
     assert finalized.d[key] == "val"
-    assert key is not source_key  # key copied, source isolated.
+    assert key is not source_key  # `key` copied, source isolated.
     assert source_key.v == 0
 
 
@@ -1088,8 +1088,8 @@ def test_finalize_preserves_unchanged_tuple_identity():
     holder = Holder()
     original_tuple = holder.t
     holder.finalize()
-    assert holder.t is original_tuple  # identity preserved.
-    assert holder.t[0].v == 99  # element finalized in place.
+    assert holder.t is original_tuple  # Identity preserved.
+    assert holder.t[0].v == 99  # Element finalized in place.
 
 
 def test_finalize_finalizes_dict_with_leaf_keys():
@@ -1130,7 +1130,7 @@ def test_finalize_dag_finalizes_shared_child_once():
     root = Root(a=shared, b=shared)
     root.finalize()
     assert root.a is root.b
-    assert root.a.n == 1  # finalized once, not twice.
+    assert root.a.n == 1  # `finalized` once, not twice.
 
 
 class _RebuiltChild:
@@ -1281,7 +1281,7 @@ def test_parent_rebuilding_child_in_init_finalizes_child_once():
     per ``make()`` boundary", matching the DAG shared-child guarantee.
     """
     built = _RebuildingParent.Config().make()
-    assert built.child.n == 1  # finalized once, not twice.
+    assert built.child.n == 1  # `finalized` once, not twice.
 
 
 if __name__ == "__main__":
