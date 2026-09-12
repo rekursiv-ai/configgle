@@ -65,7 +65,12 @@ class LateBound:
     """
 
     def bind(self, root: object) -> None:
-        """Wire this object to the finished tree rooted at ``root``."""
+        """Wire this object to the finished tree rooted at ``root``.
+
+        Args:
+          root: Root.
+
+        """
         del root
         raise NotImplementedError
 
