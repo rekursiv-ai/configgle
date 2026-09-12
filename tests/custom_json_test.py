@@ -1121,7 +1121,7 @@ class TestDataclassCodec:
 
     def test_encoded_form_is_json_serializable(self) -> None:
         doc = _Doc(when=datetime(2026, 1, 1, tzinfo=UTC), atts=(_Bytes(data=b"z"),))
-        json.dumps(DataclassCodec.to_json(doc))  # must not raise.
+        json.dumps(DataclassCodec.to_json(doc))  # Must not raise.
 
     def test_type_tag_present_and_ignored_on_decode(self) -> None:
         encoded = DataclassCodec.to_json(_Child(n=3))
