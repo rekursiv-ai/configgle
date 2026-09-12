@@ -26,10 +26,14 @@ from basedtyping import Intersection
 
 
 class A:
+    """Example class A with attribute x."""
+
     x: int = 1
 
 
 class B:
+    """Example class B with attribute y."""
+
     y: str = "hi"
 
 

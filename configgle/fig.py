@@ -847,6 +847,8 @@ class Makes(Generic[_ParentT_co]):
             ...
 
     def __class_getitem__(cls, params: object) -> object:
+        """Support subscript notation for parametrized generic types."""
+
         class _NoMroAlias:
             __origin__ = cls
             __args__ = (params,)

@@ -84,9 +84,14 @@ class MutableNamespace(Protocol):
 
     """
 
-    def __getattr__(self, name: str) -> Any: ...  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
+        """Get a dynamic attribute."""
+        ...
+
     @override
-    def __setattr__(self, name: str, value: object) -> None: ...
+    def __setattr__(self, name: str, value: object) -> None:
+        """Set a dynamic attribute."""
+        ...
 
 
 _T_co = TypeVar("_T_co", covariant=True, default=object)
@@ -203,8 +208,13 @@ class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInval
     # Suppressed in both checkers as a deliberate design choice.
     parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars in ClassVar
 
-    def __init__(self, *args: object, **kwargs: object) -> None: ...
-    def __getattr__(self, name: str) -> Any: ...  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        """Initialize the configurable."""
+        ...
+
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
+        """Get a dynamic attribute."""
+        ...
 
 
 RelaxedConfigurable = RelaxedMakeable
