@@ -1,21 +1,23 @@
-"""Static type-inference regression tests for ``Config.make()`` return types.
+"""Check ``Config.make()`` assignability and runtime return types.
 
 The entire purpose of configgle is that ``SomeClass.Config(...).make()`` is
 statically known to return ``SomeClass`` -- INCLUDING a *bare*
-``class Config(Fig)`` with no ``Fig["Parent"]`` parameter. ``ty`` enforces this
-file on every ``ty check`` run; the assignments below are compile-time
-assertions (an assignment to a parent-typed variable fails to type-check unless
-``make()`` is known to return the parent) that also execute as harmless no-ops
-under pytest.
+``class Config(Fig)`` with no ``Fig["Parent"]`` parameter. The annotated
+assignments check assignability during type checking; runtime assertions check
+the constructed class. Assignability alone does not reject ``Any`` or prove
+that the checker inferred the exact parent type.
 
 The load-bearing machinery lives in ``MakerMeta.__get__`` returning
 ``Intersection[_T, type[Maker[_ParentT]]]`` with a covariant ``_ParentT``: the
 descriptor ``owner`` binds to the enclosing class, and the intersection injects
 ``Maker[owner]`` so ``make()`` narrows to the parent even for a bare ``Fig``.
-If that regresses, the annotated assignments below become ``ty`` errors.
+An incompatible inferred return type makes the annotated assignments fail.
 """
 
 from __future__ import annotations
+
+from importlib import import_module
+from typing import TypeAliasType
 
 from configgle.fig import Fig, Makes
 
@@ -55,10 +57,15 @@ class Dog(Animal):
         breed: str = "mutt"
 
 
+def test_intersection_polyfill_preserves_the_first_type() -> None:
+    """Keep the runtime export used by checkers without intersection support."""
+    polyfill = vars(import_module("ty_extensions"))["Intersection"]
+    assert isinstance(polyfill, TypeAliasType)
+    assert len(polyfill.__type_params__) == 2
+    assert polyfill.__value__ is polyfill.__type_params__[0]
+
+
 def test_bare_fig_make_returns_parent() -> None:
-    # The decree: a bare ``class Config(Fig)`` must have ``make() -> Bare``.
-    # The annotated binding is the assertion -- it fails to type-check if
-    # ``make()`` returns ``Any`` alone or an unrelated type.
     bare: Bare = Bare.Config().make()
     assert isinstance(bare, Bare)
 
