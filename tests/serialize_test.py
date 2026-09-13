@@ -244,8 +244,8 @@ class PlainEnum(enum.Enum):
 
 class WithEnums:
     class Config(Fig["WithEnums"]):
-        color: Color = Color.RED  # config-globals: ignore -- enum member, not a global.
-        suit: Suit = Suit.HEARTS  # config-globals: ignore -- enum member, not a global.
+        color: Color = Color.RED  # house-ignore[globals] -- Enum member, not a global.
+        suit: Suit = Suit.HEARTS  # house-ignore[globals] -- Enum member, not a global.
 
     def __init__(self, config: Config) -> None:
         del config
@@ -1071,7 +1071,7 @@ def test_local_callable_rejected_at_serialize_boundary():
     the failure must surface at the serialize boundary, not silently produce an
     un-loadable tree.
     """
-    identity: Callable[[object], object] = lambda x: x  # noqa: E731  -- local lambda is the test subject (unimportable callable)
+    identity: Callable[[object], object] = lambda x: x  # noqa: E731 -- The test exercises a deliberately unimportable local callable.
     cfg: InlineConfig[object] = InlineConfig(identity, 1)
     with pytest.raises((TypeError, ValueError), match=r"import path|module-level"):
         encode_graph(cfg)

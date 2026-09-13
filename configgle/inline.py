@@ -30,7 +30,7 @@ _INLINE_CONFIG_SLOTS = frozenset(
 )
 
 
-@dataclasses.dataclass(  # check-dataclass: ignore[kw_only]
+@dataclasses.dataclass(  # house-ignore[dataclass] -- Positional construction is the public API; kw_only would break callers.
     slots=True,
     init=False,
     repr=True,
@@ -85,12 +85,12 @@ class InlineConfig[T]:
 
         """
         r = self.copy_tree()
-        if not r._finalized:  # noqa: SLF001
+        if not r._finalized:  # noqa: SLF001 -- The implementation must inspect its private config state.
             r = r.finalize()
         made: dict[int, object] = {}
         making = {id(r)}
-        args = _make_value(r._args, made, making)  # noqa: SLF001
-        kwargs = _make_value(r._kwargs, made, making)  # noqa: SLF001
+        args = _make_value(r._args, made, making)  # noqa: SLF001 -- The implementation must inspect its private config state.
+        kwargs = _make_value(r._kwargs, made, making)  # noqa: SLF001 -- The implementation must inspect its private config state.
         return r.func(*args, **kwargs)
 
     def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
@@ -111,8 +111,8 @@ class InlineConfig[T]:
             return cast(Self, cached)
         r = copy.copy(self)
         visited[id(self)] = r
-        r._args = [copy_tree(v, visited) for v in r._args]  # noqa: SLF001
-        r._kwargs = {k: copy_tree(v, visited) for k, v in r._kwargs.items()}  # noqa: SLF001
+        r._args = [copy_tree(v, visited) for v in r._args]  # noqa: SLF001 -- The implementation must inspect its private config state.
+        r._kwargs = {k: copy_tree(v, visited) for k, v in r._kwargs.items()}  # noqa: SLF001 -- The implementation must inspect its private config state.
         return r
 
     def finalize(self) -> Self:

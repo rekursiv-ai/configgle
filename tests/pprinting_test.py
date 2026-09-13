@@ -21,7 +21,6 @@ import pytest
 
 from configgle import Fig, PartialConfig, pprinting
 from configgle.pprinting import (
-    _MASKED_MEMORY_ADDRESS,
     FigPrinter,
     _add_pipes_to_lines,
     _collapse_multiline_value,
@@ -85,7 +84,7 @@ def test_pformat_mask_memory_addresses():
 
     obj = Obj()
     result = pformat(obj, mask_memory_addresses=True)
-    assert _MASKED_MEMORY_ADDRESS in result
+    assert "0xdefacedeface" in result
     assert repr(obj) not in result
 
 
@@ -369,7 +368,7 @@ def test_pretty_printer_format_with_memory_masking():
     pp = FigPrinter(mask_memory_addresses=True)
     obj = Obj()
     result, _, _ = pp.format(obj, {}, 0, 0)
-    assert _MASKED_MEMORY_ADDRESS in result
+    assert "0xdefacedeface" in result
 
 
 @pytest.mark.parametrize("address", ["0x7f8b9c0a", "0x7f8b9c0a1b20"])
@@ -377,7 +376,7 @@ def test_mask_memory_addresses_function(address: str) -> None:
     """Test the memory address masking function."""
     result = _mask_memory_addresses(f"Object at {address}; configured=0xdeadbeef")
     assert address not in result
-    assert _MASKED_MEMORY_ADDRESS in result
+    assert "0xdefacedeface" in result
     assert "configured=0xdeadbeef" in result
 
 
@@ -392,8 +391,7 @@ def test_masked_address_is_one_platform_independent_literal(address: str) -> Non
     """
     masked = _mask_memory_addresses(f"<Obj at {address}>")
 
-    assert masked == f"<Obj at {_MASKED_MEMORY_ADDRESS}>"
-    assert _MASKED_MEMORY_ADDRESS == "0xdefacedeface"
+    assert masked == "<Obj at 0xdefacedeface>"
 
 
 def test_memory_address_masking_preserves_quoted_string_data() -> None:

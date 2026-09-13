@@ -22,10 +22,10 @@ from typing import (
     ClassVar,
     Literal,
     NamedTuple,
-    Optional,  # pyright: ignore[reportDeprecated] -- exercises legacy spelling
+    Optional,  # pyright: ignore[reportDeprecated] -- These tests exercise legacy typing syntax for decoder compatibility.
     Protocol,
     SupportsIndex,
-    Union,  # pyright: ignore[reportDeprecated] -- exercises legacy spelling
+    Union,  # pyright: ignore[reportDeprecated] -- These tests exercise legacy typing syntax for decoder compatibility.
     cast,
     override,
 )
@@ -592,7 +592,7 @@ class TestDictsVal:
 
 class TestDatetimeVal:
     def test_parses_iso(self) -> None:
-        expected = datetime(2017, 6, 12)  # noqa: DTZ001 -- naive ISO parses naive
+        expected = datetime(2017, 6, 12)  # noqa: DTZ001 -- The fixture verifies parsing of an intentionally timezone-free ISO value.
         assert DatetimeCodec.coerce("2017-06-12T00:00:00") == expected
 
     def test_malformed_uses_default(self) -> None:
@@ -1419,11 +1419,11 @@ class TestStrictDecode:
         assert decode(Literal[True], True) is True
 
     def test_typing_optional_accepts_none_and_value(self) -> None:
-        assert decode(Optional[int], None) is None  # pyright: ignore[reportDeprecated]  # noqa: UP045 -- legacy spelling
-        assert decode(Optional[int], 1) == 1  # pyright: ignore[reportDeprecated]  # noqa: UP045 -- legacy spelling
+        assert decode(Optional[int], None) is None  # pyright: ignore[reportDeprecated] -- These tests exercise legacy typing syntax for decoder compatibility.  # noqa: UP045 -- These tests exercise legacy Optional spelling for decoder compatibility.
+        assert decode(Optional[int], 1) == 1  # pyright: ignore[reportDeprecated] -- These tests exercise legacy typing syntax for decoder compatibility.  # noqa: UP045 -- These tests exercise legacy Optional spelling for decoder compatibility.
 
     def test_typing_union_dispatches_members(self) -> None:
-        assert decode(Union[int, str], "x") == "x"  # pyright: ignore[reportDeprecated]  # noqa: UP007 -- legacy spelling
+        assert decode(Union[int, str], "x") == "x"  # pyright: ignore[reportDeprecated] -- These tests exercise legacy typing syntax for decoder compatibility.  # noqa: UP007 -- This negative test exercises legacy Union syntax for decoder compatibility.
 
     def test_chained_alias_decodes(self) -> None:
         assert decode(_AliasOuter, 3) == 3
@@ -1481,10 +1481,10 @@ class TestStrictEncode:
     @pytest.mark.parametrize(
         "doc",
         [
-            _StrictAnnotations(count="one"),  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- negative test: proves the codec rejects a mistyped field
-            _StrictAnnotations(pair=(1,)),  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- negative test: proves the codec rejects a mistyped field
-            _StrictAnnotations(numbers=["one"]),  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- negative test: proves the codec rejects a mistyped field
-            _StrictAnnotations(table={"x": "one"}),  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- negative test: proves the codec rejects a mistyped field
+            _StrictAnnotations(count="one"),  # ty: ignore[invalid-argument-type] -- These negative tests deliberately pass invalid field types to verify rejection.  # pyright: ignore[reportArgumentType] -- The test deliberately passes an invalid type to verify rejection.
+            _StrictAnnotations(pair=(1,)),  # ty: ignore[invalid-argument-type] -- These negative tests deliberately pass invalid field types to verify rejection.  # pyright: ignore[reportArgumentType] -- The test deliberately passes an invalid type to verify rejection.
+            _StrictAnnotations(numbers=["one"]),  # ty: ignore[invalid-argument-type] -- These negative tests deliberately pass invalid field types to verify rejection.  # pyright: ignore[reportArgumentType] -- The test deliberately passes an invalid type to verify rejection.
+            _StrictAnnotations(table={"x": "one"}),  # ty: ignore[invalid-argument-type] -- These negative tests deliberately pass invalid field types to verify rejection.  # pyright: ignore[reportArgumentType] -- The test deliberately passes an invalid type to verify rejection.
         ],
     )
     def test_rejects_values_that_do_not_match_annotations(
@@ -1495,7 +1495,7 @@ class TestStrictEncode:
             DataclassCodec.to_json(doc)
 
     def test_concrete_frozenset_rejects_set_value(self) -> None:
-        doc = _FrozenSetHolder(value={1})  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- negative test: proves the codec rejects a set where frozenset is declared
+        doc = _FrozenSetHolder(value={1})  # ty: ignore[invalid-argument-type] -- These negative tests deliberately pass invalid field types to verify rejection.  # pyright: ignore[reportArgumentType] -- This negative test passes a set to verify rejection of a non-frozenset value.
         with pytest.raises(TypeError):
             DataclassCodec.to_json(doc)
 
@@ -1790,7 +1790,7 @@ class TestNonStrMappingKeys:
 
     def test_a_non_str_key_is_refused(self) -> None:
         with pytest.raises(TypeError):
-            DataclassCodec.to_json(_Keyed(table={1: "a"}))  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- negative test: proves the encoder refuses a non-str mapping key
+            DataclassCodec.to_json(_Keyed(table={1: "a"}))  # ty: ignore[invalid-argument-type] -- These negative tests deliberately pass invalid field types to verify rejection.  # pyright: ignore[reportArgumentType] -- The test deliberately passes a non-string mapping key to verify rejection.
 
     def test_str_keys_still_round_trip(self) -> None:
         doc = _Keyed(table={"k": "v"})
@@ -2848,11 +2848,11 @@ class TestIssue19672Contracts:
 
     def test_plain_residual_rejects_runtime_non_string_keys(self) -> None:
         with pytest.raises(TypeError, match="key"):
-            residual({1: "value"})  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- negative test: proves residual refuses a non-str key
+            residual({1: "value"})  # ty: ignore[invalid-argument-type] -- These negative tests deliberately pass invalid field types to verify rejection.  # pyright: ignore[reportArgumentType] -- The test deliberately passes a non-string key to verify rejection.
 
     def test_stateful_residual_rejects_runtime_non_string_keys(self) -> None:
         with pytest.raises(TypeError, match="key"):
-            residual({1: "value"}, fields={})  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- negative test: proves residual refuses a non-str key
+            residual({1: "value"}, fields={})  # ty: ignore[invalid-argument-type] -- These negative tests deliberately pass invalid field types to verify rejection.  # pyright: ignore[reportArgumentType] -- The test deliberately passes a non-string key to verify rejection.
 
     def test_plain_residual_escape_preserves_numeric_spelling(self) -> None:
         source = {

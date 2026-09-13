@@ -32,7 +32,7 @@ from typing import (
     Protocol,
     TypeGuard,
     TypeVar,
-    Union,  # pyright: ignore[reportDeprecated] -- runtime marker for typing.Union
+    Union,  # pyright: ignore[reportDeprecated] -- Runtime compatibility retains the deprecated typing.Union marker for older supported callers.
     cast,
     get_args,
     get_origin,
@@ -893,7 +893,7 @@ def residual(
     """
     checked: dict[str, JSONValue] = {}
     for key, value in source.items():
-        if not isinstance(key, str):  # pyright: ignore[reportUnnecessaryIsInstance] -- runtime guard against untyped callers; custom_json_test.py asserts it fires
+        if not isinstance(key, str):  # pyright: ignore[reportUnnecessaryIsInstance] -- Untyped provider data still requires this runtime boundary guard.
             raise TypeError(f"provider object key must be str, got {key!r}")
         checked[key] = _provider_json_value(key, value)
     if fields is None:
@@ -1684,7 +1684,7 @@ class _UnionCodec(Codec):
         resolved = _resolve_alias(annotation)
         return isinstance(resolved, UnionType) or get_origin(resolved) in (
             UnionType,
-            Union,  # pyright: ignore[reportDeprecated] -- legacy typing.Union marker
+            Union,  # pyright: ignore[reportDeprecated] -- Runtime compatibility retains the deprecated typing.Union marker for older supported callers.
         )
 
     @classmethod

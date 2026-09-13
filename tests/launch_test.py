@@ -86,7 +86,9 @@ def test_resolve_config_non_config_return_raises() -> None:
 
 def test_resolve_config_composes_with_overrides_and_make() -> None:
     """The launcher's whole contract: resolve -> override -> make."""
-    from configgle import apply_overrides  # noqa: PLC0415
+    from configgle import (  # noqa: PLC0415 -- The test exercises the CLI-only launch path.
+        apply_overrides,
+    )
 
     config = resolve_config(f"{__name__}.baseline")
     apply_overrides(config, ["steps=5", "child.lr=3e-4"])

@@ -69,7 +69,7 @@ def autofig[T](
         sig = inspect.signature(cls_.__init__)
         try:
             type_hints = get_type_hints(cls_.__init__)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 -- Plugin boundary; any failure resolving annotations must leave decoration usable.
             # Forward refs / missing imports can make this fail.
             type_hints = {}
 
@@ -94,9 +94,9 @@ def autofig[T](
         )
 
         Config.__set_name__(cls_, "Config")
-        cls_.Config = Config  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute] -- autofig installs Config dynamically
+        cls_.Config = Config  # pyright: ignore[reportAttributeAccessIssue] -- The decorator installs the generated Config attribute dynamically on the decorated class.  # ty: ignore[unresolved-attribute] -- The decorator installs the generated Config attribute dynamically on the decorated class.
 
-        return cls_  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type] -- cls_ gains .Config at runtime, structurally satisfying HasRelaxedConfig; unrepresentable statically
+        return cls_  # pyright: ignore[reportReturnType] -- The decorator adds Config at runtime, so the returned class satisfies HasRelaxedConfig beyond its source declaration.  # ty: ignore[invalid-return-type] -- The decorator adds Config at runtime, so the returned class satisfies HasRelaxedConfig beyond its source declaration.
 
     if cls is None:
         # Called with arguments: @autofig(require_defaults=True)

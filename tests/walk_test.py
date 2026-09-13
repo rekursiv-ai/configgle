@@ -41,7 +41,7 @@ def test_get_object_attribute_names_with_string_slots():
     """Test _get_object_attribute_names with __slots__ as a string."""
 
     class StringSlots:
-        __slots__ = "value"  # noqa: PLC0205  # intentionally string for branch test
+        __slots__ = "value"  # noqa: PLC0205 -- The string form is the branch-specific fixture under test.
 
         def __init__(self):
             self.value = 42
@@ -98,7 +98,7 @@ def test_get_object_attribute_names_yields_unset_slot():
     class HasUnset:
         # ``unset_attr`` is declared but never assigned -- exactly what this test
         # exercises (the name is yielded though the slot is empty).
-        __slots__ = ("set_attr", "unset_attr")  # pyright: ignore[reportUninitializedInstanceVariable] -- unset slot is the test subject
+        __slots__ = ("set_attr", "unset_attr")  # pyright: ignore[reportUninitializedInstanceVariable] -- The unset slot is the test subject and is read only through the guarded walker.
 
         def __init__(self):
             self.set_attr = 1

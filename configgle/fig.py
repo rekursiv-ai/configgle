@@ -140,7 +140,7 @@ class _MakerParentClassDescriptor:
         obj: Makeable[_ParentT_co] | None,
         owner: type[Makeable[_ParentT_co]],
     ) -> type[_ParentT_co]:
-        return owner._parent_class()  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType]  # ty: ignore[unresolved-attribute] -- MakerMeta.__set_name__ binds _parent_class dynamically
+        return owner._parent_class()  # noqa: SLF001 -- The descriptor must call the metaclass's private binding created by __set_name__.  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType] -- The metaclass installs this bound method dynamically, beyond the checker-visible class declaration.  # ty: ignore[unresolved-attribute] -- The metaclass installs this bound method dynamically, beyond the checker-visible class declaration.
 
 
 # `parent_class` is typed `type[ParentT]`, and the typing spec only guarantees a

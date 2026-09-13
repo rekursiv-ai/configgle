@@ -85,7 +85,7 @@ def test_cloudpickle():
     assert cfg.b == cfg_.b
     assert cfg.c == cfg_.c
     with pytest.raises(AttributeError):
-        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[invalid-assignment] -- test deliberately assigns an invalid field
+        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue] -- The test deliberately assigns an invalid field.  # ty: ignore[invalid-assignment] -- The test deliberately assigns an invalid field.
 
 
 def test_pickle_parent_class_restored():
@@ -99,7 +99,7 @@ def test_pickle_parent_class_restored():
     cfg_ = pickle.loads(pickle.dumps(cfg))
 
     # Verify parent_class is restored after unpickling.
-    assert type(cfg_).parent_class is Parent  # pyright: ignore[reportUnknownMemberType]  # parent_class untyped
+    assert type(cfg_).parent_class is Parent  # pyright: ignore[reportUnknownMemberType] -- Config.parent_class is dynamically installed by configgle.
     assert cfg_.make().__class__ is Parent
 
 
@@ -580,7 +580,7 @@ def test_require_defaults_error_message():
     """Test that missing default raises TypeError with helpful message."""
     with pytest.raises(TypeError, match="has no default value"):
 
-        class Bad(Fig, require_defaults=True):  # pyright: ignore[reportUnusedClass]
+        class Bad(Fig, require_defaults=True):  # pyright: ignore[reportUnusedClass] -- The class definition is created only to assert the required-defaults error.
             x: int  # No default.
 
 
@@ -675,7 +675,7 @@ def test_finalize_skips_non_data_objects():
 def test_finalize_recurses_into_dataclass_objects():
     """Test finalize recurses into nested dataclass objects."""
 
-    @dataclasses.dataclass  # check-dataclass: ignore[kw_only,slots]
+    @dataclasses.dataclass  # house-ignore[dataclass] -- A plain stdlib dataclass is the subject under test.
     class PlainDC:
         value: int = 0
 
@@ -691,7 +691,7 @@ def test_update_source_with_attribute_error():
     """Test update handles source where getattr raises AttributeError."""
 
     class BadSource:
-        __slots__ = ("x", "y")  # pyright: ignore[reportUninitializedInstanceVariable]
+        __slots__ = ("x", "y")  # pyright: ignore[reportUninitializedInstanceVariable] -- The test deliberately leaves slot y uninitialized.
 
         def __init__(self):
             self.x = 1
@@ -704,7 +704,7 @@ def test_update_source_with_attribute_error():
     cfg = Config()
     source = BadSource()
     # Should skip y since it raises AttributeError.
-    cfg.update(source, skip_missing=True)  # pyright: ignore[reportArgumentType]  # ty: ignore[invalid-argument-type] -- malformed source exercises skip_missing
+    cfg.update(source, skip_missing=True)  # pyright: ignore[reportArgumentType] -- The malformed source exercises skip_missing.  # ty: ignore[invalid-argument-type] -- The malformed source exercises skip_missing.
     assert cfg.x == 1
 
 
@@ -766,7 +766,7 @@ def test_dataclass_params_iter_with_string_slots():
     """Test _DataclassParams.__iter__ handles string __slots__."""
 
     class StringSlotParams(_DataclassParams):
-        __slots__ = "extra"  # pyright: ignore[reportAssignmentType]  # noqa: PLC0205  # intentionally string for branch test
+        __slots__ = "extra"  # pyright: ignore[reportAssignmentType] -- The string form exercises the slot-iteration branch.  # noqa: PLC0205 -- The string form is the branch-test fixture.
 
     params = StringSlotParams()
     params.extra = True
@@ -808,7 +808,7 @@ def test_dataclass_params_create_missing_from_both():
     """Test _DataclassParams.create when field missing from both existing and kwargs."""
 
     class SparseParams(_DataclassParams):
-        __slots__ = ("custom_field",)  # pyright: ignore[reportUninitializedInstanceVariable]
+        __slots__ = ("custom_field",)  # pyright: ignore[reportUninitializedInstanceVariable] -- The test exercises an unset custom slot.
 
     existing = SparseParams()
     # custom_field is NOT set on existing → getattr returns missing → continue.
@@ -840,7 +840,7 @@ def test_finalize_value_slotted_object_with_uninitialized_slot():
     """Test _finalize_value skips uninitialized slots on non-dataclass objects."""
 
     class Wrapper:
-        __slots__ = ("initialized", "uninitialized")  # pyright: ignore[reportUninitializedInstanceVariable]
+        __slots__ = ("initialized", "uninitialized")  # pyright: ignore[reportUninitializedInstanceVariable] -- The test exercises graceful handling of an unset slot.
 
         def __init__(self):
             self.initialized = 42
