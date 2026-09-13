@@ -194,11 +194,11 @@ class HasConfig(Protocol[_T]):
     """Protocol for classes with a typed Config nested class."""
 
     # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.
-    Config: ClassVar[type[Makeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form] -- spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct
+    Config: ClassVar[type[Makeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each Configurable subtype.  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each Configurable subtype.
 
 
 @runtime_checkable
-class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInvalidTypeVarUse]
+class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInvalidTypeVarUse] -- The protocol preserves the type variable across its inherited generic interface, which the checker cannot express here.
     """Makeable with dynamic field access.
 
     Extends Makeable with __init__ and __getattr__ to support
@@ -211,7 +211,7 @@ class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInval
     #   - Drop ClassVar: loses the "class attribute" semantic in the Protocol.
     #   - @property: covariant but instance-only (no Cls.parent_class access).
     # Suppressed in both checkers as a deliberate design choice.
-    parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars in ClassVar
+    parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required for dynamic parent-class lookup.  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required for dynamic parent-class lookup.
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         """Initialize the configurable."""
@@ -230,4 +230,4 @@ class HasRelaxedConfig(Protocol[_T]):
     """Protocol for classes decorated with @autofig."""
 
     # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.
-    Config: ClassVar[type[RelaxedMakeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues]  # ty: ignore[invalid-type-form] -- spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct
+    Config: ClassVar[type[RelaxedMakeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each relaxed Configurable subtype.  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each relaxed Configurable subtype.

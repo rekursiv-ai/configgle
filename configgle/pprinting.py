@@ -36,16 +36,6 @@ _DEFAULT_CONTINUATION_PIPE_THRESHOLD: Final = 50
 
 _SHORT_SEQUENCE_MAX_WIDTH: Final = 40
 
-# One literal for every masked address, on every platform.
-# We used to use:
-#   _MASKED_MEMORY_ADDRESS: Final = "0x" + ("0defaced" * 2)[: len(f"{id(object()):x}")]
-# But since goldens are shared across machines, so this must not depend on the
-# recording host: deriving the width from the local pointer size makes a golden
-# recorded on a 64-bit interpreter unreproducible on a 32-bit one, and sizing
-# it per match leaks the original address's length into the output.
-# Fun fact: 0xdefaced is a prime number.
-_MASKED_MEMORY_ADDRESS: Final = "0xdefacedeface"
-
 
 def pformat(
     obj: object,
@@ -332,7 +322,7 @@ class FigPrinter(PrettyPrinter):
     ) -> None:
         """Override to use fixed indent and put each parameter on its own line."""
         if not self._extra_compact:
-            super()._format_namespace_items(  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]  # ty: ignore[unresolved-attribute] -- private PrettyPrinter method is absent from typeshed
+            super()._format_namespace_items(  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType] -- Private PrettyPrinter method is absent from typeshed.  # ty: ignore[unresolved-attribute] -- Private PrettyPrinter method is absent from typeshed.
                 items,
                 stream,
                 indent,
@@ -703,5 +693,10 @@ def _mask_memory_addresses(text: str) -> str:
             match.start() < end and match.end() > start for start, end in string_spans
         ):
             continue
-        text = text[: match.start()] + _MASKED_MEMORY_ADDRESS + text[match.end() :]
+        # One literal for every masked address, on every platform. Goldens are
+        # shared across machines, so the width must not come from the recording
+        # host: sizing it from ``id(object())`` made a golden recorded on a 64-bit
+        # interpreter unreproducible on a 32-bit one, and sizing it per match
+        # leaked the original address's length. (0xdefaced is prime.)
+        text = text[: match.start()] + "0xdefacedeface" + text[match.end() :]
     return text

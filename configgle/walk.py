@@ -241,7 +241,7 @@ def _make_value[ValueT](
             return cast(ValueT, tuple(materialized_items))
         return cast(
             ValueT,
-            type(tuple_value)(*materialized_items),  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- namedtuple field types are erased at runtime
+            type(tuple_value)(*materialized_items),  # ty: ignore[invalid-argument-type] -- The generic callback is narrowed only at runtime by the walker.  # pyright: ignore[reportArgumentType] -- The generic callback is narrowed only at runtime by the walker.
         )
     if isinstance(value, Mapping):
         materialized = {
@@ -297,7 +297,7 @@ def _copy_immutable_container(
         return tuple(copied)
     # Namedtuple subclass: reconstructed by positional unpacking. Its field types
     # are erased at runtime, so neither checker can model ``type(value)(*copied)``.
-    return type(value)(*copied)  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- namedtuple field types are erased
+    return type(value)(*copied)  # ty: ignore[invalid-argument-type] -- The generic callback is narrowed only at runtime by the walker.  # pyright: ignore[reportArgumentType] -- The generic callback is narrowed only at runtime by the walker.
 
 
 # The terminal copy walk shared by both ``copy_tree`` entry points: the free function

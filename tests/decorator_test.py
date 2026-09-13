@@ -84,9 +84,9 @@ def test_original_init_preserved():
             self.a = a
             self.b = b
 
-    baz = Baz(a=10, b="direct")  # pyright: ignore[reportCallIssue]  # ty: ignore[unknown-argument] -- autofig-decorated; original __init__ invisible under HasRelaxedConfig
-    assert baz.a == 10  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # ty: ignore[unresolved-attribute] -- autofig-decorated; real attrs invisible under HasRelaxedConfig
-    assert baz.b == "direct"  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # ty: ignore[unresolved-attribute] -- autofig-decorated; real attrs invisible under HasRelaxedConfig
+    baz = Baz(a=10, b="direct")  # pyright: ignore[reportCallIssue] -- The decorator test passes a runtime-only fixture argument.  # ty: ignore[unknown-argument] -- The decorator test passes a runtime-only fixture argument.
+    assert baz.a == 10  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType] -- The dynamic decorator fixture exposes members created at runtime.  # ty: ignore[unresolved-attribute] -- The dynamic decorator fixture exposes members created at runtime.
+    assert baz.b == "direct"  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType] -- The dynamic decorator fixture exposes members created at runtime.  # ty: ignore[unresolved-attribute] -- The dynamic decorator fixture exposes members created at runtime.
 
 
 def test_require_defaults():
@@ -108,14 +108,14 @@ def test_autofig_with_broken_type_hints():
     # ``exec`` creates a class whose annotations reference 'Nonexistent' --
     # a name absent from the exec namespace -- so get_type_hints will raise.
     ns: dict[str, object] = {}
-    exec(  # noqa: S102
+    exec(  # noqa: S102 -- The test deliberately exercises the dynamic decorator protocol.
         "class B:\n    def __init__(self, x: 'Nonexistent' = 0):\n        self.x = x\n",
         ns,
     )
     Cls = ns["B"]
-    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType, reportUnknownVariableType]  # ty: ignore[no-matching-overload] -- exec erases the generated class type
-    config = decorated.Config(x=42)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-    assert config.make().x == 42  # pyright: ignore[reportUnknownMemberType]
+    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType, reportUnknownVariableType] -- The decorator test uses a dynamic callable fixture outside the stub's overloads.  # ty: ignore[no-matching-overload] -- exec erases the generated class type.
+    config = decorated.Config(x=42)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType] -- The dynamic decorator fixture has no static member metadata.
+    assert config.make().x == 42  # pyright: ignore[reportUnknownMemberType] -- The dynamic decorator fixture has no static member metadata.
 
 
 if __name__ == "__main__":

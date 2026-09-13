@@ -176,7 +176,7 @@ def test_assert_pprint_golden_rejects_mismatch_under_optimized_python(
         """,
     )
 
-    result = subprocess.run(  # noqa: S603 -- fixed argv; the script is a literal built above
+    result = subprocess.run(  # noqa: S603 -- The test invokes a fixed helper command with controlled fixture arguments.
         [sys.executable, "-O", "-c", script],
         check=False,
         capture_output=True,

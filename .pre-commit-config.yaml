@@ -311,14 +311,10 @@ repos:
         # below must mirror pyproject.toml's `[tool.ty.src]`.
         types_or: [python, pyi]
         entry: uv --quiet run --frozen --group pre-commit ty check
-        args:
-          - --output-format
-          - concise
         exclude: |
           (?x)^(
-            typings/
-            |(.*/)?third_party/
-            |(.*/)?docs/
+            (.*/)?third_party/
+            |(.*/)?typings/
           )
 
       # `basedpyright-global` at pre-push is the real gate.

@@ -1,5 +1,6 @@
 """Type system extensions for basedpyright and basedmypy."""
 
+# house-ignore[init-facade] -- Mirrors upstream's single-module package, whose only module IS the __init__.
 # Polyfill for ty_extensions.Intersection.
 # provides the same API for other type checkers and at runtime.
 # Intersection[A, B] approximates as A since basedpyright lacks native
