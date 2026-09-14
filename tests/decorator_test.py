@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from types import ModuleType
+from typing import TypeVar, get_args, get_type_hints, no_type_check
+
+import sys
+
+import pytest
+
+from configgle.cli_override import apply_overrides
 from configgle.decorator import autofig
 from configgle.fig import Fig
 
@@ -14,6 +22,114 @@ class _Canary:
 
 
 _canary_config = _Canary.Config(x=1)
+
+
+@pytest.mark.parametrize("child_name", ["Node", "Later"])
+@pytest.mark.parametrize("future_annotations", [True, False])
+def test_forward_reference_preserves_annotations(
+    monkeypatch: pytest.MonkeyPatch,
+    child_name: str,
+    future_annotations: bool,
+) -> None:
+    """Forward references preserve scalar coercion and resolve after import."""
+    preamble = "from __future__ import annotations\n" if future_annotations else ""
+    if not future_annotations and sys.version_info < (3, 14):
+        pytest.skip("Native deferred annotations require Python 3.14.")
+    module = ModuleType("_autofig_forward_test")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    source = (
+        preamble
+        + f"""
+from configgle.decorator import autofig
+
+@autofig
+class Node:
+    Count = int
+
+    def __init__(self, count: Count = 1, child: {child_name} | None = None):
+        self.count = count
+        self.child = child
+
+class Later:
+    pass
+"""
+    )
+    exec(  # noqa: S102 -- A fresh module must run the decorator before its forward references are bound.
+        compile(source, "<autofig-forward-test>", "exec", dont_inherit=True),
+        vars(module),
+    )
+    config = module.Node.Config()
+    apply_overrides(config, ['count="7"'])
+    assert config.count == 7
+    assert type(config.count) is int
+    assert (
+        get_type_hints(module.Node.Config)["child"]
+        == getattr(module, child_name) | None
+    )
+    assert config.make().child is None
+    with pytest.raises(ValueError, match="count"):
+        apply_overrides(config, ["count=invalid"])
+
+
+def test_class_local_annotation_preserves_scalar_override_type() -> None:
+    """Constructor annotations can refer to aliases in their owning class."""
+
+    @autofig
+    class Scoped:
+        Count = int
+
+        def __init__(self, count: Count = 1):
+            self.count = count
+
+    config = Scoped.Config()
+    apply_overrides(config, ['count="7"'])
+    assert config.count == 7
+    assert get_type_hints(Scoped.Config)["count"] is int
+
+
+def test_inherited_class_local_annotation() -> None:
+    """Inherited constructors retain the aliases defined by their base class."""
+
+    class Base:
+        Count = int
+
+        def __init__(self, count: Count = 1):
+            self.count = count
+
+    @autofig
+    class Derived(Base):
+        pass
+
+    config = Derived.Config()
+    apply_overrides(config, ['count="7"'])
+    assert config.count == 7
+    assert get_type_hints(Derived.Config)["count"] is int
+
+
+def test_constructor_type_parameter_is_preserved() -> None:
+    """Resolving a parameter retains the constructor's generic type scope."""
+
+    @autofig
+    class Generic:
+        def __init__[T](self, value: T | None = None, fallback: T | None = None):
+            self.value = value
+            self.fallback = fallback
+
+    annotation = get_type_hints(Generic.Config)["value"]
+    assert isinstance(get_args(annotation)[0], TypeVar)
+    assert Generic.Config().make().value is None
+
+
+def test_constructor_type_check_opt_out_is_preserved() -> None:
+    """An explicit typing opt-out retains the existing untyped field contract."""
+
+    @autofig
+    class Untyped:
+        @no_type_check
+        def __init__(self, count: int = 1):
+            self.count = count
+
+    assert get_type_hints(Untyped.Config)["count"] is object
 
 
 def test_basic_decorator():
