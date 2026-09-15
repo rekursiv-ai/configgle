@@ -39,6 +39,7 @@ from configgle.custom_json import (
     GraphHooks,
     decode_graph,
     encode_graph,
+    loads,
     resolve_import,
 )
 from configgle.fig import Fig
@@ -275,7 +276,7 @@ def test_the_frozen_bytes_still_decode_to_the_value(name: str) -> None:
     # identity, which a fresh decode never satisfies.
     wire = GOLDEN[name].replace("{module}", MODULE)
 
-    restored = _decode_graph(json.loads(wire), hooks=_hooks())
+    restored = _decode_graph(loads(wire), hooks=_hooks())
 
     assert (
         json.dumps(encode_graph(restored, hooks=_hooks()), separators=(",", ":"))

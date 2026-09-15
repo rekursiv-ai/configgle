@@ -89,7 +89,7 @@ class MutableNamespace(Protocol):
 
     """
 
-    def __getattr__(self, name: str) -> Any:  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.  # pyright: ignore[reportAny,reportExplicitAny] -- The dynamic-attribute hook; its result is unknowable by construction.
         """Get a dynamic attribute."""
         ...
 
@@ -217,7 +217,7 @@ class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInval
         """Initialize the configurable."""
         ...
 
-    def __getattr__(self, name: str) -> Any:  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.  # pyright: ignore[reportAny,reportExplicitAny] -- The dynamic-attribute hook; its result is unknowable by construction.
         """Get a dynamic attribute."""
         ...
 

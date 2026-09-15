@@ -58,7 +58,7 @@ from a child AFTER it (read its finalized value). Pushdown dominates, so
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextvars import ContextVar
 from types import CellType, MethodType
 from typing import (
@@ -121,8 +121,7 @@ _T = TypeVar("_T")
 _ParentT_co = TypeVar(
     "_ParentT_co",
     covariant=True,  # Covariance allows bare Fig to work for Intersections.
-    default=Any,  # Only matters for non-ty; its a lie but ergonomic.
-    # The "truth" would be `default=object`.
+    default=Any,  # pyright: ignore[reportExplicitAny] -- Bare `Maker`/`Makeable` means "builds anything"; `object` would force a cast on every unparameterized `.make()`.
 )
 
 
@@ -140,7 +139,7 @@ class _MakerParentClassDescriptor:
         obj: Makeable[_ParentT_co] | None,
         owner: type[Makeable[_ParentT_co]],
     ) -> type[_ParentT_co]:
-        return owner._parent_class()  # noqa: SLF001 -- The descriptor must call the metaclass's private binding created by __set_name__.  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType] -- The metaclass installs this bound method dynamically, beyond the checker-visible class declaration.  # ty: ignore[unresolved-attribute] -- The metaclass installs this bound method dynamically, beyond the checker-visible class declaration.
+        return cast(type[_ParentT_co], owner._parent_class())  # noqa: SLF001 -- The descriptor must call the metaclass's private binding created by __set_name__.  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType] -- The metaclass installs this bound method dynamically, beyond the checker-visible class declaration.  # ty: ignore[unresolved-attribute] -- The metaclass installs this bound method dynamically, beyond the checker-visible class declaration.
 
 
 # `parent_class` is typed `type[ParentT]`, and the typing spec only guarantees a
@@ -214,9 +213,12 @@ class MakerMeta(type):
             type[Maker[_ParentT_co]],
         ]:
             # This return has been reviewed extensively. Do not replace it with
-            # casts or type-checker suppressions; package-local stubs define the
-            # intended checker behavior for this descriptor path.
-            return cls  # ty: ignore[invalid-return-type] -- `cls` is only `_T` at source level; the `& type[Makeable[_ParentT_co]]` half of the intersection is a design assertion that ty's real Intersection cannot prove. Configgle's `ty_extensions` polyfill (where `Intersection[A, B] = A`) hides this when run under package-local ty config; root ty sees the real intersection and rejects the return. See fig.py module docstring for the design rationale.
+            # casts; the `& type[Maker[_ParentT_co]]` half of the intersection is
+            # a design assertion. basedpyright resolves configgle's polyfill
+            # (`typings/basedpyright.d`, `Intersection[A, B] = A`) and accepts the
+            # return; ty resolves its real `ty_extensions` from the house typeshed
+            # and cannot prove the second half. See the module docstring.
+            return cls  # ty: ignore[invalid-return-type] -- `cls` is only `_T` at source level; ty's real Intersection cannot prove the `& type[Maker[_ParentT_co]]` half.
 
 
 class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
@@ -252,7 +254,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
           ValueError: If the config is not nested in a parent class.
 
         """
-        return make(self)
+        return make(cast(Maker[_ParentT_co], self))
 
     def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
         """Copy this config's tree down to leaf values.
@@ -338,7 +340,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
     def _finalize_attribute(self, name: str) -> None:
         """Finalize one attribute in place; a slot never set is left alone."""
         try:
-            value = getattr(self, name)
+            value: object = getattr(self, name)  # pyright: ignore[reportAny] -- Slot lookup by runtime name; the field's type is unknowable.
         except AttributeError:
             return
         finalized_value = _finalize_value(value)
@@ -612,7 +614,7 @@ class _DataclassParams:
         )
 
     def __getitem__(self, key: str) -> bool:
-        value = getattr(self, key)
+        value: object = getattr(self, key)  # pyright: ignore[reportAny] -- Field lookup by runtime name; narrowed by the assert below.
         assert isinstance(value, bool)
         return value
 
@@ -622,12 +624,12 @@ class _DataclassParams:
             # CPython accepts ANY iterable of identifiers for ``__slots__`` --
             # a list and a set are as legal as a tuple -- so narrowing to
             # ``str | tuple`` would silently drop every field of such a class.
-            raw_slots = getattr(c, "__slots__", ())
-            slots = (
-                (raw_slots,)
-                if isinstance(raw_slots, str)
-                else (str(name) for name in raw_slots)
-            )
+            raw_slots: object = getattr(c, "__slots__", ())
+            if isinstance(raw_slots, str):
+                slots: Iterable[str] = (raw_slots,)
+            else:
+                assert isinstance(raw_slots, Iterable)
+                slots = (str(name) for name in cast(Iterable[object], raw_slots))
             for s in slots:
                 if s in seen:
                     continue
@@ -895,7 +897,7 @@ def make[ParentT](config: Maker[ParentT]) -> ParentT:
     try:
         if getattr(type(finalized), "make_with_kwargs", False):
             assert isinstance(finalized, DataclassLike)
-            kwargs = {
+            kwargs: dict[str, object] = {
                 f.name: getattr(finalized, f.name)
                 for f in dataclasses.fields(finalized)
             }
@@ -944,7 +946,7 @@ def update[MakerT: Maker[Any]](
             if valid_keys is not None and name not in valid_keys:
                 continue
             try:
-                value = getattr(source, name)
+                value: object = getattr(source, name)  # pyright: ignore[reportAny] -- Field lookup by runtime name; the value is forwarded verbatim.
             except AttributeError:
                 continue
             setattr(config, name, value)

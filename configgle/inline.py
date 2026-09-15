@@ -166,7 +166,7 @@ class InlineConfig[T]:
                     if valid_keys is not None and key not in valid_keys:
                         continue
                     try:
-                        val = getattr(source, key)
+                        val = cast(object, getattr(source, key))
                     except (AttributeError, TypeError):
                         continue
                     if not callable(val):
@@ -210,13 +210,13 @@ class InlineConfig[T]:
             pass
         object.__delattr__(self, key)
 
-    def __getattr__(self, key: str) -> Any:  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.
+    def __getattr__(self, key: str) -> Any:  # noqa: ANN401 -- the dynamic-attribute hook; its result is unknowable by construction.  # pyright: ignore[reportAny,reportExplicitAny] -- The dynamic-attribute hook; its result is unknowable by construction.
         """Get a dynamic attribute from kwargs or instance."""
         try:
-            return object.__getattribute__(self, "_kwargs")[key]
+            return object.__getattribute__(self, "_kwargs")[key]  # pyright: ignore[reportAny] -- The dynamic-attribute hook returns whatever the wrapped callable accepts.
         except (TypeError, AttributeError, KeyError):
             pass
-        return object.__getattribute__(self, key)
+        return object.__getattribute__(self, key)  # pyright: ignore[reportAny] -- The dynamic-attribute hook returns whatever the wrapped callable accepts.
 
     @override
     def __setattr__(self, key: str, value: object) -> None:

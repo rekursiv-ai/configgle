@@ -673,7 +673,7 @@ def _filter_non_default_items(
         if field.default is dataclasses.MISSING:
             filtered.append((name, value))
             continue
-        default_value = field.default
+        default_value = cast(object, field.default)
         try:
             if value != default_value:
                 filtered.append((name, value))

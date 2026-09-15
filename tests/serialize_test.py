@@ -6,7 +6,7 @@ from dataclasses import field
 from decimal import Decimal
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, NamedTuple, Self, SupportsIndex, cast, override
+from typing import NamedTuple, Self, SupportsIndex, cast, override
 
 import enum
 import functools
@@ -21,6 +21,7 @@ from configgle.custom_json import (
     GraphHooks,
     decode_graph,
     encode_graph,
+    loads,
     resolve_import,
 )
 from configgle.fig import Dataclass, Fig
@@ -147,7 +148,7 @@ class Unpicklable:
     """A leaf whose __reduce__ raises -- genuinely unserializable without a hook."""
 
     @override
-    def __reduce_ex__(self, protocol: SupportsIndex) -> str | tuple[Any, ...]:
+    def __reduce_ex__(self, protocol: SupportsIndex) -> str | tuple[object, ...]:
         del protocol
         raise TypeError("nope")
 
@@ -166,7 +167,7 @@ class SlottedFailingReduce:
         self.shared = shared
 
     @override
-    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[Any, ...]:
+    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[object, ...]:
         del protocol
 
         # Encoding these reduce args registers `shared`, then fails on the
@@ -275,7 +276,7 @@ class ReducesToTuple:
     """A leaf whose __reduce__ reconstructor is the builtin ``tuple``."""
 
     @override
-    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[Any, ...]:
+    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[object, ...]:
         del protocol
         return (tuple, ([1, 2],))
 
@@ -284,7 +285,7 @@ class ReducesToDict:
     """A leaf whose __reduce__ reconstructor is the builtin ``dict``."""
 
     @override
-    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[Any, ...]:
+    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[object, ...]:
         del protocol
         return (dict, ([("a", 1), ("b", 2)],))
 
@@ -329,7 +330,7 @@ class ImmutableDag:
 def _roundtrip[T](cfg: T) -> T:
     # Round-trip through json.dumps/loads too, proving encode_graph() yields a
     # genuinely JSON-encodable tree (not just an in-memory structure).
-    return cast(T, _decode_graph(json.loads(json.dumps(encode_graph(cfg)))))
+    return cast(T, _decode_graph(loads(json.dumps(encode_graph(cfg)))))
 
 
 def test_scalar_fields_roundtrip():
@@ -355,7 +356,6 @@ def test_roundtrip_result_is_makeable():
     """A deserialized config still builds its parent class."""
     back = _roundtrip(Leaf.Config(v=3))
     obj = back.make()
-    assert isinstance(obj, Leaf)
     assert obj.v == 3
 
 
@@ -444,7 +444,6 @@ def test_dag_identity_preserved():
 def test_standalone_dataclass_roundtrip():
     """A Dataclass (no Maker) round-trips too."""
     back = _roundtrip(Point(x=3, y=4))
-    assert isinstance(back, Point)
     assert (back.x, back.y) == (3, 4)
 
 
@@ -625,14 +624,12 @@ def test_stale_function_import_path_is_rejected(
 def test_inline_config_roundtrip():
     cfg = InlineConfig(_plain_fn, 10, b=20)
     back = _roundtrip(cfg)
-    assert isinstance(back, InlineConfig)
     assert back.make() == 30
 
 
 def test_partial_config_roundtrip():
     cfg = PartialConfig(_plain_fn, b=5)
     back = _roundtrip(cfg)
-    assert isinstance(back, PartialConfig)
     partial = back.make()
     assert partial(a=10) == 15
 
@@ -648,7 +645,7 @@ def test_hook_encodes_opaque_leaf():
     """A per-type hook serializes a leaf that JSON cannot represent natively."""
     cfg = HasWeight.Config(weight=Weight([1.0, 2.0]))
     tree = encode_graph(cfg, hooks=_WEIGHT_HOOKS)
-    back = _decode_graph(json.loads(json.dumps(tree)), hooks=_WEIGHT_HOOKS)
+    back = _decode_graph(loads(json.dumps(tree)), hooks=_WEIGHT_HOOKS)
     assert isinstance(back, HasWeight.Config)
     assert isinstance(back.weight, Weight)
     assert back.weight.data == [1.0, 2.0]
@@ -704,7 +701,7 @@ def test_serialize_and_pickle_roundtrips_agree():
     """
     cfg = Holder.Config(animal=Dog.Config(breed="corgi"))
 
-    via_pickle = pickle.loads(pickle.dumps(cfg))
+    via_pickle = cast(Holder.Config, pickle.loads(pickle.dumps(cfg)))
     via_serialize = _decode_graph(encode_graph(cfg))
     assert isinstance(via_serialize, Holder.Config)
 
@@ -724,7 +721,7 @@ def test_picklable_leaf_roundtrips_without_a_hook():
     reduces to (newobj, (cls,), {state}). Agrees with pickle.
     """
     cfg = HasWeight.Config(weight=Weight([1.0, 2.0]))
-    via_pickle = pickle.loads(pickle.dumps(cfg))
+    via_pickle = cast(HasWeight.Config, pickle.loads(pickle.dumps(cfg)))
     via_serialize = _decode_graph(encode_graph(cfg))
     assert isinstance(via_serialize, HasWeight.Config)
     assert via_serialize.weight.data == via_pickle.weight.data == [1.0, 2.0]
@@ -946,7 +943,7 @@ def test_local_container_subclass_degrades_to_base():
 
     back = _roundtrip(WithReducibleLeaves.Config(path=LocalList([1, 2])))
     assert back.path == [1, 2]
-    assert type(cast(list[int], back.path)) is list
+    assert type(back.path) is list
 
 
 def test_reduce_leaf_identity_split():
@@ -977,7 +974,7 @@ def test_cycle_through_frozenset_target_terminates_by_value():
     back = cast(frozenset[object], _roundtrip(cfg.peers))
     inner = cast(Hashable.Config, next(iter(back)))
     # inner's own back-edge to the (value-copied) frozenset is equal to `back`.
-    assert cast(frozenset[object], inner.peers) == back
+    assert (inner.peers) == back
     assert inner.tag == 1
 
 
@@ -1136,7 +1133,7 @@ def test_non_finite_float_is_valid_strict_json():
     tree = encode_graph(WithFloat.Config(x=float("inf")))
     # allow_nan=False rejects Infinity/NaN; the tree must survive it.
     dumped = json.dumps(tree, allow_nan=False)
-    back = _decode_graph(json.loads(dumped))
+    back = _decode_graph(loads(dumped))
     assert isinstance(back, WithFloat.Config)
     assert back.x == float("inf")
 
@@ -1201,7 +1198,7 @@ def test_local_mapping_subclass_degrades_to_base_dict():
 
     back = _roundtrip(WithReducibleLeaves.Config(path=LocalMap({"a": 1, "b": 2})))
     assert back.path == {"a": 1, "b": 2}
-    assert type(cast(dict[str, int], back.path)) is dict
+    assert type(back.path) is dict
 
 
 def test_deserialize_rejects_unresolvable_import_path():
@@ -1214,7 +1211,7 @@ class _NonReducibleSet(frozenset[int]):
     """A set subclass whose ``__reduce_ex__`` raises -- forces the set degrade path."""
 
     @override
-    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[Any, ...]:
+    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[object, ...]:
         del protocol
         raise TypeError("no reduce")
 
@@ -1223,7 +1220,7 @@ def test_non_reducible_set_degrades_to_base_set():
     """A set with no usable reduce degrades to a plain ``set`` by contents."""
     back = _roundtrip(WithReducibleLeaves.Config(path=_NonReducibleSet({1, 2, 3})))
     assert back.path == {1, 2, 3}
-    assert type(cast(set[int], back.path)) is set
+    assert type(back.path) is set
 
 
 class _BareStringReduce:

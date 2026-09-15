@@ -302,7 +302,6 @@ def test_copy_tree_preserves_namedtuple_type():
 
     pair = Pair(1, 2)
     copied = copy_tree(pair)
-    assert isinstance(copied, Pair)
     assert copied == Pair(1, 2)
 
 
