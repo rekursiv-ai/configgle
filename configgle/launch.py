@@ -43,7 +43,7 @@ Examples:
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 import argparse
 import importlib
@@ -89,7 +89,7 @@ def resolve_config(path: str) -> Makeable[object]:
         raise ImportError(f"Cannot import module '{module_name}': {e}") from e
 
     try:
-        function = getattr(module, function_name)
+        function = cast(object, getattr(module, function_name))
     except AttributeError as e:
         raise AttributeError(
             f"Module '{module_name}' has no attribute '{function_name}'",
@@ -120,8 +120,12 @@ def main() -> int:
     _add_arguments(parser)
     args = parser.parse_args()
 
-    config = resolve_config(args.config)
-    apply_overrides(config, args.override)
+    config_arg = cast(object, args.config)
+    override_arg = cast(list[object], args.override)
+    assert isinstance(config_arg, str)
+    overrides = [item for item in override_arg if isinstance(item, str)]
+    config = resolve_config(config_arg)
+    apply_overrides(config, overrides)
     obj = config.make()
     if isinstance(obj, _Runnable):
         obj.run()

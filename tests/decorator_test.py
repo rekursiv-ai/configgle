@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from types import ModuleType
-from typing import TypeVar, get_args, get_type_hints, no_type_check
+from typing import (
+    TYPE_CHECKING,
+    Protocol,
+    TypeVar,
+    cast,
+    get_args,
+    get_type_hints,
+    no_type_check,
+)
 
 import pickle
 import sys
@@ -10,6 +19,10 @@ import pytest
 
 from configgle.cli_override import apply_overrides
 from configgle.decorator import autofig
+
+
+if TYPE_CHECKING:
+    from configgle.custom_types import HasRelaxedConfig
 from configgle.fig import Fig
 
 
@@ -59,17 +72,31 @@ class Later:
         compile(source, "<autofig-forward-test>", "exec", dont_inherit=True),
         vars(module),
     )
-    config = module.Node.Config()
+    node = cast("type[HasRelaxedConfig[object]]", module.Node)
+    config = node.Config()
     apply_overrides(config, ['count="7"'])
-    assert config.count == 7
-    assert type(config.count) is int
-    assert (
-        get_type_hints(module.Node.Config)["child"]
-        == getattr(module, child_name) | None
-    )
-    assert config.make().child is None
+    assert _field(config, "count") == 7
+    assert type(_field(config, "count")) is int
+    child_hint = cast(object, get_type_hints(node.Config)["child"])
+    child_type = cast(object, getattr(module, child_name))
+    assert isinstance(child_type, type)
+    assert child_hint == _union(child_type, type(None))
+    assert _field(config.make(), "child") is None
     with pytest.raises(ValueError, match="count"):
         apply_overrides(config, ["count=invalid"])
+
+
+def _field(obj: object, name: str) -> object:
+    """Read a field the decorator generated at runtime, so the checker can't see it."""
+    return cast(object, getattr(obj, name))
+
+
+class _SupportsOr(Protocol):
+    def __or__(self, other: object, /) -> object: ...
+
+
+def _union(left: object, right: object) -> object:
+    return cast(_SupportsOr, left) | right
 
 
 def test_class_local_annotation_preserves_scalar_override_type() -> None:
@@ -84,7 +111,7 @@ def test_class_local_annotation_preserves_scalar_override_type() -> None:
 
     config = Scoped.Config()
     apply_overrides(config, ['count="7"'])
-    assert config.count == 7
+    assert _field(config, "count") == 7
     assert get_type_hints(Scoped.Config)["count"] is int
 
 
@@ -103,7 +130,7 @@ def test_inherited_class_local_annotation() -> None:
 
     config = Derived.Config()
     apply_overrides(config, ['count="7"'])
-    assert config.count == 7
+    assert _field(config, "count") == 7
     assert get_type_hints(Derived.Config)["count"] is int
 
 
@@ -142,11 +169,13 @@ class Derived(Shadow, Base):
         compile(source, "<autofig-shadow-test>", "exec", dont_inherit=True),
         vars(module),
     )
-    config = module.Derived.Config()
+    derived = cast("type[HasRelaxedConfig[object]]", module.Derived)
+    config = derived.Config()
     apply_overrides(config, ['count="7"'])
-    assert type(config.count) is int
-    assert config.make().count == 7
-    assert get_type_hints(module.Derived.Config)["peer"] == module.Base | None
+    assert type(_field(config, "count")) is int
+    assert _field(config.make(), "count") == 7
+    base = cast(type, module.Base)
+    assert get_type_hints(derived.Config)["peer"] == base | None
 
 
 @pytest.mark.parametrize(
@@ -182,12 +211,13 @@ class Broken:
         compile(source, "<autofig-invalid-test>", "exec", dont_inherit=True),
         vars(module),
     )
-    config = module.Broken.Config()
+    broken = cast("type[HasRelaxedConfig[object]]", module.Broken)
+    config = broken.Config()
     apply_overrides(config, ['count="7"', 'broken="kept"'])
-    assert type(config.count) is int
-    assert config.make().count == 7
-    assert config.make().broken == "kept"
-    assert get_type_hints(module.Broken.Config)["broken"] is object
+    assert type(_field(config, "count")) is int
+    assert _field(config.make(), "count") == 7
+    assert _field(config.make(), "broken") == "kept"
+    assert get_type_hints(broken.Config)["broken"] is object
     with pytest.raises(ValueError, match="count"):
         apply_overrides(config, ["count=invalid"])
 
@@ -201,7 +231,7 @@ def test_constructor_type_parameter_is_preserved() -> None:
             self.value = value
             self.fallback = fallback
 
-    annotation = get_type_hints(Generic.Config)["value"]
+    annotation = cast(object, get_type_hints(Generic.Config)["value"])
     assert isinstance(get_args(annotation)[0], TypeVar)
     assert Generic.Config().make().value is None
 
@@ -230,9 +260,9 @@ def test_basic_decorator():
     assert Foo.Config.parent_class == Foo
 
     config = Foo.Config(x=42, y="hello", z=3.14)
-    assert config.x == 42
-    assert config.y == "hello"
-    assert config.z == 3.14
+    assert _field(config, "x") == 42
+    assert _field(config, "y") == "hello"
+    assert _field(config, "z") == 3.14
 
     foo = config.make()
     assert foo.x == 42
@@ -249,8 +279,8 @@ def test_config_update():
 
     config = Foo.Config(x=1, y="a")
     config.update(x=99)
-    assert config.x == 99
-    assert config.y == "a"
+    assert _field(config, "x") == 99
+    assert _field(config, "y") == "a"
 
 
 def test_with_defaults():
@@ -269,9 +299,9 @@ def test_with_defaults():
     assert Bar.Config.parent_class == Bar
 
     config = Bar.Config(items=[1, 2, 3], name="test")
-    assert config.items == [1, 2, 3]
-    assert config.name == "test"
-    assert config.count == 5
+    assert _field(config, "items") == [1, 2, 3]
+    assert _field(config, "name") == "test"
+    assert _field(config, "count") == 5
 
     bar = config.make()
     assert bar.items == [1, 2, 3]
@@ -347,9 +377,15 @@ class Later:
 """,
         monkeypatch=monkeypatch,
     )
-    assert get_type_hints(module.Node.Config)["child"] == (
-        list[module.Node.Child | module.Later] | None
-    )
+    node = cast("type[HasRelaxedConfig[object]]", module.Node)
+    child_name = "Child"
+    child = cast(type, getattr(node, child_name))
+    later_name = "Later"
+    later = cast(type, getattr(module, later_name))
+    hint = cast(object, get_type_hints(node.Config)["child"])
+    outer_args = get_args(hint)
+    assert outer_args[1] is type(None)
+    assert get_args(outer_args[0]) == (_union(child, later),)
 
 
 @pytest.mark.parametrize("future_annotations", [True, False])
@@ -373,10 +409,9 @@ class Node[T]:
 """,
         monkeypatch=monkeypatch,
     )
-    assert (
-        get_args(get_type_hints(module.Node.Config)["value"])[0]
-        is (module.Node.__type_params__[0])
-    )
+    node = cast("type[HasRelaxedConfig[object]]", module.Node)
+    type_params = cast(tuple[object, ...], node.__type_params__)
+    assert get_args(get_type_hints(node.Config)["value"])[0] is type_params[0]
 
 
 @pytest.mark.parametrize("signature", ["value: int = 1, /", "*args", "**kwargs"])
@@ -393,9 +428,10 @@ class Node:
 """,
         monkeypatch=monkeypatch,
     )
+    node = cast(type, module.Node)
     with pytest.raises(TypeError, match=r"autofig.*parameter"):
-        autofig(module.Node)
-    assert not hasattr(module.Node, "Config")
+        autofig(node)
+    assert not hasattr(node, "Config")
 
 
 def test_inherited_forward_annotation_uses_defining_module(
@@ -426,7 +462,11 @@ class Later:
         monkeypatch=monkeypatch,
     )
     exec("class Later: pass", vars(base))  # noqa: S102 -- The referenced type becomes available after decoration.
-    assert get_type_hints(derived.Derived.Config)["value"] == int | base.Later | None
+    derived_cls = cast("type[HasRelaxedConfig[object]]", derived.Derived)
+    later = cast(object, base.Later)
+    assert get_type_hints(derived_cls.Config)["value"] == _union(
+        _union(int, later), type(None)
+    )
 
 
 def test_config_round_trips_through_pickle(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -441,14 +481,23 @@ class Node:
 """,
         monkeypatch=monkeypatch,
     )
-    config = module.Node.Config()
-    config.count = 7
-    restored = pickle.loads(pickle.dumps(config))
-    assert type(restored) is module.Node.Config
-    assert restored.make().count == 7
-    decoded = module.Node.Config.deserialize(config.serialize())
-    assert type(decoded) is module.Node.Config
-    assert decoded.make().count == 7
+    node = cast("type[HasRelaxedConfig[object]]", module.Node)
+    config = node.Config()
+    count_name = "count"
+    setattr(config, count_name, 7)
+    restored = cast(object, pickle.loads(pickle.dumps(config)))
+    assert type(restored) is node.Config
+    make_restored = cast("Callable[[], object]", _field(restored, "make"))
+    assert _field(make_restored(), "count") == 7
+    serialize = cast("Callable[[], object]", config.serialize)
+    deserialize_name = "deserialize"
+    deserialize = cast(
+        "Callable[[object], object]", getattr(node.Config, deserialize_name)
+    )
+    decoded = deserialize(serialize())
+    assert type(decoded) is node.Config
+    make_decoded = cast("Callable[[], object]", _field(decoded, "make"))
+    assert _field(make_decoded(), "count") == 7
 
 
 def test_mutable_constructor_defaults_preserve_constructor_semantics(
@@ -465,14 +514,15 @@ class Node:
 """,
         monkeypatch=monkeypatch,
     )
-    first, second = module.Node.Config(), module.Node.Config()
-    direct = module.Node()
-    assert first.values is second.values
-    assert first.values is direct.values
-    first.values.append(2)
-    assert second.values == [1, 2]
-    assert direct.values == [1, 2]
-    assert first.make().values == [1, 2]
+    node = cast("type[HasRelaxedConfig[object]]", module.Node)
+    first, second = node.Config(), node.Config()
+    direct = node()
+    assert _field(first, "values") is _field(second, "values")
+    assert _field(first, "values") is _field(direct, "values")
+    cast(list[int], _field(first, "values")).append(2)
+    assert _field(second, "values") == [1, 2]
+    assert _field(direct, "values") == [1, 2]
+    assert _field(first.make(), "values") == [1, 2]
 
 
 def test_shared_constructor_defaults_keep_aliases(
@@ -491,17 +541,19 @@ class Node:
 """,
         monkeypatch=monkeypatch,
     )
-    direct = module.Node()
-    assert direct.left is direct.right
-    config = module.Node.Config()
-    assert config.left is config.right
-    assert config.left is direct.left
-    config.left[0].append(2)
-    assert config.right[0] == [1, 2]
+    node = cast("type[HasRelaxedConfig[object]]", module.Node)
+    direct = node()
+    assert _field(direct, "left") is _field(direct, "right")
+    config = node.Config()
+    assert _field(config, "left") is _field(config, "right")
+    assert _field(config, "left") is _field(direct, "left")
+    cast(tuple[list[int]], _field(config, "left"))[0].append(2)
+    assert _field(config, "right") == ([1, 2],)
     explicit = ([7],)
-    overridden = module.Node.Config(left=explicit)
-    assert overridden.left is explicit
-    assert overridden.right is module.shared
+    overridden = node.Config(left=explicit)
+    assert _field(overridden, "left") is explicit
+    shared_name = "shared"
+    assert _field(overridden, "right") is getattr(module, shared_name)
 
 
 @pytest.mark.parametrize(
@@ -521,9 +573,10 @@ class Node:
 """,
         monkeypatch=monkeypatch,
     )
+    node = cast(type, module.Node)
     with pytest.raises(TypeError, match=r"autofig.*conflict"):
-        autofig(module.Node)
-    assert not hasattr(module.Node, "Config")
+        autofig(node)
+    assert not hasattr(node, "Config")
 
 
 def test_empty_constructor() -> None:
@@ -552,9 +605,10 @@ def test_unsupported_constructor_binding_rejected(
     module = _compile_module(
         f"class Node:\n    {constructor}\n", monkeypatch=monkeypatch
     )
+    node = cast(type, module.Node)
     with pytest.raises(TypeError, match="autofig"):
-        autofig(module.Node)
-    assert not hasattr(module.Node, "Config")
+        autofig(node)
+    assert not hasattr(node, "Config")
 
 
 def _compile_module(

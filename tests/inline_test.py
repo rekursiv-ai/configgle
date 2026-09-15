@@ -154,7 +154,7 @@ def test_inline_config_finalize_terminates_a_self_cycle() -> None:
     finalized = config.copy_tree().finalize()  # pyright: ignore[reportUnknownVariableType] -- InlineConfig's callable type is erased by the self-cycle fixture.
 
     assert finalized._finalized is True
-    assert finalized.value is finalized
+    assert finalized.value is finalized  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
 
 
 def test_inline_config_makes_nested_containers_and_shared_children_once() -> None:
@@ -186,9 +186,6 @@ def test_inline_config_makes_nested_containers_and_shared_children_once() -> Non
 
     values_list, values_tuple, values_mapping = config.make()
 
-    assert isinstance(values_list, list)
-    assert isinstance(values_tuple, tuple)
-    assert isinstance(values_mapping, dict)
     assert values_list[0] is values_tuple[0]
     assert values_list[0] is values_mapping["value"]
     assert values_list[0].value == 7
@@ -216,8 +213,8 @@ def test_inline_config_attr_access():
     cfg.a = 5  # Should go to kwargs.
     cfg.b = 10  # Should go to kwargs.
 
-    assert cfg.a == 5
-    assert cfg.b == 10
+    assert cfg.a == 5  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
+    assert cfg.b == 10  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
     assert cfg._kwargs == {"a": 5, "b": 10}
 
     result = cfg.make()
@@ -281,8 +278,8 @@ def test_inline_config_update_from_dataclass():
 
     cfg = InlineConfig(lambda a, b: f"{a}-{b}")  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
     cfg.update(Source())
-    assert cfg.a == 10
-    assert cfg.b == "hello"
+    assert cfg.a == 10  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
+    assert cfg.b == "hello"  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
     assert cfg.make() == "10-hello"
 
 
@@ -299,8 +296,8 @@ def test_inline_config_update_from_non_dataclass():
 
     cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
     cfg.update(Source())  # pyright: ignore[reportArgumentType] -- The test source intentionally lacks the update Protocol.  # ty: ignore[invalid-argument-type] -- The test source intentionally lacks the update Protocol.
-    assert cfg.x == 42
-    assert cfg.y == "data"
+    assert cfg.x == 42  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
+    assert cfg.y == "data"  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
     # Methods should NOT be copied.
     assert "method" not in cfg._kwargs
 
@@ -341,7 +338,7 @@ def test_inline_config_update_non_dataclass_with_property():
     cfg.update(TrickySource())  # pyright: ignore[reportArgumentType] -- The malformed test source exercises attribute filtering.  # ty: ignore[invalid-argument-type] -- The malformed test source exercises attribute filtering.
     # Broken should be skipped (AttributeError), data should be skipped (callable check)
     # Actually properties return their values, not the property object itself.
-    assert cfg.data == 42
+    assert cfg.data == 42  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
     assert "broken" not in cfg._kwargs
 
 

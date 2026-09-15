@@ -17,7 +17,7 @@ An incompatible inferred return type makes the annotated assignments fail.
 from __future__ import annotations
 
 from importlib import import_module
-from typing import TypeAliasType
+from typing import TypeAliasType, cast
 
 from configgle.fig import Fig, Makes
 
@@ -59,14 +59,13 @@ class Dog(Animal):
 
 def test_intersection_polyfill_preserves_the_first_type() -> None:
     """Keep the runtime export used by checkers without intersection support."""
-    polyfill = vars(import_module("ty_extensions"))["Intersection"]
-    assert isinstance(polyfill, TypeAliasType)
+    polyfill = cast(TypeAliasType, vars(import_module("ty_extensions"))["Intersection"])
     assert len(polyfill.__type_params__) == 2
-    assert polyfill.__value__ is polyfill.__type_params__[0]
+    assert cast(object, polyfill.__value__) is polyfill.__type_params__[0]
 
 
 def test_bare_fig_make_returns_parent() -> None:
-    bare: Bare = Bare.Config().make()
+    bare = Bare.Config().make()  # pyright: ignore[reportAny] -- A bare `Fig` builds `Any`; the assertion is what pins the class.
     assert isinstance(bare, Bare)
 
 

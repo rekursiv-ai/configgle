@@ -460,8 +460,6 @@ ignore = [
 ]
 pythonPlatform = "Linux"
 pythonVersion = "3.12"
-reportAny = false                          # `Any` propagation is pervasive in third-party deps.
-reportExplicitAny = false                  # Explicit `Any` annotations are intentional.
 reportImplicitStringConcatenation = false  # Conflicts with ruff ISC003.
 reportInvalidCast = false                  # All cast() calls are intentional.
 reportPrivateUsage = false                 # Redundant with ruff SLF001.

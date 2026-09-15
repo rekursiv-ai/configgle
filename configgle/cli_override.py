@@ -14,12 +14,12 @@ naturally) and then coerced to the field's declared type.
 
 from __future__ import annotations
 
+from json import JSONDecodeError
 from typing import get_type_hints
 
 import dataclasses
-import json
 
-from configgle.custom_json import decode
+from configgle.custom_json import decode, loads
 from configgle.custom_types import Makeable
 
 
@@ -108,6 +108,6 @@ def _override_field(node: object, key: str, path: str) -> tuple[object, object]:
 def _parse_override_value(raw: str) -> object:
     """Parse a raw override value as a JSON literal, else the bare string."""
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
+        return loads(raw)
+    except JSONDecodeError:
         return raw

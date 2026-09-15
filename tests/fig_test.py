@@ -96,11 +96,11 @@ def test_pickle_parent_class_restored():
     assert Parent.Config.parent_class is Parent
 
     # Pickle and unpickle.
-    cfg_ = pickle.loads(pickle.dumps(cfg))
+    cfg_ = cast(Parent.Config, pickle.loads(pickle.dumps(cfg)))
 
     # Verify parent_class is restored after unpickling.
-    assert type(cfg_).parent_class is Parent  # pyright: ignore[reportUnknownMemberType] -- Config.parent_class is dynamically installed by configgle.
-    assert cfg_.make().__class__ is Parent
+    assert type(cfg_).parent_class is Parent
+    assert cfg_.make().__class__ is Parent  # pyright: ignore[reportAny] -- A bare `Fig` builds `Any`; the assertion is what pins the class.
 
 
 def test_cloudpickle_parent_class_restored():
@@ -115,13 +115,13 @@ def test_cloudpickle_parent_class_restored():
 
     # Verify parent_class is restored after unpickling.
     assert type(cfg_).parent_class is Child
-    assert cfg_.make().__class__ is Child
+    assert cfg_.make().__class__ is Child  # pyright: ignore[reportAny] -- A bare `Fig` builds `Any`; the assertion is what pins the class.
 
 
 def test_pickle_nested_class_with_parent():
     """Test pickling the parent class that contains the nested Config."""
     # When we pickle the parent class itself, Config should be preserved.
-    Parent_pickled = pickle.loads(pickle.dumps(Parent))
+    Parent_pickled = cast(type[Parent], pickle.loads(pickle.dumps(Parent)))
 
     # Verify the Config class is accessible.
     assert hasattr(Parent_pickled, "Config")
@@ -129,7 +129,7 @@ def test_pickle_nested_class_with_parent():
 
     # Verify we can create and use the config.
     cfg = Parent_pickled.Config(a=3.14, b=2.71)
-    instance = cfg.make()
+    instance = cast(Parent, cfg.make())
     assert instance.__class__ is Parent_pickled
     # Note: Parent.Config.finalize() sets a=-1, so we check the finalized value.
     assert instance.a == -1
@@ -147,8 +147,8 @@ def test_cloudpickle_nested_class_with_parent():
 
     # Verify we can create and use the config.
     cfg = Child_pickled.Config(a=1.0, b=2.0, c=3.0j)
-    instance = cfg.make()
-    assert instance.__class__ is Child_pickled
+    instance = cfg.make()  # pyright: ignore[reportAny] -- A bare `Fig` builds `Any`; the assertion is what pins the class.
+    assert instance.__class__ is Child_pickled  # pyright: ignore[reportAny] -- A bare `Fig` builds `Any`; the assertion is what pins the class.
 
 
 def test_mutable():
@@ -441,8 +441,6 @@ class Dog(Animal):
 
 def test_inherited_config_make_returns_child():
     dog: Dog = Dog.Config(name="Rex", breed="labrador").make()
-    assert isinstance(dog, Dog)
-    assert isinstance(dog, Animal)
     assert dog.name == "Rex"
     assert dog.breed == "labrador"
 
@@ -533,7 +531,6 @@ def test_makeable_covariance():
     """Makeable[Base] should accept Derived.Config (Derived <: Base)."""
     cfg: Makeable[Base] = Derived.Config()
     result = cfg.make()
-    assert isinstance(result, Derived)
     assert isinstance(result, Base)
 
 

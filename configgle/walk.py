@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import (
     Callable,
+    Iterable,
     Iterator,
     Mapping,
     Sequence,
@@ -174,9 +175,9 @@ def bind_late(root: object) -> None:
         if callable(modules):
             stack.extend(cast(Iterator[object], modules(node)))
         elif isinstance(node, Mapping):
-            stack.extend(cast(Mapping[object, object], node).values())
+            stack.extend(node.values())
         elif isinstance(node, (Sequence, AbstractSet)):
-            stack.extend(cast(Iterator[object], node))
+            stack.extend(node)
         elif (
             hasattr(type(node), "__dataclass_fields__")
             or "__slots__" in type(node).__dict__
@@ -186,7 +187,8 @@ def bind_late(root: object) -> None:
             # (a random.Random, a logger's lock) is a leaf.
             for name in _get_object_attribute_names(node):
                 try:
-                    stack.append(getattr(node, name))
+                    attribute = cast(object, getattr(node, name))
+                    stack.append(attribute)
                 except AttributeError:
                     continue
 
@@ -262,12 +264,12 @@ def _get_object_attribute_names(obj: object) -> Iterator[str]:
             # CPython accepts ANY iterable of identifiers for ``__slots__`` --
             # a list and a set are as legal as a tuple -- so narrowing to
             # ``str | tuple`` would silently drop every field of such a class.
-            raw_slots = getattr(cls, "__slots__", ())
-            slots = (
-                (raw_slots,)
-                if isinstance(raw_slots, str)
-                else (str(s) for s in raw_slots)
-            )
+            raw_slots = cast(object, getattr(cls, "__slots__", ()))
+            if isinstance(raw_slots, str):
+                slots: Iterable[str] = (raw_slots,)
+            else:
+                assert isinstance(raw_slots, Iterable)
+                slots = (str(s) for s in raw_slots)
             for slot in slots:
                 if slot not in seen and slot not in _SKIP_ATTRS:
                     seen.add(slot)
@@ -321,7 +323,7 @@ def _copy_slots(value: object, visited: dict[int, object]) -> object:
     visited[id(value)] = r
     for name in _get_object_attribute_names(r):
         try:
-            attr_value = getattr(r, name)
+            attr_value = cast(object, getattr(r, name))
         except AttributeError:
             # Declared-but-unset slot: nothing to copy.
             continue
@@ -393,7 +395,7 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
             return value
         for name in _get_object_attribute_names(value):
             try:
-                attr_value = getattr(value, name)
+                attr_value = cast(object, getattr(value, name))
             except AttributeError:
                 continue
             finalized_attr = _finalize_value(attr_value)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import field
 from functools import partial
 from types import SimpleNamespace
@@ -17,6 +18,7 @@ from configgle.fig import Fig, FigMeta
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from typing import ParamSpec, TypeVar, TypeVarTuple
 
 
 __all__ = ["autofig"]
@@ -97,7 +99,7 @@ def _autofig[T](
     kw_only: bool,
 ) -> type[HasRelaxedConfig[T]]:
     """Generate and attach a config using the constructor's annotations."""
-    raw_constructor = inspect.getattr_static(cls_, "__init__")
+    raw_constructor = cast(object, inspect.getattr_static(cls_, "__init__"))
     if isinstance(raw_constructor, (staticmethod, classmethod)):
         raise TypeError("autofig requires an instance-method __init__ constructor.")
     constructor = cast("Callable[..., object]", raw_constructor)
@@ -121,15 +123,22 @@ def _autofig[T](
     localns = {
         name: value
         for base in reversed(owner.__mro__)
-        for name, value in vars(base).items()
+        for name, value in cast(Mapping[str, object], vars(base)).items()
     }
     localns[owner.__name__] = owner
-    for param in getattr(owner, "__type_params__", ()):
+    type_params = cast(
+        "tuple[TypeVar | ParamSpec | TypeVarTuple, ...]",
+        getattr(owner, "__type_params__", ()),
+    )
+    for param in type_params:
         localns[param.__name__] = param
     resolve = partial(
         _resolve_annotation,
         constructor=constructor,
-        annotations={name: param.annotation for name, param in sig.parameters.items()},
+        annotations={
+            name: cast(object, param.annotation)
+            for name, param in sig.parameters.items()
+        },
         localns=localns,
     )
 
@@ -161,9 +170,10 @@ def _autofig[T](
             # get_type_hints evaluates this expression in Config's namespace;
             # the resolver retains class locals and the constructor's live globals.
             annotations[param_name] = f"__autofig_resolve__({param_name!r})"
-        if param.default is not inspect.Parameter.empty:
+        default = cast(object, param.default)
+        if default is not inspect.Parameter.empty:
             defaults_[param_name] = field(
-                default_factory=partial(_constructor_default, param.default)
+                default_factory=partial(_constructor_default, default)
             )
 
     Config = FigMeta(
@@ -199,15 +209,30 @@ def _resolve_annotation(
     if annotation is inspect.Parameter.empty:
         return object
     try:
-        return get_type_hints(
-            SimpleNamespace(
-                __annotations__={name: annotation},
-                __type_params__=getattr(constructor, "__type_params__", ()),
-                __no_type_check__=getattr(constructor, "__no_type_check__", False),
+        hints = cast(
+            dict[str, object],
+            get_type_hints(
+                SimpleNamespace(
+                    __annotations__={name: annotation},
+                    __type_params__=cast(
+                        object,
+                        getattr(constructor, "__type_params__", ()),
+                    ),
+                    __no_type_check__=cast(
+                        object,
+                        getattr(constructor, "__no_type_check__", False),
+                    ),
+                ),
+                globalns=cast(
+                    dict[str, object],
+                    getattr(
+                        cast(object, inspect.unwrap(constructor)), "__globals__", {}
+                    ),
+                ),
+                localns=localns,
             ),
-            globalns=getattr(inspect.unwrap(constructor), "__globals__", {}),
-            localns=localns,
-        ).get(name, object)
+        )
+        return hints.get(name, object)
     except NameError:
         raise
     except Exception:  # noqa: BLE001 -- User annotation expressions must fail independently; missing names remain deferred.
