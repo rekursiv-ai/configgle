@@ -257,6 +257,7 @@ def test_basic_decorator():
             self.z = z
 
     assert Foo.Config.__bases__ == (Fig,)
+    assert issubclass(Foo.Config, Fig)
     assert Foo.Config.parent_class == Foo
 
     config = Foo.Config(x=42, y="hello", z=3.14)
@@ -296,6 +297,7 @@ def test_with_defaults():
             self.name = name
             self.count = count
 
+    assert issubclass(Bar.Config, Fig)
     assert Bar.Config.parent_class == Bar
 
     config = Bar.Config(items=[1, 2, 3], name="test")

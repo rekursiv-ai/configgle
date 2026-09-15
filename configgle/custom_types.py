@@ -198,20 +198,12 @@ class HasConfig(Protocol[_T]):
 
 
 @runtime_checkable
-class RelaxedMakeable(Makeable[_T_co], Protocol):  # pyright: ignore[reportInvalidTypeVarUse] -- The protocol preserves the type variable across its inherited generic interface, which the checker cannot express here.
+class RelaxedMakeable(Makeable[_T_co], Protocol):
     """Makeable with dynamic field access.
 
     Extends Makeable with __init__ and __getattr__ to support
     dynamic field access without requiring suppressions in user code.
     """
-
-    # Semantically correct but spec-illegal: PEP 526 forbids type variables
-    # inside ClassVar. We need a class-level attribute whose type varies per
-    # parameterization -- a concept the type system can't express. Alternatives:
-    #   - Drop ClassVar: loses the "class attribute" semantic in the Protocol.
-    #   - @property: covariant but instance-only (no Cls.parent_class access).
-    # Suppressed in both checkers as a deliberate design choice.
-    parent_class: ClassVar[type[_T_co] | None]  # pyright: ignore[reportGeneralTypeIssues] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required for dynamic parent-class lookup.  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required for dynamic parent-class lookup.
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         """Initialize the configurable."""
