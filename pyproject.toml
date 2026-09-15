@@ -46,8 +46,8 @@ test = [
 typecheck = [
     "basedpyright>=1.10",
     "ty>=0.0.75",
-    "rekursiv-typeshed",
-    "hatchling",  # packages/rekursiv-typeshed/rekursiv_typeshed/hatch_build.py imports its plugin interface.
+    "rekursiv-ai-typeshed",
+    "hatchling",  # packages/rekursiv-ai-typeshed/rekursiv_ai_typeshed/hatch_build.py imports its plugin interface.
     "basedtyping>=0.1.10",
     "typing_extensions",
 ]
@@ -430,7 +430,7 @@ typeCheckingMode = "recommended"
 failOnWarnings = true  # Warnings fail the check (basedpyright default; pinned explicitly).
 useLibraryCodeForTypes = false
 stubPath = "typings"
-typeshedPath = ".venv/share/rekursiv-typeshed/basedpyright"
+typeshedPath = ".venv/share/rekursiv-ai-typeshed/basedpyright"
 # `exclude` and `ignore` are the SAME list on purpose. `exclude` stops a path
 # from being a checked source; `ignore` also silences diagnostics when an
 # included file imports it. Pyright has no single key for both, so keep them
@@ -477,7 +477,7 @@ reportInvalidCast = false                  # All cast() calls are intentional.
 
 [tool.ty.environment]
 python-version = "3.12"
-typeshed = ".venv/share/rekursiv-typeshed/ty"
+typeshed = ".venv/share/rekursiv-ai-typeshed/ty"
 extra-paths = ["typings"]
 
 # Mirrors `[tool.basedpyright] exclude`, minus entries ty never walks anyway
@@ -537,4 +537,4 @@ required-environments = [
 compile-bytecode = true
 
 [tool.uv.sources]
-rekursiv-typeshed = { path = "packages/rekursiv-typeshed" }
+rekursiv-ai-typeshed = { path = "packages/rekursiv-ai-typeshed" }
