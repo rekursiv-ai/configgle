@@ -149,6 +149,7 @@ def test_assert_pprint_golden_reports_mismatch_without_rewriting(
     assert golden.read_text(encoding="utf-8") == "stale\n"
 
 
+@pytest.mark.cli_python_subprocess
 def test_assert_pprint_golden_rejects_mismatch_under_optimized_python(
     tmp_path: Path,
 ) -> None:
