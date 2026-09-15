@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import ModuleType
 from typing import TypeVar, get_args, get_type_hints, no_type_check
 
+import pickle
 import sys
 
 import pytest
@@ -104,6 +105,91 @@ def test_inherited_class_local_annotation() -> None:
     apply_overrides(config, ['count="7"'])
     assert config.count == 7
     assert get_type_hints(Derived.Config)["count"] is int
+
+
+@pytest.mark.parametrize("future_annotations", [True, False])
+def test_inherited_annotation_ignores_subclass_shadow(
+    monkeypatch: pytest.MonkeyPatch,
+    future_annotations: bool,
+) -> None:
+    """Subclass aliases cannot change an inherited constructor's contract."""
+    preamble = "from __future__ import annotations\n" if future_annotations else ""
+    if not future_annotations and sys.version_info < (3, 14):
+        pytest.skip("Native deferred annotations require Python 3.14.")
+    module = ModuleType("_autofig_shadow_test")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    source = (
+        preamble
+        + """
+from configgle.decorator import autofig
+
+class Base:
+    Count = int
+
+    def __init__(self, count: Count = 1, peer: Base | None = None):
+        self.count = count
+        self.peer = peer
+
+class Shadow:
+    Count = str
+
+@autofig
+class Derived(Shadow, Base):
+    Count = str
+"""
+    )
+    exec(  # noqa: S102 -- Separate compilation exercises both annotation evaluation models.
+        compile(source, "<autofig-shadow-test>", "exec", dont_inherit=True),
+        vars(module),
+    )
+    config = module.Derived.Config()
+    apply_overrides(config, ['count="7"'])
+    assert type(config.count) is int
+    assert config.make().count == 7
+    assert get_type_hints(module.Derived.Config)["peer"] == module.Base | None
+
+
+@pytest.mark.parametrize(
+    "annotation", ["int | 1", "'int['", "int.missing", "int('bad')", "'1 / 0'"]
+)
+@pytest.mark.parametrize("future_annotations", [True, False])
+def test_annotation_failure_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+    annotation: str,
+    future_annotations: bool,
+) -> None:
+    """An unusable annotation leaves other fields typed and configurable."""
+    preamble = "from __future__ import annotations\n" if future_annotations else ""
+    if not future_annotations and sys.version_info < (3, 14):
+        pytest.skip("Native deferred annotations require Python 3.14.")
+    module = ModuleType("_autofig_invalid_test")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    source = (
+        preamble
+        + f"""
+from configgle.decorator import autofig
+
+@autofig
+class Broken:
+    Count = int
+
+    def __init__(self, count: Count = 1, broken: {annotation} = None):
+        self.count = count
+        self.broken = broken
+"""
+    )
+    exec(  # noqa: S102 -- Invalid annotations must reach the runtime decorator without static checking.
+        compile(source, "<autofig-invalid-test>", "exec", dont_inherit=True),
+        vars(module),
+    )
+    config = module.Broken.Config()
+    apply_overrides(config, ['count="7"', 'broken="kept"'])
+    assert type(config.count) is int
+    assert config.make().count == 7
+    assert config.make().broken == "kept"
+    assert get_type_hints(module.Broken.Config)["broken"] is object
+    with pytest.raises(ValueError, match="count"):
+        apply_overrides(config, ["count=invalid"])
 
 
 def test_constructor_type_parameter_is_preserved() -> None:
@@ -232,6 +318,258 @@ def test_autofig_with_broken_type_hints():
     decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType, reportUnknownVariableType] -- The decorator test uses a dynamic callable fixture outside the stub's overloads.  # ty: ignore[no-matching-overload] -- exec erases the generated class type.
     config = decorated.Config(x=42)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType] -- The dynamic decorator fixture has no static member metadata.
     assert config.make().x == 42  # pyright: ignore[reportUnknownMemberType] -- The dynamic decorator fixture has no static member metadata.
+
+
+@pytest.mark.parametrize("future_annotations", [True, False])
+def test_deferred_annotations_keep_constructor_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    future_annotations: bool,
+) -> None:
+    """A forward reference retains aliases in the same annotation expression."""
+    preamble = "from __future__ import annotations\n" if future_annotations else ""
+    if not future_annotations and sys.version_info < (3, 14):
+        pytest.skip("Native deferred annotations require Python 3.14.")
+    module = _compile_module(
+        preamble
+        + """
+from configgle.decorator import autofig
+
+@autofig
+class Node:
+    class Child:
+        pass
+
+    def __init__(self, child: list[Child | Later] | None = None):
+        self.child = child
+
+class Later:
+    pass
+""",
+        monkeypatch=monkeypatch,
+    )
+    assert get_type_hints(module.Node.Config)["child"] == (
+        list[module.Node.Child | module.Later] | None
+    )
+
+
+@pytest.mark.parametrize("future_annotations", [True, False])
+def test_class_generic_parameter_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    future_annotations: bool,
+) -> None:
+    """Class type parameters have the same identity in generated annotations."""
+    preamble = "from __future__ import annotations\n" if future_annotations else ""
+    if not future_annotations and sys.version_info < (3, 14):
+        pytest.skip("Native deferred annotations require Python 3.14.")
+    module = _compile_module(
+        preamble
+        + """
+from configgle.decorator import autofig
+
+@autofig
+class Node[T]:
+    def __init__(self, value: T | None = None):
+        self.value = value
+""",
+        monkeypatch=monkeypatch,
+    )
+    assert (
+        get_args(get_type_hints(module.Node.Config)["value"])[0]
+        is (module.Node.__type_params__[0])
+    )
+
+
+@pytest.mark.parametrize("signature", ["value: int = 1, /", "*args", "**kwargs"])
+def test_unsupported_parameter_kinds_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    signature: str,
+) -> None:
+    """Reject unsupported argument binding before publishing a broken Config."""
+    module = _compile_module(
+        f"""
+class Node:
+    def __init__(self, {signature}):
+        pass
+""",
+        monkeypatch=monkeypatch,
+    )
+    with pytest.raises(TypeError, match=r"autofig.*parameter"):
+        autofig(module.Node)
+    assert not hasattr(module.Node, "Config")
+
+
+def test_inherited_forward_annotation_uses_defining_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An inherited unresolved type resolves where the constructor was defined."""
+    base = _compile_module(
+        """
+from __future__ import annotations
+class Base:
+    Count = int
+    def __init__(self, value: Count | Later | None = None):
+        self.value = value
+""",
+        monkeypatch=monkeypatch,
+        name="_autofig_base_test",
+    )
+    derived = _compile_module(
+        """
+from _autofig_base_test import Base
+from configgle.decorator import autofig
+@autofig
+class Derived(Base):
+    Count = str
+class Later:
+    pass
+""",
+        monkeypatch=monkeypatch,
+    )
+    exec("class Later: pass", vars(base))  # noqa: S102 -- The referenced type becomes available after decoration.
+    assert get_type_hints(derived.Derived.Config)["value"] == int | base.Later | None
+
+
+def test_config_round_trips_through_pickle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A module-level autofig Config exposes its real import path."""
+    module = _compile_module(
+        """
+from configgle.decorator import autofig
+@autofig
+class Node:
+    def __init__(self, count: int = 1):
+        self.count = count
+""",
+        monkeypatch=monkeypatch,
+    )
+    config = module.Node.Config()
+    config.count = 7
+    restored = pickle.loads(pickle.dumps(config))
+    assert type(restored) is module.Node.Config
+    assert restored.make().count == 7
+    decoded = module.Node.Config.deserialize(config.serialize())
+    assert type(decoded) is module.Node.Config
+    assert decoded.make().count == 7
+
+
+def test_mutable_constructor_defaults_preserve_constructor_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Omitted defaults retain the same identity as ordinary constructor calls."""
+    module = _compile_module(
+        """
+from configgle.decorator import autofig
+@autofig
+class Node:
+    def __init__(self, values: list[int] = [1]):
+        self.values = values
+""",
+        monkeypatch=monkeypatch,
+    )
+    first, second = module.Node.Config(), module.Node.Config()
+    direct = module.Node()
+    assert first.values is second.values
+    assert first.values is direct.values
+    first.values.append(2)
+    assert second.values == [1, 2]
+    assert direct.values == [1, 2]
+    assert first.make().values == [1, 2]
+
+
+def test_shared_constructor_defaults_keep_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two parameters sharing one nested default also share it in the Config."""
+    module = _compile_module(
+        """
+from configgle.decorator import autofig
+shared = ([1],)
+@autofig
+class Node:
+    def __init__(self, left: tuple[list[int]] = shared, right: tuple[list[int]] = shared):
+        self.left = left
+        self.right = right
+""",
+        monkeypatch=monkeypatch,
+    )
+    direct = module.Node()
+    assert direct.left is direct.right
+    config = module.Node.Config()
+    assert config.left is config.right
+    assert config.left is direct.left
+    config.left[0].append(2)
+    assert config.right[0] == [1, 2]
+    explicit = ([7],)
+    overridden = module.Node.Config(left=explicit)
+    assert overridden.left is explicit
+    assert overridden.right is module.shared
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["make", "finalize", "_finalized", "__autofig_resolve__", "make_with_kwargs"],
+)
+def test_reserved_parameter_names_are_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    """Constructor fields cannot replace Config's construction machinery."""
+    module = _compile_module(
+        f"""
+class Node:
+    def __init__(self, {name}: int = 1):
+        pass
+""",
+        monkeypatch=monkeypatch,
+    )
+    with pytest.raises(TypeError, match=r"autofig.*conflict"):
+        autofig(module.Node)
+    assert not hasattr(module.Node, "Config")
+
+
+def test_empty_constructor() -> None:
+    """A class with object.__init__ can build through an empty Config."""
+
+    class Empty:
+        pass
+
+    decorated = autofig(Empty)
+    assert isinstance(decorated.Config().make(), Empty)
+
+
+@pytest.mark.parametrize(
+    "constructor",
+    [
+        "@staticmethod\n    def __init__(value: int = 1): pass",
+        "@classmethod\n    def __init__(cls, value: int = 1): pass",
+        "def __init__(*args): pass",
+    ],
+)
+def test_unsupported_constructor_binding_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    constructor: str,
+) -> None:
+    """Unsupported receiver binding cannot silently discard a config parameter."""
+    module = _compile_module(
+        f"class Node:\n    {constructor}\n", monkeypatch=monkeypatch
+    )
+    with pytest.raises(TypeError, match="autofig"):
+        autofig(module.Node)
+    assert not hasattr(module.Node, "Config")
+
+
+def _compile_module(
+    source: str,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str = "_autofig_test",
+) -> ModuleType:
+    module = ModuleType(name)
+    monkeypatch.setitem(sys.modules, name, module)
+    exec(  # noqa: S102 -- Dynamic source exercises runtime annotations without static-checker interference.
+        compile(source, "<autofig-test>", "exec", dont_inherit=True),
+        vars(module),
+    )
+    return module
 
 
 if __name__ == "__main__":
