@@ -528,7 +528,7 @@ class _TupleSlot:
         rebuilt = list(items)
         rebuilt[index] = new
         as_tuple = (
-            tuple(rebuilt) if type(items) is tuple else type(items)(*rebuilt)  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- namedtuple field types are erased
+            tuple(rebuilt) if type(items) is tuple else type(items)(*rebuilt)  # ty: ignore[invalid-argument-type] -- Namedtuple field types are erased at runtime.  # pyright: ignore[reportArgumentType] -- Namedtuple field types are erased at runtime.
         )
         Match(
             fqn="",
