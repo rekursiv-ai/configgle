@@ -111,7 +111,7 @@ def _autofig[T](
         sig = inspect.signature(  # pyright: ignore[reportUnreachable] -- The public checker targets 3.12; this branch runs on the monorepo's 3.14.
             constructor,
             annotation_format=importlib.import_module(
-                "annotationlib"
+                "annotationlib",
             ).Format.FORWARDREF,
         )
     else:
@@ -162,7 +162,7 @@ def _autofig[T](
         ):
             raise TypeError(
                 f"autofig parameter {param_name!r} must accept a keyword argument; "
-                f"{param.kind.description} parameters are unsupported."
+                f"{param.kind.description} parameters are unsupported.",
             )
         try:
             annotations[param_name] = resolve(param_name)
@@ -173,7 +173,7 @@ def _autofig[T](
         default = cast(object, param.default)
         if default is not inspect.Parameter.empty:
             defaults_[param_name] = field(
-                default_factory=partial(_constructor_default, default)
+                default_factory=partial(_constructor_default, default),
             )
 
     Config = FigMeta(
@@ -226,7 +226,9 @@ def _resolve_annotation(
                 globalns=cast(
                     dict[str, object],
                     getattr(
-                        cast(object, inspect.unwrap(constructor)), "__globals__", {}
+                        cast(object, inspect.unwrap(constructor)),
+                        "__globals__",
+                        {},
                     ),
                 ),
                 localns=localns,

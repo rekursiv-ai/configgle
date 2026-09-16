@@ -179,7 +179,8 @@ class Derived(Shadow, Base):
 
 
 @pytest.mark.parametrize(
-    "annotation", ["int | 1", "'int['", "int.missing", "int('bad')", "'1 / 0'"]
+    "annotation",
+    ["int | 1", "'int['", "int.missing", "int('bad')", "'1 / 0'"],
 )
 @pytest.mark.parametrize("future_annotations", [True, False])
 def test_annotation_failure_isolated(
@@ -467,7 +468,8 @@ class Later:
     derived_cls = cast("type[HasRelaxedConfig[object]]", derived.Derived)
     later = cast(object, base.Later)
     assert get_type_hints(derived_cls.Config)["value"] == _union(
-        _union(int, later), type(None)
+        _union(int, later),
+        type(None),
     )
 
 
@@ -494,7 +496,8 @@ class Node:
     serialize = cast("Callable[[], object]", config.serialize)
     deserialize_name = "deserialize"
     deserialize = cast(
-        "Callable[[object], object]", getattr(node.Config, deserialize_name)
+        "Callable[[object], object]",
+        getattr(node.Config, deserialize_name),
     )
     decoded = deserialize(serialize())
     assert type(decoded) is node.Config
@@ -605,7 +608,8 @@ def test_unsupported_constructor_binding_rejected(
 ) -> None:
     """Unsupported receiver binding cannot silently discard a config parameter."""
     module = _compile_module(
-        f"class Node:\n    {constructor}\n", monkeypatch=monkeypatch
+        f"class Node:\n    {constructor}\n",
+        monkeypatch=monkeypatch,
     )
     node = cast(type, module.Node)
     with pytest.raises(TypeError, match="autofig"):
