@@ -29,6 +29,8 @@ from collections.abc import (
     Sequence,
     Set as AbstractSet,
 )
+from dataclasses import dataclass
+from functools import partial
 from types import FunctionType, ModuleType
 from typing import cast
 
@@ -38,8 +40,10 @@ from configgle.custom_types import Finalizeable, LateBound, Makeable
 
 
 __all__ = [
+    "Match",
     "bind_late",
     "copy_tree",
+    "traverse",
 ]
 
 
@@ -142,6 +146,87 @@ def copy_tree[ValueT](
     # constructor whose element type is erased at runtime.
     ctor = cast(Callable[[object], ValueT], type(node))
     return ctor(copied)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Match[ConfigT]:
+    """One node ``traverse`` found, with the handle needed to swap it out.
+
+    Attributes:
+      fqn: Dotted path from the root, with ``[i]`` for sequence positions and
+        ``[key]`` for mapping keys: ``blocks[0].attn``, ``extras['aux']``.
+        Empty for the root itself.
+      config: The matched node.
+      parent: The container or object holding it; ``None`` at the root.
+      attr: Where in ``parent`` it lives -- an attribute name, a sequence
+        index, or a mapping key; ``None`` at the root.
+
+    """
+
+    fqn: str
+    config: ConfigT
+    parent: object | None
+    attr: str | int | object | None
+
+    def replace(self, new: object) -> None:
+        """Write ``new`` where ``config`` sits in ``parent``.
+
+        A tuple parent is rebuilt in ITS parent, since a tuple cannot be
+        written into; the rebuilt tuple keeps the parent's own type.
+
+        Args:
+          new: The node to write in place of ``config``.
+
+        Raises:
+          ValueError: The match is the root, which has no parent to write to.
+
+        """
+        if self.parent is None:
+            raise ValueError("The root of a traversal has no parent to replace it in.")
+        parent = self.parent
+        if isinstance(parent, list):
+            cast(list[object], parent)[cast(int, self.attr)] = new
+        elif isinstance(parent, dict):
+            cast(dict[object, object], parent)[self.attr] = new
+        elif isinstance(parent, _TupleSlot):
+            parent.write(cast(int, self.attr), new)
+        else:
+            object.__setattr__(parent, cast(str, self.attr), new)
+
+
+def traverse[ConfigT](
+    root: object,
+    cls: type[ConfigT] | tuple[type[ConfigT], ...],
+    *,
+    recurse: bool = False,
+) -> Iterator[Match[ConfigT]]:
+    """Yield every node of type ``cls`` reachable from ``root``, with its slot.
+
+    Walks the same shapes ``copy_tree`` walks -- Figs and other data objects,
+    lists, tuples, dicts, sets -- and yields a :class:`Match` for each node that
+    is an instance of ``cls``. A node is visited once even when two fields
+    share it. Primitives and non-data objects (tensors, loggers) are leaves.
+
+    Args:
+      root: The config tree to search. Yielded first if it matches.
+      cls: A type or tuple of types to match with ``isinstance``.
+      recurse: Whether to keep descending into a matched node. Off, a matched
+        subtree is one unit -- the shape a caller replacing whole nodes wants.
+        On, nested matches are yielded too, parents before children.
+
+    Yields:
+      match: The node, its dotted path, and the handle to replace it.
+
+    """
+    yield from _traverse(
+        root,
+        cls,
+        recurse=recurse,
+        seen=set(),
+        fqn="",
+        parent=None,
+        attr=None,
+    )
 
 
 def bind_late(root: object) -> None:
@@ -407,3 +492,96 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
     # See ``copy_tree``: the narrowed union erases the concrete container type.
     ctor = cast(Callable[[object], ValueT], type(node))
     return ctor(finalized)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _TupleSlot:
+    """A tuple standing in as ``parent`` so ``replace`` can rebuild it.
+
+    Tuples are immutable, so a match inside one records the tuple's OWN
+    position and rebuilds it there on write.
+    """
+
+    tuple_parent: object
+    tuple_attr: str | int | object
+
+    def current(self) -> tuple[object, ...]:
+        """Read the tuple as its parent holds it now, after any earlier rebuild.
+
+        Returns:
+          held: The tuple currently stored at this slot.
+
+        """
+        parent, attr = self.tuple_parent, self.tuple_attr
+        if isinstance(parent, (list, dict)):
+            held = cast(Mapping[object, object] | Sequence[object], parent)[
+                cast(int, attr)
+            ]
+        elif isinstance(parent, _TupleSlot):
+            held = parent.current()[cast(int, attr)]
+        else:
+            held = cast(object, getattr(parent, cast(str, attr)))
+        return cast(tuple[object, ...], held)
+
+    def write(self, index: int, new: object) -> None:
+        items = self.current()
+        rebuilt = list(items)
+        rebuilt[index] = new
+        as_tuple = (
+            tuple(rebuilt) if type(items) is tuple else type(items)(*rebuilt)  # ty: ignore[invalid-argument-type]  # pyright: ignore[reportArgumentType] -- namedtuple field types are erased
+        )
+        Match(
+            fqn="",
+            config=items,
+            parent=self.tuple_parent,
+            attr=self.tuple_attr,
+        ).replace(as_tuple)
+
+
+def _traverse[ConfigT](
+    node: object,
+    cls: type[ConfigT] | tuple[type[ConfigT], ...],
+    *,
+    recurse: bool,
+    seen: set[int],
+    fqn: str,
+    parent: object | None,
+    attr: str | int | object | None,
+) -> Iterator[Match[ConfigT]]:
+    """Walk one node for ``traverse``; ``seen`` de-duplicates shared subtrees."""
+    if isinstance(node, (type, int, float, str, bytes, bool, type(None))):
+        return
+    if id(node) in seen:
+        return
+    seen.add(id(node))
+    if isinstance(node, cls):
+        yield Match(fqn=fqn, config=node, parent=parent, attr=attr)
+        if not recurse:
+            return
+    step = partial(_traverse, cls=cls, recurse=recurse, seen=seen)
+    if isinstance(node, tuple):
+        items = cast(tuple[object, ...], node)
+        slot = _TupleSlot(tuple_parent=parent, tuple_attr=attr)
+        for i, item in enumerate(items):
+            yield from step(item, fqn=f"{fqn}[{i}]", parent=slot, attr=i)
+    elif isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
+        for i, item in enumerate(node):
+            yield from step(item, fqn=f"{fqn}[{i}]", parent=node, attr=i)
+    elif isinstance(node, Mapping):
+        mapping = cast(Mapping[object, object], node)
+        for key, item in mapping.items():
+            yield from step(item, fqn=f"{fqn}[{key!r}]", parent=mapping, attr=key)
+    elif isinstance(node, AbstractSet):
+        for item in node:
+            yield from step(item, fqn=f"{fqn}{{...}}", parent=None, attr=None)
+    elif (
+        hasattr(type(node), "__dataclass_fields__")
+        or "__slots__" in type(node).__dict__
+    ):
+        for name in _get_object_attribute_names(node):
+            try:
+                child = cast(object, getattr(node, name))
+            except AttributeError:
+                continue
+            child_fqn = f"{fqn}.{name}" if fqn else name
+            yield from step(child, fqn=child_fqn, parent=node, attr=name)

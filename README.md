@@ -307,6 +307,22 @@ touching the source:
 finalized = cfg.copy_tree().finalize()  # cfg unchanged
 ```
 
+### `traverse()`
+
+`traverse(root, cls)` walks the same shapes `copy_tree` walks and yields a
+`Match` for every node that is an instance of `cls`: the node, its dotted
+path (`blocks[0].proj`, `extras['aux']`), and a `replace(new)` handle that
+writes into the parent slot -- a list index, a dict key, a tuple position, or
+an attribute. A shared node is yielded once. With `recurse=True`, matches
+nested inside a match are yielded too, parents first.
+
+```python
+from configgle import traverse
+
+for match in traverse(cfg, Linear.Config):
+    match.replace(QuantizedLinear.Config(**vars(match.config)))
+```
+
 ### `pprint` / `pformat`
 
 Config-aware pretty printing that hides default values, auto-finalizes before
@@ -467,35 +483,6 @@ cfg = Model.Config(channels_in=512)
 cfg_ = pickle.loads(cloudpickle.dumps(cfg))
 model = cfg_.make()  # parent_class is preserved
 ```
-
-## Lineage
-
-The nested-`Config` shape is not new. Two production training codebases use
-it, and one cites the other:
-
-- **[AXLearn](https://github.com/apple/axlearn)** (Apple, 2023). Its
-  [ML API Style](https://github.com/apple/axlearn/blob/main/docs/ml_api_style.md)
-  sets the rules configgle follows: every layer has a `Config` member class,
-  a composite layer's config holds its children's configs as fields, and a
-  child's `input_dim` is set by the parent. `axlearn/common/config.py`
-  supplies `Configurable.Config.instantiate()`, `default_config()`, and
-  `config_for_function` / `config_for_class` for signature-derived configs.
-- **[torchtitan](https://github.com/pytorch/torchtitan)** (Meta, 2026-02-23).
-  [PR #2386](https://github.com/pytorch/torchtitan/pull/2386) replaced its
-  TOML job config with a `Configurable` base whose nested
-  `@dataclass(kw_only=True, slots=True) class Config` builds the owner via
-  `build()`. The author's note credits AXLearn's style doc. Model configs
-  then grew methods -- `get_nparams_and_flops(model, seq_len)` -- which is
-  the same move as a `finalize()` override: computation that belongs with
-  the config, not the module.
-
-configgle was written without knowledge of either and released 2026-02-02,
-three weeks before torchtitan's refactor merged. It adds a `finalize()`
-cascade for derived fields (AXLearn has validators; torchtitan's
-`update_from_config` carries a `TODO` calling itself an encapsulation
-violation), `pprint` as a diff against class defaults, `LateBound` for
-references across the built tree, and ships as a library with no framework
-attached. Both appear in the comparison below.
 
 ## Comparison
 
@@ -735,6 +722,35 @@ pickle, but `bind()` results do not. Serialization is read-only:
 `Configuration.from_yaml` loads, but there is no dump half.
 
 </details>
+
+## Lineage
+
+The nested-`Config` shape is not new. Two production training codebases use
+it, and one cites the other:
+
+- **[AXLearn](https://github.com/apple/axlearn)** (Apple, 2023). Its
+  [ML API Style](https://github.com/apple/axlearn/blob/main/docs/ml_api_style.md)
+  sets the rules configgle follows: every layer has a `Config` member class,
+  a composite layer's config holds its children's configs as fields, and a
+  child's `input_dim` is set by the parent. `axlearn/common/config.py`
+  supplies `Configurable.Config.instantiate()`, `default_config()`, and
+  `config_for_function` / `config_for_class` for signature-derived configs.
+- **[torchtitan](https://github.com/pytorch/torchtitan)** (Meta, 2026-02-23).
+  [PR #2386](https://github.com/pytorch/torchtitan/pull/2386) replaced its
+  TOML job config with a `Configurable` base whose nested
+  `@dataclass(kw_only=True, slots=True) class Config` builds the owner via
+  `build()`. The author's note credits AXLearn's style doc. Model configs
+  then grew methods -- `get_nparams_and_flops(model, seq_len)` -- which is
+  the same move as a `finalize()` override: computation that belongs with
+  the config, not the module.
+
+configgle was written without knowledge of either and released 2026-02-02,
+three weeks before torchtitan's refactor merged. It adds a `finalize()`
+cascade for derived fields (AXLearn has validators; torchtitan's
+`update_from_config` carries a `TODO` calling itself an encapsulation
+violation), `pprint` as a diff against class defaults, `LateBound` for
+references across the built tree, and ships as a library with no framework
+attached. Both appear in the comparison below.
 
 ## See also
 
