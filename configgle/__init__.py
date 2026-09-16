@@ -272,6 +272,14 @@ and as ``Maker`` methods::
 Deserialization imports the modules named in the payload, so treat a
 serialized config like ``pickle``: load only trusted data.
 
+``traverse`` / ``Match`` -- Typed walk of a config tree. ``traverse(root,
+cls)`` yields a ``Match`` (node, dotted path, parent slot) for every node
+that is an instance of ``cls``; ``match.replace(new)`` writes into the slot,
+whether it is an attribute, a list index, a dict key, or a tuple position::
+
+    for match in traverse(cfg, Linear.Config):
+        match.replace(QuantizedLinear.Config(**vars(match.config)))
+
 ``Makeable`` -- Runtime-checkable ``Protocol`` defining the config
 interface: ``make()``, ``finalize()``, ``update()``, plus the ``_finalized``
 and ``parent_class`` members. All five are required, so ``isinstance``
@@ -323,6 +331,7 @@ from configgle.decorator import autofig
 from configgle.fig import Dataclass, Fig, Maker, Makes
 from configgle.inline import InlineConfig, PartialConfig
 from configgle.pprinting import pformat, pprint
+from configgle.walk import Match, traverse
 
 
 __all__ = [
@@ -338,6 +347,7 @@ __all__ = [
     "Makeable",
     "Maker",
     "Makes",
+    "Match",
     "MutableNamespace",
     "PartialConfig",
     "RelaxedConfigurable",
@@ -346,4 +356,5 @@ __all__ = [
     "autofig",
     "pformat",
     "pprint",
+    "traverse",
 ]

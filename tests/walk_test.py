@@ -8,12 +8,15 @@ import random
 import socket
 import types
 
+import pytest
+
 from configgle.custom_types import LateBound
 from configgle.fig import Fig
 from configgle.walk import (
     _get_object_attribute_names,
     bind_late,
     copy_tree,
+    traverse,
 )
 
 
@@ -486,6 +489,138 @@ def test_bind_late_still_binds_through_ordinary_attributes():
     root = Root()
     bind_late(root)
     assert seen == [root]
+
+
+class _TLeaf:
+    class Config(Fig["_TLeaf"]):
+        width: int = 1
+
+    def __init__(self, config: Config) -> None:
+        del config
+
+
+class _TNorm:
+    class Config(Fig["_TNorm"]):
+        eps: float = 1e-6
+
+    def __init__(self, config: Config) -> None:
+        del config
+
+
+class _TBlock:
+    class Config(Fig["_TBlock"]):
+        proj: _TLeaf.Config = field(default_factory=_TLeaf.Config)
+        norm: _TNorm.Config = field(default_factory=_TNorm.Config)
+
+    def __init__(self, config: Config) -> None:
+        del config
+
+
+class _TStack:
+    class Config(Fig["_TStack"]):
+        head: _TLeaf.Config = field(default_factory=_TLeaf.Config)
+        blocks: list[_TBlock.Config] = field(default_factory=list[_TBlock.Config])
+        extras: dict[str, _TLeaf.Config] = field(
+            default_factory=dict[str, _TLeaf.Config],
+        )
+        pair: tuple[_TLeaf.Config, _TLeaf.Config] = field(
+            default_factory=lambda: (_TLeaf.Config(), _TLeaf.Config()),
+        )
+
+    def __init__(self, config: Config) -> None:
+        del config
+
+
+def _stack() -> _TStack.Config:
+    cfg = _TStack.Config()
+    cfg.blocks = [_TBlock.Config(), _TBlock.Config()]
+    cfg.extras = {"aux": _TLeaf.Config()}
+    return cfg
+
+
+def test_traverse_yields_fqn_for_fields_lists_dicts_and_tuples() -> None:
+    fqns = [m.fqn for m in traverse(_stack(), _TLeaf.Config)]
+    assert fqns == [
+        "head",
+        "blocks[0].proj",
+        "blocks[1].proj",
+        "extras['aux']",
+        "pair[0]",
+        "pair[1]",
+    ]
+
+
+def test_traverse_yields_the_root_when_it_matches() -> None:
+    cfg = _stack()
+    matches = list(traverse(cfg, _TStack.Config))
+    assert len(matches) == 1
+    assert matches[0].fqn == ""
+    assert matches[0].config is cfg
+    assert matches[0].parent is None
+    assert matches[0].attr is None
+
+
+def test_traverse_stops_at_a_match_unless_recurse() -> None:
+    """A matched subtree is one unit by default; ``recurse`` opens it."""
+    cfg = _stack()
+    shallow = [m.fqn for m in traverse(cfg, (_TBlock.Config, _TLeaf.Config))]
+    assert shallow == [
+        "head",
+        "blocks[0]",
+        "blocks[1]",
+        "extras['aux']",
+        "pair[0]",
+        "pair[1]",
+    ]
+    deep = [m.fqn for m in traverse(cfg, (_TBlock.Config, _TLeaf.Config), recurse=True)]
+    assert "blocks[0].proj" in deep
+    assert deep.index("blocks[0]") < deep.index("blocks[0].proj")
+
+
+def test_traverse_replace_rewrites_in_every_container_kind() -> None:
+    cfg = _stack()
+    for match in traverse(cfg, _TLeaf.Config):
+        match.replace(_TNorm.Config(eps=0.5))
+    assert isinstance(cfg.head, _TNorm.Config)
+    assert all(isinstance(b.proj, _TNorm.Config) for b in cfg.blocks)
+    assert isinstance(cfg.extras["aux"], _TNorm.Config)
+    assert all(isinstance(p, _TNorm.Config) for p in cfg.pair)
+    assert list(traverse(cfg, _TLeaf.Config)) == []
+
+
+def test_traverse_replace_on_root_raises() -> None:
+    cfg = _stack()
+    (root,) = traverse(cfg, _TStack.Config)
+    with pytest.raises(ValueError, match="root"):
+        root.replace(_TStack.Config())
+
+
+def test_traverse_visits_a_shared_node_once() -> None:
+    cfg = _stack()
+    shared = _TLeaf.Config()
+    cfg.head = shared
+    cfg.extras["aux"] = shared
+    matched = [m.config for m in traverse(cfg, _TLeaf.Config)]
+    assert sum(m is shared for m in matched) == 1
+
+
+def test_traverse_survives_a_cycle() -> None:
+    class _Node:
+        class Config(Fig["_Node"]):
+            next: object = None
+
+        def __init__(self, config: Config) -> None:
+            del config
+
+    a, b = _Node.Config(), _Node.Config()
+    a.next, b.next = b, a
+    assert [m.config for m in traverse(a, _Node.Config, recurse=True)] == [a, b]
+
+
+def test_traverse_skips_leaves_that_are_not_data() -> None:
+    cfg = _stack()
+    cfg.head.width = 3
+    assert [m.fqn for m in traverse(cfg, int)] == []
 
 
 if __name__ == "__main__":
