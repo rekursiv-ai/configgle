@@ -594,7 +594,7 @@ here, and AXLearn and torchtitan on the YAML row.)
   - 🟡 Gin's `config_str` and Fiddle's `printing` render the whole tree.
 - **Weight tying by path** -- a built object names a sibling; the reference
   lives in the config and is wired after the outermost build (`LateBound`),
-  so a tied head prints as `TiedLinear.Config(tied="in_proj")` and no parent
+  so a tied head prints as `TiedLinear.Config(tied="proj_in")` and no parent
   writes the alias.
   - 🟡 torchtitan has `enable_weight_tying: bool` on the root config, and
     `Decoder.__init__` assigns `tok_embeddings.weight = lm_head.weight`.
