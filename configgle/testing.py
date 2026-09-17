@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from difflib import unified_diff
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import os
 
-from configgle.fig import Maker
+
+if TYPE_CHECKING:
+    from configgle.fig import Maker
 
 
 _ENV_REGENERATE: Final = "CONFIGGLE_REGENERATE_GOLDEN"

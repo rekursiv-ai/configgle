@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from types import ModuleType
 from typing import (
     TYPE_CHECKING,
@@ -22,6 +21,8 @@ from configgle.decorator import autofig
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from configgle.custom_types import HasRelaxedConfig
 from configgle.fig import Fig
 

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import field
-from typing import NamedTuple, Self, cast, override
+from typing import TYPE_CHECKING, NamedTuple, Self, cast, override
 
 import random
 import socket
@@ -18,6 +17,10 @@ from configgle.walk import (
     copy_tree,
     traverse,
 )
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def test_get_object_attribute_names_filters_int_indices():

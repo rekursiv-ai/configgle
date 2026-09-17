@@ -745,8 +745,7 @@ class _DataclassMeta(type):
             cls.make_with_kwargs = make_with_kwargs
 
         cls.__dataclass_params__ = kwargs
-        cls = cast(_DataclassMeta, cls)
-        return cls
+        return cast(_DataclassMeta, cls)
 
 
 @dataclass_transform(kw_only_default=True)

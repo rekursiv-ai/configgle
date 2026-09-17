@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
-from typing import Final, Self, override
+from typing import TYPE_CHECKING, Final, Self, override
 
 import ast
 import copy
@@ -33,6 +32,10 @@ from configgle.pprinting import (
     pformat,
     pprint,
 )
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 _THIS: Final = Path(__file__).resolve()

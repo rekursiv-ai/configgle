@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from typing import (
+    TYPE_CHECKING,
     Any,
     ClassVar,
     Protocol,
@@ -14,7 +15,9 @@ from typing import (
 )
 from typing_extensions import TypeVar
 
-import dataclasses
+
+if TYPE_CHECKING:
+    import dataclasses
 
 
 __all__ = [

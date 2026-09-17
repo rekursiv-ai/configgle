@@ -12,13 +12,14 @@ import importlib
 import inspect
 import sys
 
-from configgle.custom_types import HasRelaxedConfig
 from configgle.fig import Fig, FigMeta
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import ParamSpec, TypeVar, TypeVarTuple
+
+    from configgle.custom_types import HasRelaxedConfig
 
 
 __all__ = ["autofig"]
