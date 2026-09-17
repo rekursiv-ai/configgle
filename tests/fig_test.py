@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import field
-from typing import NamedTuple, Self, cast, override
+from typing import TYPE_CHECKING, NamedTuple, Self, cast, override
 
 import dataclasses
 import io
@@ -22,6 +21,10 @@ from configgle.fig import (
     _DataclassParams,
     _Default,
 )
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class BaseConfig(Fig):

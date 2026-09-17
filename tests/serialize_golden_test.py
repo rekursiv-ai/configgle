@@ -22,11 +22,10 @@ substituted at compare time.
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
 from dataclasses import field
 from decimal import Decimal
 from pathlib import PurePosixPath
-from typing import Final, NamedTuple, override
+from typing import TYPE_CHECKING, Final, NamedTuple, override
 
 import enum
 import json
@@ -44,6 +43,10 @@ from configgle.custom_json import (
 )
 from configgle.fig import Fig
 from configgle.inline import InlineConfig
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 
 MODULE: Final = __name__

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Self, override
+from typing import TYPE_CHECKING, Self, override
 
 import subprocess
 import sys
@@ -13,6 +12,10 @@ import pytest
 
 from configgle.fig import Fig, Maker
 from configgle.testing import assert_pprint_golden
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _DefaultsOnly:

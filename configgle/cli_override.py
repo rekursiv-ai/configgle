@@ -15,12 +15,15 @@ naturally) and then coerced to the field's declared type.
 from __future__ import annotations
 
 from json import JSONDecodeError
-from typing import get_type_hints
+from typing import TYPE_CHECKING, get_type_hints
 
 import dataclasses
 
 from configgle.custom_json import decode, loads
-from configgle.custom_types import Makeable
+
+
+if TYPE_CHECKING:
+    from configgle.custom_types import Makeable
 
 
 __all__ = ["apply_overrides"]
