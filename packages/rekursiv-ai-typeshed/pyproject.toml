@@ -27,6 +27,7 @@ include = ["rekursiv_ai_typeshed", "README.md"]
 [tool.uv]
 cache-keys = [
     {file = "pyproject.toml"},
+    {file = "../../uv.lock"},
     {file = "README.md"},
     {file = "rekursiv_ai_typeshed/*.py"},
     {file = "rekursiv_ai_typeshed/py.typed"},

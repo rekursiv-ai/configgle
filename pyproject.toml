@@ -577,6 +577,12 @@ required-environments = [
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
+[tool.uv.extra-build-dependencies]
+rekursiv-ai-typeshed = [
+    {requirement = "basedpyright", match-runtime = true},
+    {requirement = "ty", match-runtime = true},
+]
+
 [tool.uv.pip]
 compile-bytecode = true
 
