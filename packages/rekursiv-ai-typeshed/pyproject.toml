@@ -34,3 +34,9 @@ cache-keys = [
     {file = "rekursiv_ai_typeshed/typeshed.patch"},
     {file = "rekursiv_ai_typeshed/typings/**/*.pyi"},
 ]
+
+[tool.uv.extra-build-dependencies]
+rekursiv-ai-typeshed = [
+    {requirement = "basedpyright", match-runtime = true},
+    {requirement = "ty", match-runtime = true},
+]
