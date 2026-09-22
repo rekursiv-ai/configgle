@@ -1,7 +1,7 @@
-# DO NOT EDIT -- generated from public-to-source.yml.tmpl and this
+# DO NOT EDIT -- generated from external-to-internal.yml.tmpl and this
 # package's sync config. Hand edits are overwritten; change
 # the template, the generator, or the sync config instead.
-name: "Public to Source Configgle"
+name: "Configgle to Loop"
 
 on:
   pull_request:
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   import-change:
-    name: "Public to Source Configgle into source"
+    name: "Configgle to Loop into source"
     runs-on: ubuntu-latest
     # Bounded so a hung step fails in minutes, not at the 6h default.
     timeout-minutes: 45
@@ -89,7 +89,7 @@ jobs:
             if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
               exit 1
             fi
-            echo "::notice::Public-to-source import is not configured; skipping."
+            echo "::notice::Import back to loop is not configured; skipping."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
