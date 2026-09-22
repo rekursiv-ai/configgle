@@ -61,7 +61,7 @@ jobs:
       - name: Set sync paths
         run: |
           echo "IMPORT_REPORT=$RUNNER_TEMP/copybarista-import-report.json" >> "$GITHUB_ENV"
-          echo "TRUSTED_IMPORT_SCRIPT=$RUNNER_TEMP/monorepo_import_change.py" >> "$GITHUB_ENV"
+          echo "TRUSTED_IMPORT_SCRIPT=$RUNNER_TEMP/sync_import_change.py" >> "$GITHUB_ENV"
 
       - id: settings
         name: Check settings
@@ -125,7 +125,7 @@ jobs:
         if: steps.settings.outputs.enabled == 'true'
         run: |
           install -m 600 \
-            "target/$COPYBARISTA_TOOL_PROJECT_PATH/scripts/monorepo_import_change.py" \
+            "target/$COPYBARISTA_TOOL_PROJECT_PATH/scripts/sync_import_change.py" \
             "$TRUSTED_IMPORT_SCRIPT"
 
       # The public repo (this repo) at FULL history, before the baseline is
