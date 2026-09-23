@@ -268,6 +268,20 @@ def test_partial_config():
     assert result == 60  # 2 * 3 * 10.
 
 
+def test_inline_configs_compare_by_value() -> None:
+    """Two configs naming the same call are equal, so a fork's diff is honest."""
+
+    def add(a: int, b: int = 0) -> int:
+        return a + b
+
+    assert PartialConfig(add, 1, b=2) == PartialConfig(add, 1, b=2)
+    assert PartialConfig(add, 1, b=2) != PartialConfig(add, 1, b=3)
+    assert PartialConfig(add, 1) != PartialConfig(add, 2)
+    assert PartialConfig(add, 1) != InlineConfig(add, 1)
+    assert InlineConfig(add, 1) == InlineConfig(add, 1)
+    assert PartialConfig(add) != "add"
+
+
 def test_inline_config_update_from_dataclass():
     """Test InlineConfig.update from a dataclass source."""
 

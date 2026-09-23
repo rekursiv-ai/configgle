@@ -34,6 +34,7 @@ _INLINE_CONFIG_SLOTS = frozenset(
     slots=True,
     init=False,
     repr=True,
+    eq=False,
     weakref_slot=True,
 )
 class InlineConfig[T]:
@@ -200,6 +201,21 @@ class InlineConfig[T]:
         object.__setattr__(self, "_finalized", False)
         object.__setattr__(self, "_args", list(args))
         object.__setattr__(self, "_kwargs", dict(kwargs))
+
+    @override
+    def __eq__(self, other: object) -> bool:
+        # Generated equality reads ``parent_class``, a slot ``__init__`` never
+        # sets, so ``==`` raised. Identity is the call: type, callable, args.
+        if type(other) is not type(self):
+            return NotImplemented
+        assert isinstance(other, InlineConfig)
+        return (
+            self.func == other.func
+            and list(self._args) == list(other._args)
+            and dict(self._kwargs) == dict(other._kwargs)
+        )
+
+    __hash__ = None  # pyright: ignore[reportAssignmentType] -- Mutable config: equal-by-value objects must not be hashable.
 
     @override
     def __delattr__(self, key: str) -> None:
