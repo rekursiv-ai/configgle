@@ -245,6 +245,11 @@ def bind_late(root: object) -> None:
     stack: list[object] = [root]
     while stack:
         node = stack.pop()
+        # ``ModuleType`` is a leaf: a module-valued attribute (e.g. the shared
+        # ``random`` a seedless RNG falls back to) otherwise opens the entire
+        # imported graph, where a third-party object's permissive
+        # ``__getattr__`` synthesizes the ``modules`` probed below and details
+        # the walk far from anything the caller built.
         if id(node) in seen or isinstance(
             node,
             (type, int, float, str, bytes, bool, type(None), ModuleType, FunctionType),
@@ -254,8 +259,9 @@ def bind_late(root: object) -> None:
         if isinstance(node, LateBound):
             node.bind(root)
         # ``modules`` is looked up on the TYPE: an instance attribute of that
-        # name is data, and a dynamic ``__getattr__`` (a module namespace, a
-        # marker registry) would manufacture one.
+        # name is data, and an instance probe runs a third-party ``__getattr__``
+        # (a module namespace, a marker registry, or wandb's disabled shim,
+        # which raises ``KeyError`` instead of reporting the method's absence).
         modules = getattr(type(node), "modules", None)
         if callable(modules):
             stack.extend(cast(Iterator[object], modules(node)))
