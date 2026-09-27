@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import field
 from typing import TYPE_CHECKING, NamedTuple, Self, cast, override
 
