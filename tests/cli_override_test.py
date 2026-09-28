@@ -100,6 +100,17 @@ def test_apply_overrides_scalar_for_config_field_raises_valueerror() -> None:
         apply_overrides(config, ["child=5"])
 
 
+def test_apply_overrides_path_through_a_scalar_field_raises_valueerror() -> None:
+    """A path that walks PAST a leaf scalar into a non-existent hop fails.
+
+    ``name`` is a plain ``str`` field; ``name.sub`` tries to traverse one hop
+    further, into the string value itself, which is not a config node.
+    """
+    config = NestedJob.Config()
+    with pytest.raises(ValueError, match="traverses non-config str"):
+        apply_overrides(config, ["name.sub=1"])
+
+
 def test_apply_overrides_empty_segment_paths_raise() -> None:
     """Paths with empty segments are rejected with a clear message."""
     config = NestedJob.Config()

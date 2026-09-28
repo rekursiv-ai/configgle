@@ -250,6 +250,24 @@ def test_constructor_type_check_opt_out_is_preserved() -> None:
     assert get_type_hints(Untyped.Config)["count"] is object
 
 
+def test_unannotated_parameter_resolves_to_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A constructor parameter with no annotation at all builds an object field."""
+    module = _compile_module(
+        "from configgle.decorator import autofig\n"
+        "\n"
+        "@autofig\n"
+        "class Loose:\n"
+        "    def __init__(self, count=1):\n"
+        "        self.count = count\n",
+        monkeypatch=monkeypatch,
+    )
+    loose = cast("type[HasRelaxedConfig[object]]", module.Loose)
+    assert get_type_hints(loose.Config)["count"] is object
+    assert _field(loose.Config().make(), "count") == 1
+
+
 def test_basic_decorator():
     @autofig
     class Foo:
@@ -601,6 +619,7 @@ def test_empty_constructor() -> None:
         "@staticmethod\n    def __init__(value: int = 1): pass",
         "@classmethod\n    def __init__(cls, value: int = 1): pass",
         "def __init__(*args): pass",
+        "def __new__(cls):\n        return super().__new__(cls)",
     ],
 )
 def test_unsupported_constructor_binding_rejected(

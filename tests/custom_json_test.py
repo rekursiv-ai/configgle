@@ -17,7 +17,7 @@ from collections.abc import (
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from types import GenericAlias, ModuleType, UnionType
+from types import GenericAlias, ModuleType, SimpleNamespace, UnionType, new_class
 from typing import (
     ClassVar,
     Literal,
@@ -41,15 +41,23 @@ import math
 import sys
 import weakref
 
+from hypothesis import (
+    given,
+    settings,
+    strategies as st,
+)
+
 import pytest
 
 from configgle.absent import ABSENT
 from configgle.custom_json import (
+    _GRAPH_DECLINED,
     BoolCodec,
     DataclassCodec,
     DatetimeCodec,
     DecodeCapabilities,
     DictCodec,
+    EnumCodec,
     FloatCodec,
     GraphHooks,
     IntCodec,
@@ -58,6 +66,10 @@ from configgle.custom_json import (
     ListCodec,
     SchemaError,
     StrCodec,
+    _cached_type_hints,
+    _GraphEncoder,
+    _GraphObjectCodec,
+    _ReduceCodec,
     decode,
     decode_graph,
     decode_or_none,
@@ -71,6 +83,40 @@ from configgle.custom_json import (
     resolve_import,
     take,
     validate_json_schema,
+)
+
+
+# Exclude NaN because equality cannot verify its round trip.
+_JSON_VALUES = st.recursive(
+    st.none()
+    | st.booleans()
+    | st.integers(min_value=-(2**53), max_value=2**53)
+    | st.floats(allow_nan=False, allow_infinity=False)
+    | st.text(max_size=16),
+    lambda children: (
+        st.lists(children, max_size=4)
+        | st.dictionaries(st.text(max_size=8), children, max_size=4)
+    ),
+    max_leaves=12,
+)
+
+
+_GRAPH_VALUES = st.recursive(
+    st.none()
+    | st.booleans()
+    | st.integers(min_value=-(2**53), max_value=2**53)
+    | st.floats(allow_nan=False, allow_infinity=False)
+    | st.text(max_size=16)
+    | st.binary(max_size=16)
+    | st.datetimes()
+    | st.decimals(allow_nan=False, allow_infinity=False),
+    lambda children: (
+        st.lists(children, max_size=4)
+        | st.dictionaries(st.text(max_size=8), children, max_size=4)
+        | st.tuples(children, children)
+        | st.frozensets(st.integers(max_value=64), max_size=4)
+    ),
+    max_leaves=10,
 )
 
 
@@ -123,6 +169,10 @@ class TestJsonFreeze:
     def test_rejects_non_string_mapping_keys(self) -> None:
         with pytest.raises(TypeError):
             json_freeze({1: "integer", "1": "string"})
+
+    def test_freeze_recurses_into_every_container(self) -> None:
+        frozen = json_freeze({"outer": [{"inner": [1, 2]}]})
+        assert frozen == {"outer": ({"inner": (1, 2)},)}
 
 
 class TestLoads:
@@ -208,6 +258,76 @@ class TestJsonUnfreeze:
     def test_rejects_non_string_keys_before_they_collide(self) -> None:
         with pytest.raises(TypeError):
             json_unfreeze({1: "integer", "1": "string"})
+
+
+# Keep properties at module level: mutmut reuses the interpreter, and
+# fresh test-class instances trigger Hypothesis's multiple-executors check.
+
+
+@given(_JSON_VALUES)
+def test_freeze_unfreeze_round_trips(value: object) -> None:
+    assert json_unfreeze(json_freeze(value)) == value
+
+
+@given(_JSON_VALUES, st.sampled_from([float("nan"), float("inf")]))
+def test_allow_nan_false_rejects_a_non_finite_at_any_depth(
+    value: object,
+    hidden: float,
+) -> None:
+    with pytest.raises(TypeError, match="non-finite"):
+        json_freeze({"outer": [value, {"inner": hidden}]}, allow_nan=False)
+
+
+@pytest.mark.parametrize("transform", [json_freeze, json_unfreeze])
+@pytest.mark.parametrize("non_finite", [float("nan"), float("inf"), float("-inf")])
+def test_allow_nan_true_survives_a_list_recursion(
+    transform: Callable[..., object],
+    non_finite: float,
+) -> None:
+    result = transform({"outer": [non_finite]}, allow_nan=True)
+    inner = cast(
+        float,
+        cast(Sequence[object], cast(Mapping[str, object], result)["outer"])[0],
+    )
+    assert math.isnan(inner) if math.isnan(non_finite) else inner == non_finite
+
+
+@settings(max_examples=50)
+@given(_GRAPH_VALUES)
+def test_graph_round_trips_through_encode_and_decode(value: object) -> None:
+    decoded = decode_graph(
+        encode_graph(value),
+        capabilities=DecodeCapabilities(resolve=resolve_import, apply_reduce=True),
+    )
+
+    assert decoded == value
+    assert type(decoded) is type(value)
+
+
+@settings(max_examples=50)
+@given(_JSON_VALUES)
+def test_a_value_shared_twice_stays_one_object_after_decoding(value: object) -> None:
+    shared = [value]
+    decoded = cast(
+        Sequence[object],
+        decode_graph(
+            encode_graph([shared, shared]),
+            capabilities=DecodeCapabilities(resolve=resolve_import, apply_reduce=True),
+        ),
+    )
+
+    assert decoded[0] is decoded[1]
+
+
+def test_a_cycle_survives_the_round_trip() -> None:
+    """Preserve a cycle, which the bottom-up strategies cannot generate."""
+    cyclic: list[object] = [1]
+    cyclic.append(cyclic)
+
+    decoded = cast(Sequence[object], decode_graph(encode_graph(cyclic)))
+
+    assert decoded[0] == 1
+    assert decoded[1] is decoded
 
 
 class TestBoolVal:
@@ -3202,6 +3322,173 @@ def _long_nested_helpers(source: str) -> list[str]:
         if node.end_lineno - node.body[0].lineno + 1 > 3:
             nested.append(node.name)
     return nested
+
+
+class _TwoSlots:
+    """Slotted and module-level, so ``py/object`` can name it."""
+
+    __slots__ = ("dropped", "kept")
+
+    def __init__(self) -> None:
+        self.kept = 1
+        self.dropped = 2
+
+
+_IMPORTING = DecodeCapabilities(resolve=resolve_import)
+_REDUCING = DecodeCapabilities(resolve=resolve_import, apply_reduce=True)
+_RESOLVES_TO_INT = DecodeCapabilities(resolve=len)
+
+
+class TestMalformedAndEdgeInput:
+    """Malformed input and edge values a caller can produce, one input each."""
+
+    @pytest.mark.parametrize(
+        ("annotation", "raw", "match"),
+        [
+            (list[int], "not-a-list", "cannot decode"),
+            (str, [1, 2], "cannot coerce"),
+            (UUID, 42, "as UUID"),
+            (datetime, 42, "as datetime"),
+            (datetime, "2026-01-01T00:00:00+00:00[]", "invalid named zone"),
+            (dict[str, int], 42, "cannot decode"),
+            (int | str, {"py/union": "nope", "py/value": 5}, "union tag"),
+            (complex, 5, "cannot decode"),
+            (None, {"py/raw": "not-a-sequence"}, "untyped JSON object"),
+            (None, {"py/raw": [[1]]}, "untyped JSON object"),
+            (None, {"py/raw": [[42, "v"]]}, "untyped JSON object"),
+            (None, {1: "x"}, "mapping key"),
+        ],
+    )
+    def test_decode_rejects_malformed_input(
+        self,
+        annotation: object,
+        raw: object,
+        match: str,
+    ) -> None:
+        with pytest.raises(TypeError, match=match):
+            decode(annotation, raw)
+
+    @pytest.mark.parametrize(
+        ("value", "annotation", "match"),
+        [
+            ([1, 2], Sequence[int] | MutableSequence[int], "ambiguous union member"),
+            ({42: "x"}, None, "mapping key"),
+            (object(), None, "cannot encode"),
+            (SimpleNamespace(), SimpleNamespace, "cannot encode"),
+            (None, int, "cannot encode None"),
+        ],
+    )
+    def test_encode_value_rejects_unencodable_input(
+        self,
+        value: object,
+        annotation: object,
+        match: str,
+    ) -> None:
+        with pytest.raises(TypeError, match=match):
+            encode_value(value, annotation)
+
+    @pytest.mark.parametrize(
+        ("tree", "capabilities", "match"),
+        [
+            ((1, 2, 3), None, "Unexpected JSON node"),
+            ({"py/reduce": [1]}, _REDUCING, "two to five elements"),
+            ({"py/reduce": [None, [1]]}, _REDUCING, "not callable"),
+            (
+                {"py/reduce": [{"py/type": "builtins.object"}, [], None, [1]]},
+                _REDUCING,
+                "cannot accept list items",
+            ),
+            (
+                {
+                    "py/reduce": [
+                        {"py/type": "builtins.object"},
+                        [],
+                        None,
+                        None,
+                        [[1, 2]],
+                    ],
+                },
+                _REDUCING,
+                "cannot accept dict items",
+            ),
+            (
+                {"py/hook": ["path", None]},
+                _RESOLVES_TO_INT,
+                "did not resolve to a type",
+            ),
+            ({"py/object": "path"}, _RESOLVES_TO_INT, "did not resolve to a type"),
+            ({"py/inline": ["builtins.object", "x"]}, _IMPORTING, "invalid py/inline"),
+            (
+                {"py/inline": ["builtins.object", {"x": 1}]},
+                _IMPORTING,
+                "py/inline protocol",
+            ),
+        ],
+    )
+    def test_decode_graph_rejects_malformed_trees(
+        self,
+        tree: object,
+        capabilities: DecodeCapabilities | None,
+        match: str,
+    ) -> None:
+        with pytest.raises(TypeError, match=match):
+            decode_graph(tree, capabilities=capabilities)
+
+    def test_coerce_without_a_default_raises(self) -> None:
+        with pytest.raises(TypeError, match="coerce"):
+            ListCodec.coerce("x", default=None)
+        with pytest.raises(TypeError, match="coerce"):
+            DictCodec.coerce("x", default=None)
+
+    @pytest.mark.parametrize("recipe", [42, (int,), (int, "x")])
+    def test_reduce_declines_a_malformed_recipe(self, recipe: object) -> None:
+        # ``reduce_for`` calls ``__reduce_ex__(2)``.
+        value = SimpleNamespace(__reduce_ex__={2: recipe}.get)
+        assert _ReduceCodec.encode_graph(value, _GraphEncoder({})) is _GRAPH_DECLINED
+
+    def test_reduce_declines_an_object_without_reduce_ex(self) -> None:
+        no_reduce = SimpleNamespace(__reduce_ex__=None)
+        assert _GraphEncoder({}).reduce_for(no_reduce) is _GRAPH_DECLINED
+
+    def test_union_members_fall_back(self) -> None:
+        assert decode(dict[str, int] | int, 5) == 5
+        assert decode(Callable[[int], int] | int, 5) == 5
+        assert decode(int | object, "x") == "x"
+
+    def test_decoded_values_pass_through(self) -> None:
+        moment = datetime(2026, 1, 1, tzinfo=UTC)
+        assert DatetimeCodec.coerce(moment) is moment
+        assert EnumCodec.decode(_Color.RED, _Color, decode=decode) is _Color.RED
+
+    def test_type_hints_skip_the_cache_for_an_unhashable_class(self) -> None:
+        meta = type("UnhashableMeta", (type,), {"__hash__": None})
+        assert (
+            _cached_type_hints(new_class("Unhashable", (), {"metaclass": meta})) == {}
+        )
+
+    def test_graph_object_slot_edges(self) -> None:
+        value = _TwoSlots()
+        del value.dropped
+        payload = _GraphObjectCodec.encode_graph(value, _GraphEncoder({}))
+        assert payload == {"py/object": _GraphObjectCodec.path(_TwoSlots), "kept": 1}
+        string_slots = type("StringSlots", (), {"__slots__": "x"})
+        assert _GraphObjectCodec.has_finalized_slot(string_slots) is False
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"version": 2, "order": [], "states": {}, "residual": {}},
+            {"version": 1, "order": "x", "states": {}, "residual": {}},
+            {"version": 1, "order": [], "states": "x", "residual": {}},
+            {"version": 1, "order": [], "states": {}, "residual": "x"},
+        ],
+    )
+    def test_replay_passes_a_malformed_envelope_through(
+        self,
+        fields: dict[str, object],
+    ) -> None:
+        stored = {"$__custom_json_fields__": fields}
+        assert replay(stored, {}) == stored
 
 
 if __name__ == "__main__":
