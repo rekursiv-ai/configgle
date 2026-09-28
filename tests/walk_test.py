@@ -13,7 +13,9 @@ import pytest
 from configgle.custom_types import LateBound
 from configgle.fig import Fig
 from configgle.walk import (
+    _finalize_value,
     _get_object_attribute_names,
+    _make_value,
     bind_late,
     copy_tree,
     traverse,
@@ -312,6 +314,41 @@ def test_copy_tree_preserves_namedtuple_type():
     assert copied == Pair(1, 2)
 
 
+def test_copy_tree_rebuilds_namedtuple_when_an_element_is_copied():
+    """A namedtuple holding a mutable element is reconstructed, not aliased."""
+
+    class Pair(NamedTuple):
+        a: list[int]
+        b: int
+
+    pair = Pair([1, 2], 3)
+    copied = copy_tree(pair)
+    assert isinstance(copied, Pair)
+    assert copied == Pair([1, 2], 3)
+    assert copied.a is not pair.a  # The mutable element was actually copied.
+
+
+def test_copy_tree_skips_an_unset_slot():
+    """A declared-but-unset slot on a data object is left unset, not raised on."""
+
+    class HasUnset:
+        __slots__ = ("set_attr", "unset_attr")
+
+        def __init__(self) -> None:
+            self.set_attr = 1
+            # Assigned then deleted, not left off entirely: the checker's
+            # unset-slot analysis reads __init__'s assignments, not runtime
+            # state, so a slot never assigned at all is a checker error
+            # (reportUninitializedInstanceVariable) rather than the declared-
+            # but-unset condition this test targets.
+            self.unset_attr = 0
+            del self.unset_attr
+
+    copied = copy_tree(HasUnset())
+    assert copied.set_attr == 1
+    assert not hasattr(copied, "unset_attr")
+
+
 def test_copy_tree_delegates_to_custom_method():
     """A config overriding ``copy_tree`` controls its own copy semantics."""
     sentinel: list[str] = []
@@ -446,6 +483,20 @@ def test_bind_late_does_not_bind_a_foreign_object_that_merely_has_bind():
                 self.transport = sock
 
         bind_late(Holder())  # Must not call sock.bind.
+
+
+def test_bind_late_skips_an_unset_slot():
+    """A declared-but-unset slot on a built object does not raise; it's skipped."""
+
+    class Holder:
+        __slots__ = ("set_attr", "unset_attr")
+
+        def __init__(self) -> None:
+            self.set_attr = 1
+            self.unset_attr = 0
+            del self.unset_attr
+
+    bind_late(Holder())  # Must not raise despite the unset slot.
 
 
 def test_bind_late_walks_a_torch_style_module_subtree():
@@ -592,6 +643,80 @@ def test_traverse_replace_rewrites_in_every_container_kind() -> None:
     assert list(traverse(cfg, _TLeaf.Config)) == []
 
 
+def test_traverse_replace_rewrites_a_direct_list_element() -> None:
+    """A match whose parent is a plain ``list`` is replaced by index."""
+    cfg = _stack()
+    for match in list(traverse(cfg, _TBlock.Config)):
+        match.replace(_TLeaf.Config(width=9))
+    assert all(isinstance(b, _TLeaf.Config) for b in cfg.blocks)
+
+
+def test_traverse_replace_rewrites_a_tuple_element_nested_in_a_list() -> None:
+    """A tuple inside a list: its element's parent is a ``_TupleSlot`` whose
+    OWN parent is the list.
+    """
+
+    class Holder:
+        class Config(Fig["Holder"]):
+            pairs: list[tuple[_TLeaf.Config, _TLeaf.Config]] = field(
+                default_factory=lambda: [(_TLeaf.Config(), _TLeaf.Config())],
+            )
+
+        def __init__(self, config: Config) -> None:
+            del config
+
+    cfg = Holder.Config()
+    for match in list(traverse(cfg, _TLeaf.Config)):
+        match.replace(_TNorm.Config(eps=0.5))
+    assert isinstance(cfg.pairs[0][0], _TNorm.Config)
+    assert isinstance(cfg.pairs[0][1], _TNorm.Config)
+
+
+def test_traverse_replace_rewrites_a_doubly_nested_tuple_element() -> None:
+    """A tuple nested in another tuple: the inner slot's parent is a slot too."""
+
+    class Holder:
+        class Config(Fig["Holder"]):
+            nested: tuple[tuple[_TLeaf.Config, _TLeaf.Config], ...] = field(
+                default_factory=lambda: ((_TLeaf.Config(), _TLeaf.Config()),),
+            )
+
+        def __init__(self, config: Config) -> None:
+            del config
+
+    cfg = Holder.Config()
+    for match in list(traverse(cfg, _TLeaf.Config)):
+        match.replace(_TNorm.Config(eps=0.5))
+    assert isinstance(cfg.nested[0][0], _TNorm.Config)
+    assert isinstance(cfg.nested[0][1], _TNorm.Config)
+
+
+def test_traverse_walks_into_a_set() -> None:
+    """Set members are walked, though a matched leaf has no writable slot."""
+    leaf = _Leaf("x")
+    (match,) = traverse({leaf}, _Leaf)
+    assert match.fqn == "{...}"
+    assert match.config is leaf
+
+
+def test_traverse_skips_an_unset_slot_on_a_data_object() -> None:
+    """A declared-but-unset slot on a walked node does not raise; it's skipped."""
+
+    class Holder:
+        __slots__ = ("set_attr", "unset_attr")
+
+        def __init__(self, leaf: _Leaf) -> None:
+            self.set_attr = leaf
+            self.unset_attr = leaf
+            del self.unset_attr
+
+    leaf = _Leaf("x")
+    holder = Holder(leaf)
+    # Must not raise on the unset slot, and still finds the set one.
+    (match,) = traverse(holder, _Leaf)
+    assert match.config is leaf
+
+
 def test_traverse_replace_on_root_raises() -> None:
     cfg = _stack()
     (root,) = traverse(cfg, _TStack.Config)
@@ -625,6 +750,68 @@ def test_traverse_skips_leaves_that_are_not_data() -> None:
     cfg = _stack()
     cfg.head.width = 3
     assert [m.fqn for m in traverse(cfg, int)] == []
+
+
+def test_make_value_defaults_and_preserves_an_unchanged_tuple() -> None:
+    """The top-level call supplies no ``made``/``making``; both default fresh."""
+    result = _make_value((1, 2, 3))
+    assert result == (1, 2, 3)
+    assert type(result) is tuple
+
+
+def test_make_value_rebuilds_a_namedtuple_of_makeables() -> None:
+    class Pair(NamedTuple):
+        a: object
+        b: object
+
+    pair = Pair(_Child.Config(v=3), _Child.Config(v=5))
+    result = _make_value(pair)
+    assert isinstance(result, Pair)
+    made_a = cast(_Child, result.a)
+    made_b = cast(_Child, result.b)
+    assert made_a.v == 3
+    assert made_b.v == 5
+
+
+class _Replacing:
+    """A ``Finalizeable`` whose ``finalize`` returns a DIFFERENT instance."""
+
+    def __init__(self, tag: str) -> None:
+        self.tag = tag
+
+    def finalize(self) -> _Replacing:
+        return _Replacing(self.tag + "!")
+
+
+def test_finalize_value_rebuilds_a_tuple_when_an_element_changes() -> None:
+    original = (_Replacing("a"), 1)
+    finalized = _finalize_value(original)
+    assert finalized is not original
+    assert finalized[0].tag == "a!"
+
+
+def test_finalize_value_rebuilds_a_namedtuple_when_an_element_changes() -> None:
+    class Pair(NamedTuple):
+        a: object
+        b: int
+
+    pair = Pair(_Replacing("a"), 1)
+    finalized = _finalize_value(pair)
+    assert isinstance(finalized, Pair)
+    assert cast(_Replacing, finalized.a).tag == "a!"
+
+
+def test_finalize_value_reassigns_a_changed_attribute_in_place() -> None:
+    class Holder:
+        __slots__ = ("child",)
+
+        def __init__(self, child: _Replacing) -> None:
+            self.child = child
+
+    holder = Holder(_Replacing("a"))
+    result = _finalize_value(holder)
+    assert result is holder  # The object itself is finalized in place.
+    assert holder.child.tag == "a!"
 
 
 if __name__ == "__main__":

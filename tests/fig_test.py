@@ -384,10 +384,14 @@ def test_make_isolates_nested_children():
 
 
 def test_dataclass_params_iter_skip_seen():
-    """Test _DataclassParams.__iter__ skips already seen slots (line 162)."""
-    params = _DataclassParams()
+    """A slot name redeclared by a subclass is yielded once, not twice."""
+
+    class RedeclaredSlotParams(_DataclassParams):
+        __slots__ = ("frozen",)  # Same name the base class already declares.
+
+    params = object.__new__(RedeclaredSlotParams)
     keys = list(params)
-    # Should not have duplicates.
+    assert keys.count("frozen") == 1
     assert len(keys) == len(set(keys))
 
 

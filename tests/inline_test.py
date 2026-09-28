@@ -336,6 +336,27 @@ def test_inline_config_update_skip_missing_filters_source_and_kwargs() -> None:
     assert cfg._kwargs == {"existing": 40}
 
 
+def test_inline_config_update_skip_missing_filters_a_non_dataclass_source() -> None:
+    """skip_missing also filters a plain-object source, not just a dataclass one."""
+
+    class Source:
+        def __init__(self) -> None:
+            self.existing = 40
+            self.source_only = 30
+
+    def build(**kwargs: object) -> dict[str, object]:
+        return kwargs
+
+    cfg = InlineConfig(build, existing=10)
+
+    # `Source` isn't a `Makeable` -- `update()` only cares that it's not None
+    # and not a dataclass, which `cast` proves to the checker without giving
+    # `Source` a real (unused) make/finalize/copy_tree/update implementation.
+    cfg.update(cast("Makeable[object]", Source()), skip_missing=True)
+
+    assert cfg._kwargs == {"existing": 40}
+
+
 def test_inline_config_update_non_dataclass_with_property():
     """Test InlineConfig.update from source with property that raises."""
 

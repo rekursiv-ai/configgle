@@ -23,12 +23,16 @@ from configgle.pprinting import (
     FigPrinter,
     _add_pipes_to_lines,
     _collapse_multiline_value,
+    _contains_repeated_string_whitespace,
     _filter_non_default_items,
+    _function_repr_children,
     _get_level_indents,
     _mask_memory_addresses,
     _qualify_function_reprs,
     _replace_char_at_column,
+    _replace_unquoted_function_repr,
     _should_add_continuation_pipes,
+    _string_token_spans,
     pformat,
     pprint,
 )
@@ -171,6 +175,42 @@ def test_function_qualification_handles_aliased_containers() -> None:
 
     expected = f"<function aliased_module.shared at {hex(id(function))}>"
     assert qualified == f"[[{expected}], [{expected}]]"
+
+
+def test_unquoted_function_repr_replace_is_a_noop_when_bare_repr_absent() -> None:
+    text = "no functions here"
+    result = _replace_unquoted_function_repr(
+        text,
+        "<function foo at 0x1>",
+        "<function mod.foo at 0x1>",
+    )
+    assert result is text
+
+
+def test_unquoted_function_repr_replace_skips_a_quoted_only_occurrence() -> None:
+    bare = "<function foo at 0x1>"
+    text = repr(bare)  # The only occurrence sits inside a string token.
+
+    result = _replace_unquoted_function_repr(text, bare, "<function mod.foo at 0x1>")
+
+    assert result == text
+
+
+def test_string_token_spans_returns_empty_on_an_unterminated_string() -> None:
+    assert _string_token_spans("x = '''unterminated") == []
+
+
+def test_function_repr_children_of_a_partial_includes_func_args_and_keywords() -> None:
+    def add(a: int, b: int, *, c: int = 0) -> int:
+        return a + b + c
+
+    bound = functools.partial(add, 1, c=2)
+
+    assert _function_repr_children(bound) == [add, 1, 2]
+
+
+def test_repeated_string_whitespace_check_treats_unparsable_text_as_true() -> None:
+    assert _contains_repeated_string_whitespace("'''unterminated") is True
 
 
 def test_owned_files_have_no_long_nested_functions() -> None:
@@ -711,6 +751,30 @@ class TestFilterNonDefaultItems:
 
         obj = RequiredFields(x=42)
         items: list[tuple[str, object]] = [("x", 42)]
+        result = _filter_non_default_items(obj, items)
+        assert result == items
+
+    def test_keeps_a_field_whose_eq_raises_against_its_default(self):
+        """A field whose comparison raises is shown, not hidden."""
+
+        class Explosive:
+            @override
+            def __eq__(self, other: object) -> bool:
+                raise RuntimeError("no comparison")
+
+            @override
+            def __hash__(self) -> int:
+                return 0
+
+        @dataclasses.dataclass(kw_only=True, slots=True)
+        class WithExplosiveDefault:
+            # A plain (non-factory) default: field.default must hold the
+            # actual value, not dataclasses.MISSING, to reach the `!=`
+            # comparison this test targets.
+            value: Explosive = dataclasses.field(default=Explosive())
+
+        obj = WithExplosiveDefault()
+        items: list[tuple[str, object]] = [("value", obj.value)]
         result = _filter_non_default_items(obj, items)
         assert result == items
 
