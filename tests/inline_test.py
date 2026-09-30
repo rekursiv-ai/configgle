@@ -125,6 +125,31 @@ def test_make_does_not_refinalize_an_already_finalized_inline_tree() -> None:
     assert finalized.make() == ("derived",)
 
 
+def test_finalized_copies_and_finalizes_once() -> None:
+    class Value:
+        class Config(Fig["Value"]):
+            parts: tuple[str, ...] = ()
+
+            @override
+            def finalize(self) -> Self:
+                self.parts = ("derived", *self.parts)
+                return super().finalize()
+
+        def __init__(self, config: Config) -> None:
+            self.parts = config.parts
+
+    def parts(value: Value) -> tuple[str, ...]:
+        return value.parts
+
+    source = InlineConfig(parts, Value.Config())
+    once = source.finalized()
+    twice = once.finalized()
+
+    assert source._finalized is False
+    assert (once._finalized, once is not source) == (True, True)
+    assert twice.make() == ("derived",)
+
+
 def test_inline_config_finalizes_a_shared_child_once() -> None:
     finalize_calls: list[None] = []
 

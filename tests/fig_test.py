@@ -281,7 +281,65 @@ def test_fig_finalize():
 
     # Finalize is in-place: it returns the same object, now finalized.
     assert finalized is cfg
-    assert getattr(cfg, "_finalized", False) is True
+    assert cfg._finalized is True
+
+
+class _MutableConfig(Fig):
+    x: int = 1
+
+
+class _FrozenConfig(Fig, frozen=True):
+    x: int = 1
+
+
+@pytest.mark.parametrize("config_type", [_MutableConfig, _FrozenConfig])
+def test_constructed_config_starts_unfinalized(config_type: type[Fig]) -> None:
+    """Every construction path yields a config whose ``_finalized`` is False."""
+    assert config_type()._finalized is False
+    assert config_type().copy_tree()._finalized is False
+    unpickled = cast(Fig, pickle.loads(pickle.dumps(config_type())))
+    assert unpickled._finalized is False
+    assert config_type.deserialize(config_type().serialize())._finalized is False
+
+
+def test_finalized_copies_then_finalizes_a_pending_config() -> None:
+    class TestConfig(Fig):
+        x: int = 1
+
+        @override
+        def finalize(self) -> Self:
+            self.x += 1
+            return super().finalize()
+
+    source = TestConfig()
+    result = source.finalized()
+
+    assert result is not source
+    assert (result.x, result._finalized) == (2, True)
+    assert (source.x, source._finalized) == (1, False)
+
+
+def test_finalized_does_not_refinalize_a_finalized_config() -> None:
+    class TestConfig(Fig):
+        x: int = 1
+
+        @override
+        def finalize(self) -> Self:
+            self.x += 1
+            return super().finalize()
+
+    source = TestConfig().finalize()
+    result = source.finalized()
+
+    assert result is not source
+    assert (result.x, result._finalized) == (2, True)
+
+
+def test_finalized_works_on_a_frozen_config() -> None:
+    class TestConfig(Fig, frozen=True):
+        x: int = 1
+
+    assert TestConfig().finalized()._finalized is True
 
 
 def test_finalize_is_in_place():

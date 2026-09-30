@@ -32,7 +32,8 @@ Key operations
   (tuple/frozenset) are preserved unless an element changed. This is the copy
   ``finalize`` needs before mutating; ``make``/``pprint`` apply it for you.
 - ``finalize(cfg)`` -- apply derived defaults in place (see below).
-- ``make(cfg)`` -- ``copy_tree().finalize()`` then construct the parent.
+- ``cfg.finalized()`` -- a finalized copy; ``finalize`` runs only if pending.
+- ``make(cfg)`` -- ``finalized()`` then construct the parent.
 - ``update(cfg, source, **kwargs)`` -- in-place attribute overrides from a
   source object and/or keywords (kwargs win); returns the config for chaining.
 
@@ -231,6 +232,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
     """
 
     __slots__: ClassVar[tuple[str, ...]] = ("_finalized",)
+    _finalized: bool  # pyright: ignore[reportUninitializedInstanceVariable] -- Set in ``__new__``, which pyright does not count; ``__init__`` is replaced by the dataclass one.
 
     if TYPE_CHECKING:
 
@@ -242,8 +244,20 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
     else:
         parent_class = _MakerParentClassDescriptor()
 
-    def __init__(self) -> None:
-        self._finalized = False
+        # Runtime-only: a checker that sees an untyped ``__new__`` infers a
+        # generic config's parameters from it instead of from the dataclass
+        # ``__init__``, and ``TrainLoop.Config(step=...)`` loses its step type.
+        def __new__(cls, *args: object, **kwargs: object) -> Self:
+            """Allocate a config whose ``_finalized`` starts False.
+
+            ``__new__``, not ``__init__``: the dataclass-generated ``__init__``
+            never chains to ``Maker``, while ``__new__`` runs on every path --
+            construction, ``copy.copy``, pickle, and graph deserialization.
+            """
+            del args, kwargs
+            self = super().__new__(cls)
+            object.__setattr__(self, "_finalized", False)
+            return self
 
     def make(self) -> _ParentT_co:
         """Finalize this config and instantiate its parent class.
@@ -281,6 +295,21 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         if visited is None:
             visited = {}
         return cast(Self, _copy_slots(self, visited))
+
+    def finalized(self) -> Self:
+        """Return a finalized copy, running ``finalize`` only if still pending.
+
+        This is the finalize-once boundary ``make`` uses. ``copy_tree`` preserves
+        ``_finalized``, so a config already finalized by an enclosing cascade is
+        copied without re-running a (possibly non-idempotent) ``finalize``. An
+        override of ``make`` builds from ``self.finalized()``.
+
+        Returns:
+          finalized: A copy of this config tree with ``_finalized=True``.
+
+        """
+        copied = self.copy_tree()
+        return copied if self._finalized else copied.finalize()
 
     def finalize(self) -> Self:
         """Apply derived defaults in place and mark this config finalized.
@@ -874,15 +903,12 @@ def make[ParentT](config: Maker[ParentT]) -> ParentT:
       ValueError: If the config is not nested in a parent class.
 
     """
-    # Finalize exactly once. ``copy_tree`` preserves ``_finalized``, so a config
-    # already finalized by an enclosing cascade -- the canonical parent whose
-    # ``__init__`` rebuilds a child via ``config.child.make()`` -- is built
-    # without re-running its ``finalize``. This is the idempotency contract for
-    # an un-mutated config: a non-idempotent body (e.g. one that prepends a path
-    # prefix) must not be applied twice. (Re-finalizing a config MUTATED after a
-    # prior finalize is out of contract and not guarded here.)
-    copied = config.copy_tree()
-    finalized = copied if getattr(copied, "_finalized", False) else copied.finalize()
+    # Finalize exactly once: a config already finalized by an enclosing cascade
+    # -- the canonical parent whose ``__init__`` rebuilds a child via
+    # ``config.child.make()`` -- is built without re-running its ``finalize``.
+    # (Re-finalizing a config MUTATED after a prior finalize is out of contract
+    # and not guarded here.)
+    finalized = config.finalized()
     cls = finalized.parent_class
     if cls is None:  # pyright: ignore[reportUnnecessaryComparison] -- parent_class is non-None per its annotation, but a Maker not nested in a class has none at runtime; the guard is a real runtime check.
         raise ValueError("Maker must be nested in a parent class")

@@ -77,8 +77,10 @@ Maker -- Core Methods
 ``Fig`` inherits from ``Maker``. The lifecycle is construct -> finalize ->
 make:
 
-- ``.make()`` -- ``copy_tree().finalize()`` then call ``parent_class(config)``
-  to build the object. The source config you pass is never mutated.
+- ``.make()`` -- ``finalized()`` then call ``parent_class(config)`` to build
+  the object. The source config you pass is never mutated.
+- ``.finalized()`` -- ``copy_tree()``, then ``finalize()`` unless the config is
+  already finalized. Build from this in an overridden ``make``.
 - ``.finalize()`` -- apply derived defaults IN PLACE and recursively finalize
   nested configs; returns ``self``. Override this to compute derived defaults
   (see below). It does NOT copy.
@@ -133,14 +135,15 @@ at the ``make``/``pprint`` boundary (``copy_tree().finalize()``), so a config is
 finalized once, on a fresh tree. A config passed to ``make()`` is left
 untouched.
 
-``copy_tree`` preserves ``_finalized``, and ``make`` skips ``finalize`` when it
-is already set -- so a parent's ``__init__`` may rebuild a child with
-``config.child.make()`` without re-running the child's derived defaults. A
-``finalize`` body may therefore assume one run per tree, but only for an
-UNMUTATED config: mutating after a finalize and finalizing again is out of
-contract and unguarded, so a non-idempotent body (prepending a path prefix,
-appending to a list) applies twice. Overriding ``make`` means reproducing that
-guard; ``finalize`` and ``copy_tree`` are the designed hooks.
+Every config starts with ``_finalized=False``; ``copy_tree`` preserves it, and
+``.finalized()`` returns a finalized copy, skipping ``finalize`` when it is
+already set. ``make`` builds from ``.finalized()``, so a parent's ``__init__``
+may rebuild a child with ``config.child.make()`` without re-running the child's
+derived defaults. A ``finalize`` body may therefore assume one run per tree, but
+only for an UNMUTATED config: mutating after a finalize and finalizing again is
+out of contract and unguarded, so a non-idempotent body (prepending a path
+prefix, appending to a list) applies twice. An override of ``make`` builds from
+``self.finalized()``; ``finalize`` and ``copy_tree`` are the designed hooks.
 
 Positional Fields (kw_only=False)
 ---------------------------------
