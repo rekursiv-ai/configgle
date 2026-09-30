@@ -82,6 +82,7 @@ if TYPE_CHECKING:
     from ty_extensions import Intersection
 
 
+from configgle.absent import ABSENT
 from configgle.custom_json import (
     DecodeCapabilities,
     GraphHooks,
@@ -645,14 +646,13 @@ class _DataclassParams:
         **kwargs: bool | _Default,
     ) -> _DataclassParams:
         new = _DataclassParams()
-        missing = object()
         for k in new:
             # Check kwargs first.
-            v = kwargs.get(k, missing)
-            if v is missing or isinstance(v, _Default):
+            v = kwargs.get(k, ABSENT)
+            if v is ABSENT or isinstance(v, _Default):
                 # Fall back to existing.
-                v = getattr(existing, k, missing)
-            if v is missing:
+                v = getattr(existing, k, ABSENT)
+            if v is ABSENT:
                 continue
             setattr(new, k, bool(v))
         return new

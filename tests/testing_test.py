@@ -98,6 +98,23 @@ def test_assert_pprint_golden_pins_rendering_policy(
     }
 
 
+def test_assert_pprint_golden_normalizes_rendered_text(tmp_path: Path) -> None:
+    test_file = tmp_path / "owner_test.py"
+    testdata = tmp_path / "testdata"
+    testdata.mkdir()
+    (testdata / "example.txt").write_text(
+        "_EXAMPLE.CONFIG(INHERITED=7)\n",
+        encoding="utf-8",
+    )
+
+    assert_pprint_golden(
+        test_file=str(test_file),
+        name="example",
+        config=_Example.Config(),
+        normalize=str.upper,
+    )
+
+
 def test_assert_pprint_golden_writes_full_unchanged_defaults(tmp_path: Path) -> None:
     test_file = tmp_path / "owner_test.py"
 
