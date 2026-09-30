@@ -78,16 +78,14 @@ class InlineConfig[T]:
     def make(self) -> T:
         """Finalize and invoke the wrapped function.
 
-        Finalizes a copy (``copy_tree`` then in-place ``finalize``) so the
-        original config is left untouched, matching ``Maker.make``.
+        Builds from ``finalized()`` so the original config is left untouched and
+        an already-finalized tree is not finalized again, matching ``Maker.make``.
 
         Returns:
           result: Result of calling func(*args, **kwargs).
 
         """
-        r = self.copy_tree()
-        if not r._finalized:  # noqa: SLF001 -- The implementation must inspect its private config state.
-            r = r.finalize()
+        r = self.finalized()
         made: dict[int, object] = {}
         making = {id(r)}
         args = _make_value(r._args, made, making)  # noqa: SLF001 -- The implementation must inspect its private config state.
@@ -115,6 +113,11 @@ class InlineConfig[T]:
         r._args = [copy_tree(v, visited) for v in r._args]  # noqa: SLF001 -- The implementation must inspect its private config state.
         r._kwargs = {k: copy_tree(v, visited) for k, v in r._kwargs.items()}  # noqa: SLF001 -- The implementation must inspect its private config state.
         return r
+
+    def finalized(self) -> Self:
+        """Return a finalized copy, running ``finalize`` only if still pending."""
+        copied = self.copy_tree()
+        return copied if self._finalized else copied.finalize()
 
     def finalize(self) -> Self:
         """Finalize nested configs in place and mark this config finalized.
