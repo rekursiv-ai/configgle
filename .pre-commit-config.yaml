@@ -545,7 +545,7 @@ repos:
             done;
             ((${#sources[@]})) || exit 0;
             include=$(IFS=,; printf "%s" "${sources[*]}");
-            report=$(uv --quiet run --frozen --group pre-commit coverage report --skip-covered --precision=1 --sort=cover --include="$include") && { printf "%s\n" "$report"; exit 0; };
+            report=$(uv --quiet run --frozen --group pre-commit coverage report --skip-covered --precision=1 --sort=cover --include="$include");
             status=$?;
             [ "$report" = "No data to report." ] && exit 0;
             printf "%s\n" "$report";
