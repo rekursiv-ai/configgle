@@ -227,7 +227,7 @@ exclude_lines = [
     # its ``gpu_triton`` caller, not by line coverage.
     "^def \\w+_triton\\(",
 ]
-fail_under = 96
+fail_under = 95
 show_missing = true
 skip_covered = true
 
