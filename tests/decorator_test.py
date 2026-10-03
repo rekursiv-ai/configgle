@@ -238,6 +238,21 @@ def test_constructor_type_parameter_is_preserved() -> None:
     assert Generic.Config().make().value is None
 
 
+def test_constructor_type_parameter_shadows_class_attribute() -> None:
+    """A constructor type parameter outranks a class attribute of the same name."""
+
+    @autofig
+    class Shadowed:
+        T = int
+
+        def __init__[T](self, value: T | None = None, fallback: T | None = None):
+            self.value = value
+            self.fallback = fallback
+
+    annotation = cast(object, get_type_hints(Shadowed.Config)["value"])
+    assert isinstance(get_args(annotation)[0], TypeVar)
+
+
 def test_constructor_type_check_opt_out_is_preserved() -> None:
     """An explicit typing opt-out retains the existing untyped field contract."""
 

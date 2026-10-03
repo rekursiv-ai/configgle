@@ -127,12 +127,16 @@ def _autofig[T](
         for name, value in cast(Mapping[str, object], vars(base)).items()
     }
     localns[owner.__name__] = owner
-    type_params = cast(
-        "tuple[TypeVar | ParamSpec | TypeVarTuple, ...]",
-        getattr(owner, "__type_params__", ()),
-    )
-    for param in type_params:
-        localns[param.__name__] = param
+    # Type parameters bind here, the constructor's last as the innermost scope,
+    # rather than through get_type_hints' own __type_params__ handling: before
+    # Python 3.12.4 that ignored them, so a constructor-only TypeVar raised
+    # NameError or resolved to a same-named class attribute.
+    for scope in (owner, constructor):
+        for param in cast(
+            "tuple[TypeVar | ParamSpec | TypeVarTuple, ...]",
+            getattr(scope, "__type_params__", ()),
+        ):
+            localns[param.__name__] = param
     resolve = partial(
         _resolve_annotation,
         constructor=constructor,
@@ -215,10 +219,6 @@ def _resolve_annotation(
             get_type_hints(
                 SimpleNamespace(
                     __annotations__={name: annotation},
-                    __type_params__=cast(
-                        object,
-                        getattr(constructor, "__type_params__", ()),
-                    ),
                     __no_type_check__=cast(
                         object,
                         getattr(constructor, "__no_type_check__", False),
