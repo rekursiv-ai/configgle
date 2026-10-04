@@ -54,12 +54,12 @@ def _write_or_compare(golden: Path, rendered: str, *, name: str) -> None:
     missing = not golden.exists()
     if missing or os.environ.get(_ENV_REGENERATE) == "1":
         golden.parent.mkdir(parents=True, exist_ok=True)
-        golden.write_text(rendered, encoding="utf-8")
+        golden.write_bytes(rendered.encode())
     if missing:
         raise AssertionError(
             f"Missing golden regenerated at {golden}; inspect it, then rerun the test.",
         )
-    expected = golden.read_text(encoding="utf-8")
+    expected = golden.read_bytes().decode()
     if expected == rendered:
         return
     diff = "".join(

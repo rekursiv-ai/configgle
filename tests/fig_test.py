@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import field
-from typing import TYPE_CHECKING, NamedTuple, Self, cast, override
+from typing import TYPE_CHECKING, NamedTuple, Protocol, Self, cast, override
 
 import dataclasses
 import io
@@ -13,7 +13,8 @@ import threading
 import cloudpickle
 import pytest
 
-from configgle import InlineConfig, LateBound, Makeable, PartialConfig
+from configgle import InlineConfig, LateBound, Makeable, PartialConfig, fig
+from configgle.decorator import autofig
 from configgle.fig import (
     Fig,
     Maker,
@@ -25,6 +26,8 @@ from configgle.fig import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from configgle.custom_json import DecodeCapabilities, GraphHooks
 
 
 class BaseConfig(Fig):
@@ -191,6 +194,21 @@ def test_default_bool_and_repr():
     d_zero = _Default(0)
     assert bool(d_zero) is False
     assert repr(d_zero) == "0"
+
+
+def test_dataclass_params_default_values_are_exact() -> None:
+    """Dataclass compatibility defaults remain stable."""
+    params = _DataclassParams()
+    assert params.init is True
+    assert params.repr is True
+    assert params.eq is True
+    assert params.order is False
+    assert params.unsafe_hash is False
+    assert params.frozen is False
+    assert params.match_args is True
+    assert params.kw_only is True
+    assert params.slots is True
+    assert params.weakref_slot is True
 
 
 def test_dataclass_params_repr():
@@ -451,6 +469,7 @@ def test_dataclass_params_iter_skip_seen():
     keys = list(params)
     assert keys.count("frozen") == 1
     assert len(keys) == len(set(keys))
+    assert "weakref_slot" in keys
 
 
 def test_dataclass_params_create_missing_value():
@@ -464,6 +483,36 @@ def test_dataclass_params_create_missing_value():
     # Should inherit from existing.
     assert new.init is True
     assert new.repr is True
+    assert new.kw_only is True
+
+
+def test_dataclass_params_create_preserves_nondefault_existing_values() -> None:
+    """Creation inherits every explicit value from the existing parameters."""
+    existing = _DataclassParams(
+        init=False,
+        repr=False,
+        eq=False,
+        order=True,
+        unsafe_hash=True,
+        frozen=True,
+        match_args=False,
+        kw_only=False,
+        slots=False,
+        weakref_slot=False,
+    )
+    new = _DataclassParams.create(existing)
+    assert list(new) == list(existing)
+    assert all(getattr(new, key) is getattr(existing, key) for key in new)
+
+
+def test_dataclass_params_create_keeps_defaults_for_missing_values() -> None:
+    """Creation leaves default values when existing fields are absent."""
+    existing = object.__new__(_DataclassParams)
+    existing.init = False
+    new = _DataclassParams.create(existing)
+    assert new.init is False
+    assert new.repr is True
+    assert new.kw_only is True
 
 
 def test_fig_update_skip_missing():
@@ -596,7 +645,7 @@ def test_makeable_covariance():
     """Makeable[Base] should accept Derived.Config (Derived <: Base)."""
     cfg: Makeable[Base] = Derived.Config()
     result = cfg.make()
-    assert isinstance(result, Base)
+    assert result.y == 2.0
 
 
 def test_inline_config_satisfies_makeable():
@@ -1027,7 +1076,7 @@ def test_failed_child_finalize_leaves_parent_retryable() -> None:
     config = Parent.Config()
     with pytest.raises(ValueError, match="child failed"):
         config.finalize()
-    assert not config._finalized
+    assert config._finalized is False
     config.child.fail = False
 
     made = config.make()
@@ -1347,6 +1396,345 @@ def test_parent_rebuilding_child_in_init_finalizes_child_once():
     """
     built = _RebuildingParent.Config().make()
     assert built.child.n == 1  # `finalized` once, not twice.
+
+
+def test_make_with_kwargs_passes_every_dataclass_field() -> None:
+    """Decorator-generated configs construct parents from exact field kwargs."""
+
+    @autofig
+    class KwargsParent:
+        def __init__(self, alpha: int = 2, beta: str = "b"):
+            self.values = (alpha, beta)
+
+    obj = KwargsParent.Config(alpha=7, beta="chosen").make()
+    assert obj.values == (7, "chosen")
+
+
+def test_make_without_kwargs_passes_the_finalized_config() -> None:
+    """Ordinary nested configs receive the same finalized config object shape."""
+    seen: list[object] = []
+
+    class Parent:
+        class Config(Fig["Parent"]):
+            value: int = 1
+
+        def __init__(self, config: Config) -> None:
+            seen.append(config)
+            self.value = config.value
+
+    config = Parent.Config(value=9)
+    obj = config.make()
+    assert obj.value == 9
+    assert len(seen) == 1
+    assert isinstance(seen[0], Parent.Config)
+    assert seen[0]._finalized is True
+
+
+def test_update_skip_missing_continues_after_unknown_source_field() -> None:
+    """Unknown source fields do not prevent later accepted fields from copying."""
+
+    class Source(Fig):
+        extra: int = 1
+        x: int = 8
+
+    class Config(Fig):
+        x: int = 0
+
+    config = Config()
+    config.update(Source(), skip_missing=True)
+    assert config.x == 8
+    assert not hasattr(config, "extra")
+
+
+def test_repr_pretty_cycle_uses_the_config_type_name() -> None:
+    """IPython cycle rendering identifies the concrete config class."""
+
+    class Config(Fig):
+        value: int = 0
+
+    class Printer:
+        def __init__(self) -> None:
+            self.texts: list[str] = []
+
+        def text(self, text: str) -> None:
+            self.texts.append(text)
+
+    config = Config()
+    printer = Printer()
+    config._repr_pretty_(printer, cycle=True)
+    assert printer.texts == ["Config(...)"]
+
+
+def test_pformat_forwards_all_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Config formatting forwards every public option unchanged."""
+    calls: dict[str, object] = {}
+
+    def fake_pformat(config: object, **kwargs: object) -> str:
+        calls["config"] = config
+        calls.update(kwargs)
+        return "formatted"
+
+    monkeypatch.setattr(fig, "pformat", fake_pformat)
+    config = Parent.Config()
+    assert (
+        config.pformat(
+            indent=3,
+            width=41,
+            depth=5,
+            compact=True,
+            sort_dicts=True,
+            underscore_numbers=False,
+            finalize=False,
+            mask_memory_addresses=False,
+            extra_compact=False,
+            continuation_pipe=7,
+            hide_default_values=False,
+            short_sequence_max_width=9,
+        )
+        == "formatted"
+    )
+    assert calls == {
+        "config": config,
+        "indent": 3,
+        "width": 41,
+        "depth": 5,
+        "compact": True,
+        "sort_dicts": True,
+        "underscore_numbers": False,
+        "finalize": False,
+        "mask_memory_addresses": False,
+        "extra_compact": False,
+        "continuation_pipe": 7,
+        "hide_default_values": False,
+        "short_sequence_max_width": 9,
+    }
+
+
+def test_pprint_forwards_all_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Config printing forwards every public option unchanged."""
+    calls: dict[str, object] = {}
+
+    def fake_pprint(config: object, **kwargs: object) -> None:
+        calls["config"] = config
+        calls.update(kwargs)
+
+    monkeypatch.setattr(fig, "pprint", fake_pprint)
+    config = Parent.Config()
+    config.pprint(
+        stream=io.StringIO(),
+        indent=3,
+        width=41,
+        depth=5,
+        compact=True,
+        sort_dicts=True,
+        underscore_numbers=False,
+        finalize=False,
+        mask_memory_addresses=False,
+        extra_compact=False,
+        continuation_pipe=7,
+        hide_default_values=False,
+        short_sequence_max_width=9,
+    )
+    assert calls["config"] is config
+    assert calls["indent"] == 3
+    assert calls["width"] == 41
+    assert calls["depth"] == 5
+    assert calls["stream"] is not None
+    assert calls["compact"] is True
+    assert calls["sort_dicts"] is True
+    assert calls["underscore_numbers"] is False
+    assert calls["finalize"] is False
+    assert calls["mask_memory_addresses"] is False
+    assert calls["extra_compact"] is False
+    assert calls["continuation_pipe"] == 7
+    assert calls["hide_default_values"] is False
+    assert calls["short_sequence_max_width"] == 9
+
+
+def test_make_reports_unbound_config() -> None:
+    """Making a standalone Fig reports its missing parent class."""
+    with pytest.raises(ValueError, match=r"^Maker must be nested in a parent class$"):
+        Fig().make()
+
+
+def test_make_with_kwargs_defaults_to_false() -> None:
+    """Configs without an explicit kwargs mode use positional construction."""
+    assert Fig.make_with_kwargs is False
+
+
+def test_update_applies_all_source_and_keyword_fields() -> None:
+    """Update continues past unknown source and keyword fields."""
+
+    class Source(Fig):
+        a: int = 4
+        unknown: int = 5
+
+    config = Parent.Config()
+    config.update(Source(), skip_missing=True, unknown=7, b=8)
+    assert config.a == 4
+    assert config.b == 8
+
+
+def test_update_defaults_to_rejecting_unknown_source_fields() -> None:
+    """The default update mode does not silently discard unknown fields."""
+
+    class Source(Fig):
+        unknown: int = 1
+
+    with pytest.raises(AttributeError):
+        fig.update(Parent.Config(), Source())
+
+
+def test_update_continues_after_a_source_attribute_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed source read does not hide later source fields."""
+
+    class Source:
+        def __init__(self) -> None:
+            self.value = 9
+
+        @override
+        def __dir__(self) -> list[str]:
+            return ["aaa_broken", "value"]
+
+        @override
+        def __getattribute__(self, name: str) -> object:
+            if name == "aaa_broken":
+                raise AttributeError(name)
+            assert name == "value"
+            return 9
+
+    class Config(Fig):
+        value: int = 0
+
+    source = Source()
+    with pytest.raises(AttributeError):
+        object.__getattribute__(source, "aaa_broken")
+
+    def attribute_names(_: object) -> list[str]:
+        return ["aaa_broken", "value"]
+
+    monkeypatch.setattr(fig, "_get_object_attribute_names", attribute_names)
+    assert Config().update(source).value == 9  # pyright: ignore[reportArgumentType] -- The malformed source exercises attribute filtering.  # ty: ignore[invalid-argument-type] -- The malformed source exercises attribute filtering.
+
+
+def test_finalize_replaces_a_child_when_finalize_returns_a_new_object() -> None:
+    """A child finalize result is stored back on its parent."""
+
+    class Child:
+        def finalize(self) -> Self:
+            return type(self)()
+
+    class ParentConfig(Fig):
+        child: object = field(default_factory=Child)
+
+    config = ParentConfig()
+    original = config.child
+    config.finalize()
+    assert config.child is not original
+
+
+def test_serialize_and_deserialize_forward_hooks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Serialization methods pass custom hooks and decode capabilities."""
+    hooks: GraphHooks = {}
+    encoded = object()
+
+    def fake_encode(config: object, *, hooks: GraphHooks) -> tuple[object, GraphHooks]:
+        return config, hooks
+
+    def fake_decode(
+        tree: object,
+        *,
+        hooks: GraphHooks,
+        capabilities: DecodeCapabilities,
+    ) -> tuple[object, GraphHooks, bool]:
+        return tree, hooks, capabilities.apply_reduce
+
+    monkeypatch.setattr(fig, "encode_graph", fake_encode)
+    monkeypatch.setattr(fig, "decode_graph", fake_decode)
+    config = Parent.Config()
+    assert config.serialize(hooks=hooks) == (config, hooks)
+    assert config.deserialize(encoded, hooks=hooks) == (encoded, hooks, True)
+
+
+def test_makes_alias_exposes_origin_and_type_argument() -> None:
+    """Makes subscription retains generic metadata without entering the MRO."""
+
+    class Alias(Protocol):
+        __origin__: object
+        __args__: tuple[object, ...]
+
+        def __mro_entries__(self, bases: object) -> tuple[()]: ...
+
+    alias = cast(Alias, cast(object, Makes[Parent]))
+    assert alias.__origin__ is Makes
+    assert alias.__args__ == (Parent,)
+    assert alias.__mro_entries__((alias,)) == ()
+
+
+def test_pformat_default_options_are_forwarded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pformat's defaults preserve the documented rendering policy."""
+    calls: dict[str, object] = {}
+
+    def fake_pformat(config: object, **kwargs: object) -> str:
+        calls["config"] = config
+        calls.update(kwargs)
+        return "formatted"
+
+    monkeypatch.setattr(fig, "pformat", fake_pformat)
+    config = Parent.Config()
+    assert config.pformat() == "formatted"
+    assert calls == {
+        "config": config,
+        "indent": 8,
+        "width": 80,
+        "depth": None,
+        "compact": False,
+        "sort_dicts": False,
+        "underscore_numbers": True,
+        "finalize": True,
+        "mask_memory_addresses": True,
+        "extra_compact": True,
+        "continuation_pipe": 50,
+        "hide_default_values": True,
+        "short_sequence_max_width": 40,
+    }
+
+
+def test_pprint_default_options_are_forwarded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pprint's defaults preserve the documented rendering policy."""
+    calls: dict[str, object] = {}
+
+    def fake_pprint(config: object, **kwargs: object) -> None:
+        calls["config"] = config
+        calls.update(kwargs)
+
+    monkeypatch.setattr(fig, "pprint", fake_pprint)
+    config = Parent.Config()
+    config.pprint()
+    assert calls == {
+        "config": config,
+        "stream": None,
+        "indent": 8,
+        "width": 80,
+        "depth": None,
+        "compact": False,
+        "sort_dicts": False,
+        "underscore_numbers": True,
+        "finalize": True,
+        "mask_memory_addresses": True,
+        "extra_compact": True,
+        "continuation_pipe": 50,
+        "hide_default_values": True,
+        "short_sequence_max_width": 40,
+    }
 
 
 if __name__ == "__main__":

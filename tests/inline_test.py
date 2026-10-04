@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Self, cast, override
+from typing import Protocol, Self, cast, override
 
 import copy
 import dataclasses
@@ -13,6 +13,10 @@ from configgle.custom_json import encode_graph
 from configgle.custom_types import Makeable, MutableNamespace
 from configgle.fig import Fig
 from configgle.inline import InlineConfig, PartialConfig
+
+
+class _DynamicLookup(Protocol):
+    def __getattr__(self, key: str) -> object: ...
 
 
 def test_inline_config_owns_its_graph_recipe() -> None:
@@ -223,6 +227,17 @@ def test_inline_config_make_rejects_a_self_cycle() -> None:
 
     config = InlineConfig(identity)
     config.value = config
+
+    with pytest.raises(ValueError, match="cyclic Makeable"):
+        config.make()
+
+
+def test_inline_config_make_rejects_a_positional_self_cycle() -> None:
+    def identity(value: object) -> object:
+        return value
+
+    config = InlineConfig(identity)
+    config._args.append(config)
 
     with pytest.raises(ValueError, match="cyclic Makeable"):
         config.make()
@@ -471,6 +486,152 @@ def test_setattr_fallback_before_kwargs_initialized():
     # the except AttributeError path to object.__setattr__.
     cfg.custom = "value"
     assert object.__getattribute__(cfg, "custom") == "value"
+
+
+def test_inline_config_reads_reserved_attributes_after_missing_dynamic_key() -> None:
+    """Dynamic lookup reports the missing key after checking kwargs."""
+    config: InlineConfig[str] = InlineConfig(str)
+    assert config.func is str
+    lookup: _DynamicLookup = config
+    with pytest.raises(AttributeError, match="missing"):
+        lookup.__getattr__("missing")
+
+
+def test_inline_config_custom_graph_initializer() -> None:
+    """Graph decoding can populate an allocated InlineConfig instance."""
+    config: InlineConfig[object] = InlineConfig(object)
+    config.__custom_json_inline_init__(str, [7], {"base": 8})
+    assert config.func is str
+    assert config._args == [7]
+    assert config._kwargs == {"base": 8}
+    assert config._finalized is False
+
+
+def test_inline_config_make_reuses_shared_nested_config_across_args_and_kwargs() -> (
+    None
+):
+    """Making preserves identity when one nested config appears twice."""
+
+    class Value:
+        class Config(Fig["Value"]):
+            value: int = 1
+
+        def __init__(self, config: Config):
+            self.value = config.value
+
+    def make_pair(left: object, *, right: object) -> tuple[object, object]:
+        return left, right
+
+    shared = Value.Config()
+    config = InlineConfig(make_pair, shared, right=shared)
+    left, right = config.make()
+    assert left is right
+
+
+def test_inline_config_reserved_slots_and_equality() -> None:
+    """Reserved slots remain ordinary attributes and equality is type-sensitive."""
+    config = InlineConfig(str)
+    config.func = repr
+    assert config.func is repr
+    assert config == InlineConfig(repr)
+    assert config != InlineConfig(str)
+    assert config != object()
+
+
+def test_inline_config_finalized_copy_skips_second_finalize() -> None:
+    """A finalized copy is not finalized again."""
+    calls: list[None] = []
+
+    class Child:
+        def finalize(self) -> Self:
+            calls.append(None)
+            return self
+
+    def identity(value: object) -> object:
+        return value
+
+    child = Child()
+    config = InlineConfig(identity, child)
+    finalized = config.finalized()
+    finalized.finalized()
+    assert len(calls) == 1
+
+
+def test_inline_config_update_dataclass_skips_then_continues() -> None:
+    """Skipping an unknown dataclass field does not stop later fields."""
+
+    @dataclasses.dataclass(kw_only=True, slots=True)
+    class Source:
+        source_only: int = 1
+        existing: int = 2
+
+    def collect(**kwargs: object) -> dict[str, object]:
+        return kwargs
+
+    config = InlineConfig(collect, existing=0)
+    config.update(Source(), skip_missing=True)
+    assert config._kwargs == {"existing": 2}
+
+
+def test_inline_config_dataclass_branch_copies_callable_fields() -> None:
+    """Dataclass fields are copied even when their values are callable."""
+
+    @dataclasses.dataclass(kw_only=True, slots=True)
+    class Source:
+        callback: object = print
+
+    def collect(**kwargs: object) -> dict[str, object]:
+        return kwargs
+
+    config = InlineConfig(collect)
+    config.update(Source())
+    assert config._kwargs == {"callback": print}
+
+
+def test_inline_config_update_non_dataclass_skips_private_then_continues() -> None:
+    """Private source attributes are ignored without truncating traversal."""
+
+    class Source:
+        _private = 1
+        existing = 2
+
+    def collect(**kwargs: object) -> dict[str, object]:
+        return kwargs
+
+    config = InlineConfig(collect, existing=0)
+    config.update(cast("Makeable[object]", Source()))
+    assert config._kwargs["existing"] == 2
+    assert "_private" not in config._kwargs
+
+
+def test_inline_config_update_non_dataclass_skips_unknown_then_continues() -> None:
+    """Unknown public attributes do not stop later accepted attributes."""
+
+    class Source:
+        aaa_unknown = 1
+        existing = 2
+
+        @override
+        def __dir__(self) -> list[str]:
+            return ["aaa_unknown", "existing"]
+
+    def collect(**kwargs: object) -> dict[str, object]:
+        return kwargs
+
+    config = InlineConfig(collect, existing=0)
+    config.update(cast("Makeable[object]", Source()), skip_missing=True)
+    assert config._kwargs == {"existing": 2}
+
+
+def test_inline_config_update_kwargs_skips_then_continues() -> None:
+    """Unknown keyword overrides are ignored without stopping later overrides."""
+
+    def collect(**kwargs: object) -> dict[str, object]:
+        return kwargs
+
+    config = InlineConfig(collect, existing=0)
+    config.update(skip_missing=True, unknown=1, existing=2)
+    assert config._kwargs == {"existing": 2}
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import field
-from typing import TYPE_CHECKING, NamedTuple, Self, cast, override
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, ClassVar, NamedTuple, Self, cast, override
 
 import collections
 import random
@@ -132,6 +132,22 @@ def test_get_object_attribute_names_skips_internal_attrs():
     names = set(_get_object_attribute_names(obj))
     assert "real" in names
     assert "_finalized" not in names
+
+
+def test_get_object_attribute_names_deduplicates_slot_and_dict_names():
+    class Base:
+        __slots__ = ("shared",)
+
+        def __init__(self) -> None:
+            self.shared = 1
+
+    class Derived(Base):
+        __slots__ = ("__dict__",)
+
+    obj = Derived()
+    vars(obj)["shared"] = 2
+    names = list(_get_object_attribute_names(obj))
+    assert names.count("shared") == 1
 
 
 def test_get_object_attribute_names_empty_slots():
@@ -324,7 +340,7 @@ def test_copy_tree_rebuilds_namedtuple_when_an_element_is_copied():
 
     pair = Pair([1, 2], 3)
     copied = copy_tree(pair)
-    assert isinstance(copied, Pair)
+    assert type(copied) is Pair
     assert copied == Pair([1, 2], 3)
     assert copied.a is not pair.a  # The mutable element was actually copied.
 
@@ -749,6 +765,27 @@ def test_traverse_replace_rewrites_a_tuple_element_nested_in_a_list() -> None:
     assert isinstance(cfg.pairs[0][1], _TNorm.Config)
 
 
+def test_traverse_replace_rebuilds_a_namedtuple_tuple_slot() -> None:
+    class Pair(NamedTuple):
+        left: _TLeaf.Config
+        right: _TLeaf.Config
+
+    class Holder:
+        class Config(Fig["Holder"]):
+            pair: Pair = field(
+                default_factory=lambda: Pair(_TLeaf.Config(), _TLeaf.Config()),
+            )
+
+        def __init__(self, config: Config) -> None:
+            del config
+
+    cfg = Holder.Config()
+    for match in list(traverse(cfg, _TLeaf.Config)):
+        match.replace(_TNorm.Config(eps=0.5))
+    assert isinstance(cfg.pair, Pair)
+    assert all(isinstance(item, _TNorm.Config) for item in cfg.pair)
+
+
 def test_traverse_replace_rewrites_a_doubly_nested_tuple_element() -> None:
     """A tuple nested in another tuple: the inner slot's parent is a slot too."""
 
@@ -797,7 +834,10 @@ def test_traverse_skips_an_unset_slot_on_a_data_object() -> None:
 def test_traverse_replace_on_root_raises() -> None:
     cfg = _stack()
     (root,) = traverse(cfg, _TStack.Config)
-    with pytest.raises(ValueError, match="root"):
+    with pytest.raises(
+        ValueError,
+        match=r"^The root of a traversal has no parent to replace it in\.$",
+    ):
         root.replace(_TStack.Config())
 
 
@@ -843,7 +883,7 @@ def test_make_value_rebuilds_a_namedtuple_of_makeables() -> None:
 
     pair = Pair(_Child.Config(v=3), _Child.Config(v=5))
     result = _make_value(pair)
-    assert isinstance(result, Pair)
+    assert type(result) is Pair
     made_a = cast(_Child, result.a)
     made_b = cast(_Child, result.b)
     assert made_a.v == 3
@@ -874,7 +914,7 @@ def test_finalize_value_rebuilds_a_namedtuple_when_an_element_changes() -> None:
 
     pair = Pair(_Replacing("a"), 1)
     finalized = _finalize_value(pair)
-    assert isinstance(finalized, Pair)
+    assert type(finalized) is Pair
     assert cast(_Replacing, finalized.a).tag == "a!"
 
 
@@ -889,6 +929,400 @@ def test_finalize_value_reassigns_a_changed_attribute_in_place() -> None:
     result = _finalize_value(holder)
     assert result is holder  # The object itself is finalized in place.
     assert holder.child.tag == "a!"
+
+
+def test_copy_tree_preserves_shared_identity_in_immutable_containers() -> None:
+    class Leaf(Fig, eq=False):
+        value: int = 0
+
+    shared = Leaf()
+    copied = copy_tree((shared, shared))
+    assert copied[0] is copied[1]
+    assert copied[0] is not shared
+
+    copied_set = copy_tree(frozenset({shared}))
+    copied_member = next(iter(copied_set))
+    assert copied_member is not shared
+
+
+def test_copy_tree_copies_mapping_keys_and_set_members() -> None:
+    class Leaf(Fig, eq=False):
+        value: int = 0
+
+    key = Leaf()
+    source = {key: {key}}
+    copied = copy_tree(source)
+    copied_key = next(iter(copied))
+    copied_member = next(iter(copied[copied_key]))
+    assert copied_key is copied_member
+    assert copied_key is not key
+    assert copied_key.value == 0
+
+
+def test_copy_tree_copies_dataclass_fields() -> None:
+    @dataclass(kw_only=True, slots=True)
+    class Holder:
+        child: _Child.Config
+
+    child = _Child.Config()
+    copied = copy_tree(Holder(child=child))
+    assert copied is not None
+    assert copied.child is not child
+
+
+def test_copy_tree_copies_a_dataclass_without_slots() -> None:
+    class Holder:
+        __dataclass_fields__: ClassVar[dict[str, object]] = {}
+
+        def __init__(self, child: _Child.Config) -> None:
+            self.child = child
+
+    child = _Child.Config()
+    copied = copy_tree(Holder(child))
+    assert copied.child is not child
+
+
+def test_finalize_value_skips_an_already_finalized_value() -> None:
+    class Finalized:
+        _finalized = True
+
+        def finalize(self) -> Self:
+            raise AssertionError("already finalized")
+
+    value = Finalized()
+    assert _finalize_value(value) is value
+
+
+def test_finalize_value_preserves_an_in_place_tuple() -> None:
+    class InPlace:
+        def finalize(self) -> Self:
+            return self
+
+    value = (InPlace(), 1)
+    assert _finalize_value(value) is value
+
+
+def test_finalize_value_rebuilds_a_list_when_an_element_changes() -> None:
+    class Replacing:
+        def finalize(self) -> Self:
+            return type(self)()
+
+    value = [Replacing()]
+    finalized = _finalize_value(value)
+    assert finalized is not value
+    assert isinstance(finalized[0], Replacing)
+    assert finalized[0] is not value[0]
+
+
+def test_finalize_value_handles_mapping_set_and_dataclass() -> None:
+    class Replacing:
+        def __init__(self, tag: str) -> None:
+            self.tag = tag
+
+        def finalize(self) -> Self:
+            return type(self)(self.tag + "!")
+
+    @dataclass(kw_only=True, slots=True)
+    class Holder:
+        child: Replacing
+
+    source = {"item": Replacing("a")}
+    finalized_mapping = _finalize_value(source)
+    assert finalized_mapping["item"].tag == "a!"
+    assert finalized_mapping is not source
+
+    source_set = {Replacing("b")}
+    finalized_set = _finalize_value(source_set)
+    assert {item.tag for item in finalized_set} == {"b!"}
+    assert finalized_set is not source_set
+
+    holder = Holder(child=Replacing("c"))
+    assert _finalize_value(holder) is holder
+    assert holder.child.tag == "c!"
+
+    class PlainHolder:
+        __dataclass_fields__: ClassVar[dict[str, object]] = {}
+
+        def __init__(self, child: Replacing) -> None:
+            self.child = child
+
+    plain_holder = PlainHolder(Replacing("d"))
+    finalized_plain = _finalize_value(plain_holder)
+    assert finalized_plain is plain_holder
+    assert finalized_plain.child.tag == "d!"
+
+
+def test_finalize_value_continues_after_unset_slot() -> None:
+    class ReplacingForSlot:
+        finalized: bool
+
+        def __init__(self) -> None:
+            self.finalized = False
+
+        def finalize(self) -> Self:
+            self.finalized = True
+            return self
+
+    class Holder:
+        a_unset: object
+
+        __slots__ = ("a_unset", "child")
+
+        def __init__(self, child: ReplacingForSlot) -> None:
+            self.child = child
+            self.a_unset = None
+            del self.a_unset
+
+    holder = Holder(ReplacingForSlot())
+    _finalize_value(holder)
+    assert holder.child.finalized
+
+
+def test_make_value_materializes_lists_mappings_and_shared_nodes() -> None:
+    config = _Child.Config(v=8)
+    result = _make_value([config, config])
+    assert result[0] is result[1]
+    assert result[0].v == 8
+
+    mapped = _make_value({"first": config, "second": config})
+    assert list(mapped) == ["first", "second"]
+    assert mapped["first"] is mapped["second"]
+    assert mapped["first"] is not config
+
+
+def test_make_value_rebuilds_a_plain_tuple_of_makeables() -> None:
+    config = _Child.Config(v=4)
+    result = _make_value((config,))
+    assert type(result) is tuple
+    assert result[0].v == 4
+    assert result[0] is not config
+
+
+def test_make_value_reuses_an_existing_tuple_cache_entry() -> None:
+    config = _Child.Config(v=5)
+    cached = object()
+    result = _make_value((config,), made={id(config): cached})
+    assert result == (cached,)
+
+
+def test_make_value_reuses_a_made_mapping_key_and_value() -> None:
+    class Hashable:
+        class Config(Fig["Hashable"], eq=False):
+            value: int = 3
+
+        def __init__(self, config: Config) -> None:
+            self.value = config.value
+
+    original = Hashable.Config()
+    result = _make_value({original: original})
+    made_key = next(iter(result))
+    assert made_key is result[made_key]
+    assert made_key is not original
+
+
+def test_make_value_propagates_cycle_detection_through_containers() -> None:
+    config = _Child.Config()
+
+    class Hashable:
+        class Config(Fig["Hashable"], eq=False):
+            value: int = 3
+
+        def __init__(self, config: Config) -> None:
+            self.value = config.value
+
+    key = Hashable.Config()
+    for container in ([config], (config,), {"config": config}, {key: "value"}):
+        with pytest.raises(
+            ValueError,
+            match=r"^cannot materialize a cyclic Makeable graph$",
+        ):
+            _make_value(container, making={id(config), id(key)})
+
+
+def test_make_value_reports_makeable_cycles_exactly() -> None:
+    config = _Child.Config()
+    with pytest.raises(
+        ValueError,
+        match=r"^cannot materialize a cyclic Makeable graph$",
+    ):
+        _make_value(config, making={id(config)})
+
+
+def test_bind_late_continues_after_unset_slot() -> None:
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    class Holder:
+        a_unset: object
+        __slots__ = ("a_unset", "child")
+
+        def __init__(self) -> None:
+            self.child = Late()
+            self.a_unset = None
+            del self.a_unset
+
+    holder = Holder()
+    bind_late(holder)
+    assert seen == [holder]
+
+
+def test_bind_late_walks_sequences() -> None:
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    root = [Late()]
+    bind_late(root)
+    assert seen == [root]
+
+
+def test_bind_late_walks_a_dataclass_without_slots() -> None:
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    class Holder:
+        __module__ = "builtins"
+        __dataclass_fields__: ClassVar[dict[str, object]] = {}
+
+        def __init__(self, child: Late) -> None:
+            self.child = child
+
+    root = Holder(Late())
+    bind_late(root)
+    assert seen == [root]
+
+
+def test_bind_late_walks_dataclass_even_when_module_name_is_builtins() -> None:
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    @dataclass(kw_only=True, slots=True)
+    class Holder:
+        __module__ = "builtins"
+        child: Late
+
+    root = Holder(child=Late())
+    bind_late(root)
+    assert seen == [root]
+
+
+def test_bind_late_walks_nonbuiltin_module_names_exactly() -> None:
+    seen: list[object] = []
+
+    class Late(LateBound):
+        def __init__(self, label: str) -> None:
+            self.label = label
+
+        @override
+        def bind(self, root: object) -> None:
+            del root
+            seen.append(self.label)
+
+    class First:
+        __module__ = "XXbuiltinsXX"
+
+        def __init__(self) -> None:
+            self.child = Late("first")
+
+    class Second:
+        __module__ = "BUILTINS"
+
+        def __init__(self) -> None:
+            self.child = Late("second")
+
+    first, second = First(), Second()
+    bind_late([first, second])
+    assert seen == ["second", "first"]
+
+
+def test_bind_late_walks_slots_even_when_module_name_is_builtins() -> None:
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    class Holder:
+        __module__ = "builtins"
+        __slots__ = ("child",)
+
+        def __init__(self) -> None:
+            self.child = Late()
+
+    root = Holder()
+    bind_late(root)
+    assert seen == [root]
+
+
+def test_traverse_continues_after_unset_slot() -> None:
+    class Holder:
+        a_unset: object
+        __slots__ = ("a_unset", "child")
+
+        def __init__(self, child: _Leaf) -> None:
+            self.child = child
+            self.a_unset = None
+            del self.a_unset
+
+    leaf = _Leaf("target")
+    holder = Holder(leaf)
+    (match,) = traverse(holder, _Leaf)
+    assert match.config is leaf
+
+
+def test_copy_tree_continues_after_unset_slot() -> None:
+    class Holder:
+        a_unset: object
+        __slots__ = ("a_unset", "child")
+
+        def __init__(self, child: _Child.Config) -> None:
+            self.child = child
+            self.a_unset = None
+            del self.a_unset
+
+    child = _Child.Config()
+    holder = Holder(child)
+    copied = copy_tree(holder)
+    assert copied.child is not child
+
+
+def test_traverse_walks_a_dataclass_without_slots() -> None:
+    class Holder:
+        __dataclass_fields__: ClassVar[dict[str, object]] = {}
+
+        def __init__(self, child: _Leaf) -> None:
+            self.child = child
+
+    leaf = _Leaf("target")
+    (match,) = traverse(Holder(leaf), _Leaf)
+    assert match.config is leaf
+
+
+def test_traverse_walks_a_dataclass_with_builtins_module_name() -> None:
+    @dataclass(kw_only=True, slots=True)
+    class Holder:
+        __module__ = "builtins"
+        child: _Leaf
+
+    leaf = _Leaf("target")
+    (match,) = traverse(Holder(child=leaf), _Leaf)
+    assert match.config is leaf
 
 
 if __name__ == "__main__":

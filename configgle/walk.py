@@ -183,15 +183,18 @@ class Match[ConfigT]:
         """
         if self.parent is None:
             raise ValueError("The root of a traversal has no parent to replace it in.")
-        parent = self.parent
-        if isinstance(parent, list):
-            cast(list[object], parent)[cast(int, self.attr)] = new
-        elif isinstance(parent, dict):
-            cast(dict[object, object], parent)[self.attr] = new
-        elif isinstance(parent, _TupleSlot):
-            parent.write(cast(int, self.attr), new)
-        else:
-            object.__setattr__(parent, cast(str, self.attr), new)
+        _replace_at(self.parent, self.attr, new)
+
+
+def _replace_at(parent: object, attr: str | int | object | None, new: object) -> None:
+    if isinstance(parent, list):
+        cast(list[object], parent)[cast(int, attr)] = new
+    elif isinstance(parent, dict):
+        cast(dict[object, object], parent)[attr] = new
+    elif isinstance(parent, _TupleSlot):
+        parent.write(cast(int, attr), new)
+    else:
+        object.__setattr__(parent, cast(str, attr), new)
 
 
 def traverse[ConfigT](
@@ -357,12 +360,8 @@ def _make_value[ValueT](
         tuple_value = cast(tuple[object, ...], value)
         materialized_items = [_make_value(item, made, making) for item in tuple_value]
         if all(
-            materialized is original
-            for materialized, original in zip(
-                materialized_items,
-                tuple_value,
-                strict=True,
-            )
+            materialized is tuple_value[i]
+            for i, materialized in enumerate(materialized_items)
         ):
             return cast(ValueT, tuple_value)
         if type(tuple_value) is tuple:
@@ -403,7 +402,6 @@ def _get_object_attribute_names(obj: object) -> Iterator[str]:
     if hasattr(obj, "__dict__"):
         for key in sorted(vars(obj)):
             if key not in seen and key not in _SKIP_ATTRS:
-                seen.add(key)
                 yield key
 
 
@@ -417,7 +415,7 @@ def _copy_immutable_container(
     """Copy a tuple/frozenset, preserving it when no element changed."""
     items: list[object] = list(value)
     copied: list[object] = [copy_tree(item, visited) for item in items]
-    if all(c is o for c, o in zip(copied, items, strict=True)):
+    if all(c is items[i] for i, c in enumerate(copied)):
         return value  # Nothing inside changed -- keep the immutable original.
     if isinstance(value, frozenset):
         return frozenset(copied)
@@ -474,7 +472,7 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
     # its own ``finalize`` owns that, and stopping here terminates cyclic trees
     # (a back-edge to an already-finalized node returns instead of looping).
     if isinstance(value, Finalizeable):
-        if not getattr(value, "_finalized", False):
+        if not getattr(value, "_finalized", None):
             return value.finalize()
         return value
 
@@ -489,7 +487,7 @@ def _finalize_value[ValueT](value: ValueT) -> ValueT:
             # Preserve the original tuple/namedtuple when no element changed
             # identity (an in-place finalize); rebuild only to carry a replaced
             # element. Matches ``_copy_immutable_container``.
-            if all(f is o for f, o in zip(finalized_items, node, strict=True)):
+            if all(f is node[i] for i, f in enumerate(finalized_items)):
                 return value
             if type(node) is tuple:
                 # One iterable argument for a plain tuple; a namedtuple takes
@@ -571,12 +569,7 @@ class _TupleSlot:
         as_tuple = (
             tuple(rebuilt) if type(items) is tuple else type(items)(*rebuilt)  # ty: ignore[invalid-argument-type] -- Namedtuple field types are erased at runtime.  # pyright: ignore[reportArgumentType] -- Namedtuple field types are erased at runtime.
         )
-        Match(
-            fqn="",
-            config=items,
-            parent=self.tuple_parent,
-            attr=self.tuple_attr,
-        ).replace(as_tuple)
+        _replace_at(self.tuple_parent, self.tuple_attr, as_tuple)
 
 
 def _traverse[ConfigT](

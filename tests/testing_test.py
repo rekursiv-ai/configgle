@@ -116,7 +116,7 @@ def test_assert_pprint_golden_normalizes_rendered_text(tmp_path: Path) -> None:
 
 
 def test_assert_pprint_golden_writes_full_unchanged_defaults(tmp_path: Path) -> None:
-    test_file = tmp_path / "owner_test.py"
+    test_file = tmp_path / "nested" / "owner_test.py"
 
     with pytest.raises(AssertionError, match="Missing golden regenerated"):
         assert_pprint_golden(
@@ -125,7 +125,9 @@ def test_assert_pprint_golden_writes_full_unchanged_defaults(tmp_path: Path) -> 
             config=_DefaultsOnly.Config(),
         )
 
-    rendered = (tmp_path / "testdata" / "defaults.txt").read_text(encoding="utf-8")
+    rendered = (tmp_path / "nested" / "testdata" / "defaults.txt").read_text(
+        encoding="utf-8",
+    )
     assert "default_value=3" in rendered
     assert "long_default='a default long enough" in rendered
 
@@ -164,8 +166,14 @@ def test_assert_pprint_golden_reports_mismatch_without_rewriting(
         )
 
     message = str(exc_info.value)
-    assert "-stale" in message
-    assert "+_Example.Config" in message
+    assert message == (
+        "example changed; rerun with CONFIGGLE_REGENERATE_GOLDEN=1 if intended.\n"
+        f"--- {golden}\n"
+        "+++ example (rendered)\n"
+        "@@ -1 +1 @@\n"
+        "-stale\n"
+        "+_Example.Config(inherited=7)\n"
+    )
     assert golden.read_text(encoding="utf-8") == "stale\n"
 
 

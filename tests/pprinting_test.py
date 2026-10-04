@@ -30,7 +30,7 @@ from configgle.pprinting import (
     _mask_memory_addresses,
     _qualify_function_reprs,
     _replace_char_at_column,
-    _replace_unquoted_function_repr,
+    _replace_unquoted,
     _should_add_continuation_pipes,
     _string_token_spans,
     pformat,
@@ -179,21 +179,95 @@ def test_function_qualification_handles_aliased_containers() -> None:
 
 def test_unquoted_function_repr_replace_is_a_noop_when_bare_repr_absent() -> None:
     text = "no functions here"
-    result = _replace_unquoted_function_repr(
+    spans = [(0, 2)]
+    result, shifted = _replace_unquoted(
         text,
         "<function foo at 0x1>",
         "<function mod.foo at 0x1>",
+        spans=spans,
     )
     assert result is text
+    assert shifted is spans
 
 
 def test_unquoted_function_repr_replace_skips_a_quoted_only_occurrence() -> None:
     bare = "<function foo at 0x1>"
     text = repr(bare)  # The only occurrence sits inside a string token.
 
-    result = _replace_unquoted_function_repr(text, bare, "<function mod.foo at 0x1>")
+    result, _ = _replace_unquoted(
+        text,
+        bare,
+        "<function mod.foo at 0x1>",
+        spans=_string_token_spans(text),
+    )
 
     assert result == text
+
+
+def test_unquoted_replace_shifts_only_the_spans_after_the_match() -> None:
+    bare = "<f>"
+    text = "'a' <f> 'b'"
+    spans = _string_token_spans(text)
+    assert spans == [(0, 3), (8, 11)]
+
+    result, shifted = _replace_unquoted(text, bare, "<m.f>", spans=spans)
+
+    assert result == "'a' <m.f> 'b'"
+    assert shifted == [(0, 3), (10, 13)]
+    assert [result[begin:stop] for begin, stop in shifted] == ["'a'", "'b'"]
+
+
+def test_unquoted_replace_treats_a_span_touching_the_match_as_outside() -> None:
+    # The quoted string ends where the bare repr begins: adjacent, not inside.
+    text = "'s'<f>"
+    result, shifted = _replace_unquoted(text, "<f>", "<m.f>", spans=[(0, 3)])
+    assert result == "'s'<m.f>"
+    assert shifted == [(0, 3)]
+    # A span starting exactly at the match's end follows it, so it shifts.
+    text = "<f>'s'"
+    result, shifted = _replace_unquoted(text, "<f>", "<m.f>", spans=[(3, 6)])
+    assert result == "<m.f>'s'"
+    assert shifted == [(5, 8)]
+
+
+@dataclasses.dataclass(kw_only=True, slots=True)
+class _HangingInner:
+    alpha: list[int]
+    beta: str
+
+
+@dataclasses.dataclass(kw_only=True, slots=True)
+class _HangingOuter:
+    name: _HangingInner
+
+
+def test_non_compact_dataclass_fields_hang_under_the_class_name() -> None:
+    rendered = pformat(
+        _HangingOuter(name=_HangingInner(alpha=[2, 3], beta="x" * 30)),
+        extra_compact=False,
+        width=40,
+    ).splitlines()
+    # Continuation lines align one past ``_HangingInner(`` at its column.
+    column = len("_HangingOuter(name=_HangingInner(")
+    assert rendered[-1] == " " * column + "beta='" + "x" * 30 + "'))"
+    assert rendered[0].startswith("_HangingOuter(name=_HangingInner(alpha=[")
+
+
+def test_qualification_skips_a_quoted_copy_after_an_earlier_replacement() -> None:
+    first = types.FunctionType((lambda: None).__code__, {"__name__": "alpha"})
+    second = types.FunctionType((lambda: None).__code__, {"__name__": "beta"})
+    first.__qualname__ = "first"
+    second.__qualname__ = "second"
+    # The first replacement lengthens the text, so the quoted copy of the second
+    # repr only stays skipped if every later span shifts with it.
+    rendered = repr([first, repr(second), second])
+
+    qualified = _qualify_function_reprs([first, repr(second), second], rendered)
+
+    assert qualified == (
+        f"[<function alpha.first at {hex(id(first))}>, {repr(second)!r}, "
+        f"<function beta.second at {hex(id(second))}>]"
+    )
 
 
 def test_string_token_spans_returns_empty_on_an_unterminated_string() -> None:
@@ -479,8 +553,8 @@ def test_pretty_printer_try_to_finalize_with_error():
         warnings.simplefilter("always")
         _result = pp._try_to_finalize(cfg)
         # Should warn about the error.
-        assert len(w) >= 1
-        assert "Cannot finalize" in str(w[0].message)
+        assert len(w) == 1
+        assert str(w[0].message) == "ValueError: Cannot finalize"
 
 
 def test_pretty_printer_no_finalize():
@@ -921,6 +995,7 @@ def test_format_namespace_items_context_cycle():
     )
     result = printer.pformat(finalized)
     assert "..." in result
+    assert "XX...XX" not in result
 
 
 def test_format_items_multiline_context_cycle():
@@ -948,9 +1023,358 @@ def test_format_items_multiline_context_cycle():
     )
     result = printer.pformat(finalized)
     assert "..." in result
+    assert "XX...XX" not in result
+
+
+def test_collapse_multiline_value_exact_boundaries() -> None:
+    assert _collapse_multiline_value("(\n  1,\n  2\n)", 5) == "(\n  1,\n  2\n)"
+    assert _collapse_multiline_value("(\n  1,\n  2\n)", 6) == "(1, 2)"
+    assert _collapse_multiline_value("(\n  1,\n  2\n)", 7) == "(1, 2)"
+
+
+def test_mask_memory_addresses_exactly_preserves_string_spans() -> None:
+    text = "['at 0xabc', <Obj at 0xdef>, <Obj at 0x123>]"
+    assert _mask_memory_addresses(text) == (
+        "['at 0xabc', <Obj at 0xdefacedeface>, <Obj at 0xdefacedeface>]"
+    )
+
+
+def test_mask_memory_addresses_does_not_skip_adjacent_match() -> None:
+    text = "'x at 0xabc'<Obj at 0xdef>"
+    assert _mask_memory_addresses(text) == "'x at 0xabc'<Obj at 0xdefacedeface>"
+
+
+def test_mask_memory_addresses_adjacent_token_boundaries() -> None:
+    assert _mask_memory_addresses("'abc'<Obj at 0x1234>") == (
+        "'abc'<Obj at 0xdefacedeface>"
+    )
+    assert _mask_memory_addresses("<Obj at 0x1234>'abc'") == (
+        "<Obj at 0xdefacedeface>'abc'"
+    )
+
+
+def test_mask_memory_addresses_handles_uppercase_digits() -> None:
+    assert _mask_memory_addresses("<Obj at 0xABCDEF>") == ("<Obj at 0xdefacedeface>")
+
+
+def test_mask_memory_addresses_continues_after_quoted_match() -> None:
+    # The quoted address must itself match (`` at `` before it), so the reversed
+    # scan skips it first and must still reach the earlier, unquoted one.
+    text = "<Obj at 0xabc> 'x at 0xdef'"
+    assert _mask_memory_addresses(text) == "<Obj at 0xdefacedeface> 'x at 0xdef'"
+
+
+def test_mask_memory_addresses_masks_address_ending_where_string_starts() -> None:
+    assert _mask_memory_addresses("x at 0x1234'abc'") == "x at 0xdefacedeface'abc'"
+
+
+def test_string_token_spans_preserves_multiline_offsets() -> None:
+    text = "x = 1\n'y' + <Obj at 0xabc>"
+    assert _string_token_spans(text) == [(6, 9)]
+
+
+def test_replace_char_at_column_rejects_end_column() -> None:
+    assert _replace_char_at_column(" ", 1, "│") == " "
+    assert _replace_char_at_column(" ", 0, "│") == "│"
+
+
+def test_continuation_pipes_exact_thresholds() -> None:
+    assert _should_add_continuation_pipes("a\nb", 2, 2) is True
+    assert _should_add_continuation_pipes("a\nb", 2, 3) is False
+    assert _should_add_continuation_pipes("a\nb\nc", 2, 2) is True
+    assert _should_add_continuation_pipes("a\nb\nc", 2, 3) is True
+
+
+def test_should_format_on_one_line_exact_boundaries() -> None:
+    printer = FigPrinter(width=10, short_sequence_max_width=5)
+    assert printer._should_format_on_one_line(4, 100, 100) is True
+    assert printer._should_format_on_one_line(5, 100, 100) is False
+    assert printer._should_format_on_one_line(6, 3, 1) is True
+    assert printer._should_format_on_one_line(7, 3, 1) is False
+
+
+def test_format_and_collapse_item_exact_allowance_boundary() -> None:
+    printer = FigPrinter(width=31)
+    item = list(range(10))
+    assert printer._format_and_collapse_item(item, {}, 0, 0) == (
+        "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]"
+    )
+
+
+def test_try_format_items_on_one_line_exact_width_boundary() -> None:
+    printer = FigPrinter(width=30)
+    item = list(range(10))
+    assert printer._try_format_items_on_one_line([item], {}, 0) == (
+        "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]"
+    )
+
+
+def test_try_format_items_on_one_line_preserves_format_depth() -> None:
+    printer = FigPrinter()
+    assert printer._try_format_items_on_one_line([[1, 2]], {}, 0) == "[1, 2]"
+
+
+def test_try_format_items_on_one_line_exact_delimiter() -> None:
+    printer = FigPrinter()
+    assert printer._try_format_items_on_one_line([1, 2, 3], {}, 0) == "1, 2, 3"
+    assert printer._try_format_items_on_one_line([], {}, 0) == ""
+
+
+def test_format_items_multiline_exact_layout() -> None:
+    printer = FigPrinter(indent=2, width=5, short_sequence_max_width=1)
+    assert printer.pformat([1, 2]) == "[\n    1,\n    2\n  ]"
+
+
+def test_pformat_options_have_exact_rendering_effects() -> None:
+    assert pformat({"z": 1, "a": 2}, sort_dicts=False) == "{'z': 1, 'a': 2}"
+    assert pformat({"z": 1, "a": 2}, sort_dicts=True) == "{'a': 2, 'z': 1}"
+    assert pformat([1_000_000], underscore_numbers=True) == "[1_000_000]"
+    assert pformat([1_000_000], underscore_numbers=False) == "[1000000]"
+
+
+def test_pprint_options_have_exact_rendering_effects() -> None:
+    stream = StringIO()
+    pprint([1, 2], stream=stream, extra_compact=False)
+    assert stream.getvalue() == "[1, 2]\n"
+    stream = StringIO()
+    pprint([1, 2], stream=stream, extra_compact=True)
+    assert stream.getvalue() == "[1, 2]\n"
+
+
+def test_exact_namespace_layout() -> None:
+    assert pformat(_SimpleData(x=99, y="world"), width=20) == (
+        "_SimpleData(\n                x=99,\n                y='world'\n        )"
+    )
+
+
+def test_fig_printer_init_records_every_option_exactly() -> None:
+    printer = FigPrinter(
+        indent=3,
+        width=17,
+        depth=2,
+        compact=True,
+        sort_dicts=True,
+        underscore_numbers=False,
+        finalize=False,
+        mask_memory_addresses=False,
+        extra_compact=False,
+        continuation_pipe=4,
+        hide_default_values=False,
+        short_sequence_max_width=9,
+    )
+    assert printer._indent_per_level == 3
+    assert printer._width == 17
+    assert printer._finalize is False
+    assert printer._mask_memory_addresses is None
+    assert printer._extra_compact is False
+    assert printer._continuation_pipe == 4
+    assert printer._hide_default_values is False
+    assert printer._short_sequence_max_width == 9
+    assert object.__getattribute__(printer, "_compact") is True
+
+    defaults = FigPrinter()
+    assert defaults._indent_per_level == 8
+    assert defaults._width == 80
+    assert defaults._finalize is True
+    assert defaults._mask_memory_addresses is not None
+    assert defaults._extra_compact is True
+    assert defaults._continuation_pipe == 50
+    assert defaults._hide_default_values is True
+    assert defaults._short_sequence_max_width == 40
+    assert object.__getattribute__(defaults, "_compact") is False
+
+
+def test_fig_printer_passes_base_validation_arguments() -> None:
+    with pytest.raises(ValueError, match=r"^indent must be >= 0$"):
+        FigPrinter(indent=-1)
+    with pytest.raises(ValueError, match=r"^width must be != 0$"):
+        FigPrinter(width=0)
+
+
+def test_fig_printer_default_options_render_exactly() -> None:
+    assert FigPrinter().pformat({"z": 1, "a": 2}) == "{'z': 1, 'a': 2}"
+    assert FigPrinter().pformat([1_000_000]) == "[1_000_000]"
+
+
+def test_fig_printer_forwards_stdlib_options_exactly() -> None:
+    assert FigPrinter(sort_dicts=False).pformat({"z": 1, "a": 2}) == (
+        "{'z': 1, 'a': 2}"
+    )
+    assert FigPrinter(sort_dicts=True).pformat({"z": 1, "a": 2}) == ("{'a': 2, 'z': 1}")
+    assert FigPrinter(underscore_numbers=True).pformat([1_000_000]) == "[1_000_000]"
+    assert FigPrinter(underscore_numbers=False).pformat([1_000_000]) == "[1000000]"
+    assert FigPrinter(depth=1).pformat([[1, 2]]) == "[[...]]"
+
+
+def test_public_default_rendering_is_exact() -> None:
+    assert pformat({"z": 1, "a": 2}) == "{'z': 1, 'a': 2}"
+    assert pformat([1_000_000]) == "[1_000_000]"
+    assert pformat(_SimpleData()) == "_SimpleData()"
+
+    class Obj:
+        pass
+
+    obj = Obj()
+    assert "0xdefacedeface" in pformat(obj)
+    stream = StringIO()
+    pprint({"z": 1, "a": 2}, stream=stream)
+    assert stream.getvalue() == "{'z': 1, 'a': 2}\n"
+
+
+def test_public_wrappers_forward_every_option(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    class RecordingPrinter:
+        def __init__(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+        def pformat(self, obj: object) -> str:
+            del obj
+            return "formatted"
+
+        def pprint(self, obj: object) -> None:
+            del obj
+
+    monkeypatch.setattr(pprinting, "FigPrinter", RecordingPrinter)
+    assert (
+        pformat(
+            object(),
+            indent=3,
+            width=17,
+            depth=2,
+            compact=True,
+            sort_dicts=True,
+            underscore_numbers=False,
+            finalize=False,
+            mask_memory_addresses=False,
+            extra_compact=False,
+            continuation_pipe=4,
+            hide_default_values=False,
+            short_sequence_max_width=9,
+        )
+        == "formatted"
+    )
+    stream = StringIO()
+    pprint(
+        object(),
+        stream=stream,
+        indent=3,
+        width=17,
+        depth=2,
+        compact=True,
+        sort_dicts=True,
+        underscore_numbers=False,
+        finalize=False,
+        mask_memory_addresses=False,
+        extra_compact=False,
+        continuation_pipe=4,
+        hide_default_values=False,
+        short_sequence_max_width=9,
+    )
+    expected_pformat = {
+        "indent": 3,
+        "width": 17,
+        "depth": 2,
+        "compact": True,
+        "sort_dicts": True,
+        "underscore_numbers": False,
+        "finalize": False,
+        "mask_memory_addresses": False,
+        "extra_compact": False,
+        "continuation_pipe": 4,
+        "hide_default_values": False,
+        "short_sequence_max_width": 9,
+    }
+    pformat(object())
+    default_stream = StringIO()
+    pprint(object(), stream=default_stream)
+    expected_pprint = {"stream": stream, **expected_pformat}
+    expected_defaults = {
+        "indent": 8,
+        "width": 80,
+        "depth": None,
+        "compact": False,
+        "sort_dicts": False,
+        "underscore_numbers": True,
+        "finalize": True,
+        "mask_memory_addresses": True,
+        "extra_compact": True,
+        "continuation_pipe": 50,
+        "hide_default_values": True,
+        "short_sequence_max_width": 40,
+    }
+    assert calls == [
+        expected_pformat,
+        expected_pprint,
+        expected_defaults,
+        {
+            "stream": default_stream,
+            **expected_defaults,
+        },
+    ]
+
+
+def test_pformat_forwards_indent_and_width_exactly() -> None:
+    assert pformat([1, 2], indent=2, width=5, short_sequence_max_width=1) == (
+        "[\n    1,\n    2\n  ]"
+    )
+
+
+def test_pformat_forwards_depth_and_compact_exactly() -> None:
+    value = [[1, 2]]
+    assert pformat(value, depth=1) == "[[...]]"
+    assert pformat(value, depth=None) == "[[1, 2]]"
+    assert pformat([1, 2], compact=False) == "[1, 2]"
+    assert pformat([1, 2], compact=True) == "[1, 2]"
+
+
+def test_finalizeable_without_finalized_attribute_is_finalized() -> None:
+    finalized = False
+
+    class Config:
+        def make(self) -> Self:
+            return self
+
+        def finalize(self) -> Self:
+            nonlocal finalized
+            finalized = True
+            return self
+
+    rendered = pformat(Config())
+    assert "Config object at 0xdefacedeface" in rendered
+    assert finalized
+
+
+def test_pformat_forwards_mask_and_finalize_exactly() -> None:
+    class Obj:
+        pass
+
+    obj = Obj()
+    assert pformat(obj, mask_memory_addresses=False) == repr(obj)
+    assert "0xdefacedeface" in pformat(obj, mask_memory_addresses=True)
+
+    class Config(Fig):
+        value: int = 1
+
+        @override
+        def finalize(self) -> Self:
+            self.value = 2
+            return super().finalize()
+
+    assert pformat(Config(), finalize=False) == (f"{Config.__qualname__}(value=1)")
+    assert pformat(Config(), finalize=True) == f"{Config.__qualname__}(value=2)"
+
+
+def test_pformat_forwards_hide_default_and_short_sequence_width() -> None:
+    assert pformat(_SimpleData(), hide_default_values=True) == "_SimpleData()"
+    assert "x=1" in pformat(_SimpleData(), hide_default_values=False)
+    assert pformat([1, 2], width=3, short_sequence_max_width=1) == (
+        "[\n                1,\n                2\n        ]"
+    )
 
 
 def _default_items(factory_calls: list[int]) -> list[int]:
+
     factory_calls[0] += 1
     return []
 
@@ -981,6 +1405,67 @@ def _is_nested_function(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
             return False
         parent = parents.get(parent)
     return False
+
+
+@dataclasses.dataclass(kw_only=True, slots=True)
+class _Pair:
+    a: object = None
+    b: object = None
+
+
+@dataclasses.dataclass(kw_only=True, slots=True)
+class _Trio:
+    a: object = None
+    b: object = None
+    c: object = None
+
+
+def test_one_line_items_format_with_zero_indent_and_allowance() -> None:
+    # At width 20 the item fits exactly; any indent or allowance wraps it.
+    assert (
+        FigPrinter(width=20, indent=2).pformat([_Pair(a=[0])])
+        == "[_Pair(a=[0], b=None)]"
+    )
+
+
+def test_multiline_items_reserve_exactly_one_column_allowance() -> None:
+    value = [_Pair(a=list(range(13)))]
+    assert FigPrinter(width=49, indent=2).pformat(value) == (
+        "[\n    _Pair(\n      a=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]\n    )\n  ]"
+    )
+
+
+def test_continuation_pipes_join_lines_with_bare_newlines() -> None:
+    value = _Pair(a=_Pair(a=list(range(5)), b=list(range(5))), b=1)
+    assert FigPrinter(width=8, indent=2, continuation_pipe=1).pformat(value) == (
+        "_Pair(\n"
+        "    a=_Pair(\n"
+        "    │ a=[0, 1, 2, 3, 4],\n"
+        "    │ b=[0, 1, 2, 3, 4]\n"
+        "    ),\n"
+        "    b=1\n"
+        "  )"
+    )
+
+
+def test_last_namespace_field_uses_caller_allowance() -> None:
+    assert FigPrinter(width=6, indent=2).pformat(_Pair(a=1, b={})) == (
+        "_Pair(\n    a=1,\n    b={}\n  )"
+    )
+
+
+@pytest.mark.parametrize(
+    ("width", "expected"),
+    [
+        (6, "_Trio(\n    a={ },\n    b=1\n  )"),
+        (7, "_Trio(\n    a={},\n    b=1\n  )"),
+    ],
+)
+def test_non_last_namespace_field_reserves_one_column(
+    width: int,
+    expected: str,
+) -> None:
+    assert FigPrinter(width=width, indent=2).pformat(_Trio(a={}, b=1)) == expected
 
 
 if __name__ == "__main__":

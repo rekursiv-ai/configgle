@@ -234,8 +234,7 @@ class InlineConfig[T]:
         try:
             return object.__getattribute__(self, "_kwargs")[key]  # pyright: ignore[reportAny] -- The dynamic-attribute hook returns whatever the wrapped callable accepts.
         except (TypeError, AttributeError, KeyError):
-            pass
-        return object.__getattribute__(self, key)  # pyright: ignore[reportAny] -- The dynamic-attribute hook returns whatever the wrapped callable accepts.
+            raise AttributeError(key) from None
 
     @override
     def __setattr__(self, key: str, value: object) -> None:

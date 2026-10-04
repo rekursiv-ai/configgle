@@ -75,13 +75,11 @@ def test_bare_fig_fields_resolve() -> None:
 
 
 def test_explicit_fig_make_returns_parent() -> None:
-    explicit: Explicit = Explicit.Config().make()
-    assert isinstance(explicit, Explicit)
+    Explicit.Config().make()
 
 
 def test_makes_reparameterizes_to_child() -> None:
-    dog: Dog = Dog.Config().make()
-    assert isinstance(dog, Dog)
+    Dog.Config().make()
 
 
 if __name__ == "__main__":

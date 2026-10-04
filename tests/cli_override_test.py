@@ -115,8 +115,38 @@ def test_apply_overrides_empty_segment_paths_raise() -> None:
     """Paths with empty segments are rejected with a clear message."""
     config = NestedJob.Config()
     for spec in ["=1", "child.=1", "child..lr=1", ".child=1"]:
-        with pytest.raises(ValueError, match="no empty segments"):
+        with pytest.raises(
+            ValueError,
+            match=r"^Malformed override .*field path with no empty segments \(e\.g\. `step\.lr`\)\.$",
+        ):
             apply_overrides(config, [spec])
+
+
+def test_apply_overrides_preserves_equals_in_value() -> None:
+    """Only the first equals separates a path from its string value."""
+    config = NestedJob.Config()
+    apply_overrides(config, ["name=left=right"])
+    assert config.name == "left=right"
+
+
+def test_apply_overrides_reports_exact_invalid_leaf_path() -> None:
+    """Invalid leaf diagnostics identify the real config type and path."""
+    config = NestedJob.Config()
+    with pytest.raises(
+        ValueError,
+        match=r"^Override path `child\.missing` has no field `missing` on ChildJob\.Config\.$",
+    ):
+        apply_overrides(config, ["child.missing=1"])
+
+
+def test_apply_overrides_reports_exact_invalid_intermediate_path() -> None:
+    """Invalid intermediate diagnostics retain the complete dotted path."""
+    config = NestedJob.Config()
+    with pytest.raises(
+        ValueError,
+        match=r"^Override path `child\.missing\.lr` has no field `missing` on ChildJob\.Config\.$",
+    ):
+        apply_overrides(config, ["child.missing.lr=1"])
 
 
 if __name__ == "__main__":

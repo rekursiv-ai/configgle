@@ -227,7 +227,7 @@ def _resolve_annotation(
                 globalns=cast(
                     dict[str, object],
                     getattr(
-                        cast(object, inspect.unwrap(constructor)),
+                        inspect.unwrap(constructor),
                         "__globals__",
                         {},
                     ),
