@@ -263,8 +263,7 @@ transport-agnostic (``json``, ``yaml``, ``msgpack``, or embed it); JSON is
 the common case. Preserves nested configs, polymorphic slot types, DAG
 identity, and cycles. Does NOT finalize -- the loaded config is raw, ready
 for ``finalize``/``make``. Opaque leaves (tensors, etc.) need a
-``hooks={type: (encode, decode)}`` map. Available as module-level functions
-and as ``Maker`` methods::
+``hooks={type: (encode, decode)}`` map. Both are ``Maker`` methods::
 
     import json
 
@@ -273,7 +272,10 @@ and as ``Maker`` methods::
     obj = cfg.make()
 
 Deserialization imports the modules named in the payload, so treat a
-serialized config like ``pickle``: load only trusted data.
+serialized config like ``pickle``: load only trusted data. For any object, not
+just a config, use ``configgle.custom_json.encode_graph`` and ``decode_graph``;
+``decode_graph`` imports and calls ``__reduce__`` only when its
+``DecodeCapabilities`` allow it.
 
 ``traverse`` / ``Match`` -- Typed walk of a config tree. ``traverse(root,
 cls)`` yields a ``Match`` (node, dotted path, parent slot) for every node

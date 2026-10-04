@@ -239,7 +239,7 @@ wheels = [
 
 [[package]]
 name = "configgle"
-version = "1.4.0"
+version = "1.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "typing-extensions" },
