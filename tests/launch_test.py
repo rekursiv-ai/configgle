@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import field
 from pathlib import Path
 
+import argparse
 import os
 import subprocess
 import sys
@@ -43,6 +44,22 @@ def returns_non_config() -> int:
     return 42
 
 
+class Runnable:
+    class Config(Fig["Runnable"]):
+        pass
+
+    def __init__(self, config: Config):
+        del config
+        self.ran = False
+
+    def run(self) -> None:
+        self.ran = True
+
+
+def runnable() -> Makeable[Runnable]:
+    return Runnable.Config()
+
+
 def test_resolve_config_returns_the_factory_result() -> None:
     config = resolve_config(f"{__name__}.baseline")
     assert isinstance(config, Trainer.Config)
@@ -60,7 +77,13 @@ def test_resolve_config_returns_a_fresh_config_each_call() -> None:
 
 
 def test_resolve_config_undotted_path_raises() -> None:
-    with pytest.raises(ValueError, match="is not a dotted path"):
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"^'baseline' is not a dotted path; expected module\.function "
+            r"\(e\.g\. myproject\.experiments\.baseline\)\.$"
+        ),
+    ):
         resolve_config("baseline")
 
 
@@ -80,7 +103,10 @@ def test_resolve_config_non_callable_raises() -> None:
 
 
 def test_resolve_config_non_config_return_raises() -> None:
-    with pytest.raises(TypeError, match="not a config"):
+    with pytest.raises(
+        TypeError,
+        match=rf"^'{__name__}\.returns_non_config' returned int, not a config\.$",
+    ):
         resolve_config(f"{__name__}.returns_non_config")
 
 
@@ -161,6 +187,83 @@ def test_docstring_example_defaults_run_unchanged(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "training 100 steps at lr=0.001" in result.stdout
+
+
+def test_main_applies_all_overrides_and_runs_result(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CLI parsing forwards repeated overrides before making a runnable object."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["configgle", f"{__name__}.baseline", "--override", "steps=3"],
+    )
+    assert launch.main() == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_main_makes_and_runs_runnable_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The launcher invokes run after constructing a runnable result."""
+    ran: list[bool] = []
+
+    def record_run(self: Runnable) -> None:
+        del self
+        ran.append(True)
+
+    monkeypatch.setattr(Runnable, "run", record_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["configgle", f"{__name__}.runnable"],
+    )
+    assert launch.main() == 0
+    assert ran == [True]
+
+
+def test_override_argument_preserves_value_metavar() -> None:
+    """The override option advertises its required path/value syntax."""
+    parser = argparse.ArgumentParser()
+    launch._add_arguments(parser)
+    action = next(action for action in parser._actions if action.dest == "override")
+    assert action.metavar == "PATH=VALUE"
+
+
+def test_main_help_describes_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The CLI help exposes the override value shape."""
+    monkeypatch.setattr(sys, "argv", ["configgle", "--help"])
+    with pytest.raises(SystemExit):
+        launch.main()
+    output = capsys.readouterr().out
+    assert "PATH=VALUE" in output
+    assert "Launch a config" in output
+
+
+def test_main_help_uses_empty_description_when_docstring_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Help remains valid when the module has no docstring."""
+    monkeypatch.setattr(launch, "__doc__", None)
+    monkeypatch.setattr(sys, "argv", ["configgle", "--help"])
+    with pytest.raises(SystemExit):
+        launch.main()
+    assert "XXXX" not in capsys.readouterr().out
+
+
+def test_main_returns_zero_for_non_runnable_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The launcher treats a made non-runnable object as a successful build."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["configgle", f"{__name__}.baseline"],
+    )
+    assert launch.main() == 0
 
 
 if __name__ == "__main__":

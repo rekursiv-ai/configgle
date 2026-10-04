@@ -232,6 +232,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
     """
 
     __slots__: ClassVar[tuple[str, ...]] = ("_finalized",)
+    make_with_kwargs: ClassVar[bool] = False
     _finalized: bool  # pyright: ignore[reportUninitializedInstanceVariable] -- Set in ``__new__``, which pyright does not count; ``__init__`` is replaced by the dataclass one.
 
     if TYPE_CHECKING:
@@ -710,7 +711,7 @@ class _DataclassMeta(type):
 
     __classcell__: CellType | None = None
     __dataclass_params__: _DataclassParams = _DataclassParams()
-    make_with_kwargs: ClassVar[bool]
+    make_with_kwargs: ClassVar[bool] = False
 
     def __new__(
         mcls: type[_DataclassMeta],
@@ -920,7 +921,7 @@ def make[ParentT](config: Maker[ParentT]) -> ParentT:
     outermost = not _building.get()
     token = _building.set(True)
     try:
-        if getattr(type(finalized), "make_with_kwargs", False):
+        if type(finalized).make_with_kwargs:
             assert isinstance(finalized, DataclassLike)
             kwargs: dict[str, object] = {
                 f.name: getattr(finalized, f.name)

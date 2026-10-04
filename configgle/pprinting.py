@@ -259,11 +259,10 @@ class FigPrinter(PrettyPrinter):
     # printing side-effect-free.
     def _try_to_finalize(self, obj: _T) -> _T:
         """Copy the config tree then finalize it for display purposes."""
-        if (
-            self._finalize
-            and isinstance(obj, Finalizeable)
-            and not getattr(obj, "_finalized", False)
-        ):
+        # pragma: no mutate start -- None and False are equally falsy defaults.
+        finalized_flag = getattr(obj, "_finalized", False)
+        # pragma: no mutate end
+        if self._finalize and isinstance(obj, Finalizeable) and not finalized_flag:
             cached = (
                 None
                 if self._finalized_copies is None
@@ -280,7 +279,9 @@ class FigPrinter(PrettyPrinter):
                     self._finalized_copies[id(obj)] = (obj, finalized)
                 obj = finalized
             except Exception as e:  # noqa: BLE001 -- any finalize failure degrades to printing the unfinalized tree.
+                # pragma: no mutate start -- mutmut's trampoline shifts frames.
                 warnings.warn(f"{type(e).__name__}: {e}", stacklevel=2)
+                # pragma: no mutate end
         return obj
 
     # CPython's PrettyPrinter dispatches to ``_pprint_dataclass`` for dataclass
@@ -510,36 +511,57 @@ class FigPrinter(PrettyPrinter):
 
 def _qualify_function_reprs(value: object, rendered: str) -> str:
     """Add module paths to function reprs nested in supported containers."""
-    return _qualify_function_repr(value, rendered, set())
+    functions: list[types.FunctionType] = []
+    _collect_functions(value, functions, set())
+    if not any(repr(function) in rendered for function in functions):
+        return rendered
+    # Tokenized once: re-tokenizing per function cost 2.5s on one config. A
+    # function repr holds no quote, so a replacement only shifts later spans.
+    spans = _string_token_spans(rendered)
+    for function in functions:
+        bare = repr(function)
+        qualified = bare.replace("<function ", f"<function {function.__module__}.")
+        rendered, spans = _replace_unquoted(rendered, bare, qualified, spans=spans)
+    return rendered
 
 
-def _qualify_function_repr(current: object, text: str, ancestors: set[int]) -> str:
-    """Qualify exact function reprs while traversing one object tree."""
+def _collect_functions(
+    current: object,
+    out: list[types.FunctionType],
+    ancestors: set[int],
+) -> None:
+    """Append each function in one object tree, in traversal order."""
     if isinstance(current, types.FunctionType):
-        bare = repr(current)
-        qualified = bare.replace("<function ", f"<function {current.__module__}.", 1)
-        return _replace_unquoted_function_repr(text, bare, qualified)
+        out.append(current)
+        return
     identity = id(current)
     if identity in ancestors:
-        return text
+        return
     ancestors.add(identity)
     for child in _function_repr_children(current):
-        text = _qualify_function_repr(child, text, ancestors)
+        _collect_functions(child, out, ancestors)
     ancestors.remove(identity)
-    return text
 
 
-def _replace_unquoted_function_repr(text: str, bare: str, qualified: str) -> str:
-    """Replace one exact function repr outside rendered string tokens."""
-    if bare not in text:
-        return text
-    string_spans = _string_token_spans(text)
+def _replace_unquoted(
+    text: str,
+    bare: str,
+    qualified: str,
+    *,
+    spans: list[tuple[int, int]],
+) -> tuple[str, list[tuple[int, int]]]:
+    """Replace ``bare``'s first unquoted occurrence; return text and shifted spans."""
     for match in re.finditer(re.escape(bare), text):
-        if not any(
-            match.start() < end and match.end() > start for start, end in string_spans
-        ):
-            return text[: match.start()] + qualified + text[match.end() :]
-    return text
+        start, end = match.span()
+        if any(start < stop and end > begin for begin, stop in spans):
+            continue
+        shift = len(qualified) - len(bare)
+        shifted = [
+            (begin + shift, stop + shift) if begin >= end else (begin, stop)
+            for begin, stop in spans
+        ]
+        return text[:start] + qualified + text[end:], shifted
+    return text, spans
 
 
 def _string_token_spans(text: str) -> list[tuple[int, int]]:
@@ -656,7 +678,7 @@ def _should_add_continuation_pipes(
         return False
 
     num_lines = formatted_value.count("\n") + 1
-    return continuation_pipe_threshold == 0 or num_lines >= continuation_pipe_threshold
+    return num_lines >= continuation_pipe_threshold
 
 
 def _filter_non_default_items(
@@ -689,9 +711,12 @@ def _mask_memory_addresses(text: str) -> str:
         return text
     string_spans = _string_token_spans(text)
     for match in reversed(matches):
-        if any(
-            match.start() < end and match.end() > start for start, end in string_spans
-        ):
+        # pragma: no mutate start -- " at " precedes each match: ``<``/``<=`` agree.
+        open_spans = [
+            (start, end) for start, end in string_spans if match.start() < end
+        ]
+        # pragma: no mutate end
+        if any(match.end() > start for start, _ in open_spans):
             continue
         # One literal for every masked address, on every platform. Goldens are
         # shared across machines, so the width must not come from the recording

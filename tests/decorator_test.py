@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import (
     TYPE_CHECKING,
     Protocol,
@@ -9,13 +9,17 @@ from typing import (
     get_args,
     get_type_hints,
     no_type_check,
+    runtime_checkable,
 )
 
+import importlib
+import inspect
 import pickle
 import sys
 
 import pytest
 
+from configgle import decorator
 from configgle.cli_override import apply_overrides
 from configgle.decorator import autofig
 
@@ -466,9 +470,150 @@ class Node:
         monkeypatch=monkeypatch,
     )
     node = cast(type, module.Node)
-    with pytest.raises(TypeError, match=r"autofig.*parameter"):
+    with pytest.raises(
+        TypeError,
+        match=r"^autofig parameter .+ must accept a keyword argument",
+    ):
         autofig(node)
     assert not hasattr(node, "Config")
+
+
+def test_autofig_config_is_keyword_only() -> None:
+    """The default generated Config rejects positional field arguments."""
+
+    @autofig
+    class KeywordOnly:
+        def __init__(self, value: int = 1):
+            self.value = value
+
+    with pytest.raises(TypeError, match="positional"):
+        KeywordOnly.Config(2)
+
+
+def test_autofig_can_generate_positional_config() -> None:
+    """The explicit kw-only option controls generated Config construction."""
+
+    @autofig(kw_only=False)
+    class Positional:
+        def __init__(self, value: int = 1):
+            self.value = value
+
+    assert Positional.Config(2).make().value == 2
+
+
+def test_autofig_generated_config_has_qualified_name() -> None:
+    """Generated Config keeps the nested public qualified name."""
+
+    @autofig
+    class Named:
+        def __init__(self, value: int = 1):
+            self.value = value
+
+    assert Named.Config.__name__ == "Named.Config"
+    assert Named.Config.__qualname__.endswith("Named.Config")
+
+
+def test_autofig_require_defaults_is_enforced() -> None:
+    """The default decorator rejects constructor fields without defaults."""
+    with pytest.raises(TypeError, match=r"^Config\.value has no default value\."):
+
+        @autofig
+        class Missing:
+            def __init__(self, value: int):
+                self.value = value
+
+
+def test_autofig_rejects_dunder_parameter_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dunder constructor parameters cannot become Config fields."""
+    module = _compile_module(
+        """
+class Node:
+    def __init__(self, __value__: int = 1):
+        pass
+""",
+        monkeypatch=monkeypatch,
+    )
+    node = cast(type, module.Node)
+    with pytest.raises(
+        TypeError,
+        match=r"^autofig parameter '__value__' conflicts with Config\.$",
+    ):
+        autofig(node)
+
+
+def test_autofig_preserves_single_sided_dunder_names() -> None:
+    """Only names surrounded by dunders conflict with Config fields."""
+
+    class Node:
+        def __init__(self, value: int = 1):
+            self.value = value
+
+    cast(dict[str, object], Node.__init__.__dict__)["__signature__"] = (
+        inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter(
+                    "__value",
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    default=1,
+                ),
+            ],
+        )
+    )
+    autofig(Node)
+
+
+def test_autofig_uses_keyword_only_generated_config() -> None:
+    """Generated Config fields remain keyword-only in their signature."""
+
+    @autofig
+    class KeywordOnly:
+        def __init__(self, value: int = 1):
+            self.value = value
+
+    assert inspect.signature(KeywordOnly.Config).parameters["value"].kind is (
+        inspect.Parameter.KEYWORD_ONLY
+    )
+
+
+def test_autofig_uses_annotationlib_on_314(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Python 3.14 uses annotationlib's forward-reference format."""
+    # The public package validates on 3.12, which has no ``annotationlib``.
+    pytest.importorskip("annotationlib")
+    monkeypatch.setattr(sys, "version_info", (3, 14))
+    imported: list[str] = []
+    original_import = importlib.import_module
+
+    def record_import(name: str) -> ModuleType:
+        imported.append(name)
+        return original_import(name)
+
+    monkeypatch.setattr(importlib, "import_module", record_import)
+
+    @autofig
+    class Node:
+        def __init__(self, value: int = 1):
+            self.value = value
+
+    assert "annotationlib" in imported
+
+
+def test_autofig_supports_pre_314_annotation_inspection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public fallback uses ordinary annotation inspection before 3.14."""
+    monkeypatch.setattr(sys, "version_info", (3, 13))
+
+    @autofig
+    class Node:
+        def __init__(self, value: int = 1):
+            self.value = value
+
+    assert get_type_hints(Node.Config)["value"] is int
 
 
 def test_inherited_forward_annotation_uses_defining_module(
@@ -618,6 +763,31 @@ class Node:
     assert not hasattr(node, "Config")
 
 
+@runtime_checkable
+class _HasValue(Protocol):
+    value: int
+
+
+def test_autofig_allows_nonreserved_case_variant_parameter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the exact construction-control name is reserved."""
+    for name in ("MAKE_WITH_KWARGS", "XXmake_with_kwargsXX"):
+        module = _compile_module(
+            f"""
+class Node:
+    def __init__(self, {name}: int = 1):
+        self.value = {name}
+""",
+            monkeypatch=monkeypatch,
+        )
+        node = cast("type[HasRelaxedConfig[object]]", module.Node)
+        decorated = autofig(node)
+        built = decorated.Config(**{name: 3}).make()
+        assert isinstance(built, _HasValue)
+        assert built.value == 3
+
+
 def test_empty_constructor() -> None:
     """A class with object.__init__ can build through an empty Config."""
 
@@ -650,6 +820,87 @@ def test_unsupported_constructor_binding_rejected(
     with pytest.raises(TypeError, match="autofig"):
         autofig(node)
     assert not hasattr(node, "Config")
+
+
+def test_autofig_reports_exact_staticmethod_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Static constructors receive the documented binding diagnostic."""
+    module = _compile_module(
+        "class Node:\n"
+        "    @staticmethod\n"
+        "    def __init__(value: int = 1):\n"
+        "        pass\n",
+        monkeypatch=monkeypatch,
+    )
+    with pytest.raises(
+        TypeError,
+        match=r"^autofig requires an instance-method __init__ constructor\.$",
+    ):
+        autofig(cast(type, module.Node))
+
+
+def test_autofig_reports_exact_new_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Custom allocation without an initializer receives the documented error."""
+    module = _compile_module(
+        "class Node:\n    def __new__(cls):\n        return super().__new__(cls)\n",
+        monkeypatch=monkeypatch,
+    )
+    with pytest.raises(
+        TypeError,
+        match=r"^autofig requires an __init__ constructor, not __new__\.$",
+    ):
+        autofig(cast(type, module.Node))
+
+
+def test_autofig_reports_exact_receiver_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A variadic receiver receives the documented instance diagnostic."""
+    module = _compile_module(
+        "class Node:\n    def __init__(*args):\n        pass\n",
+        monkeypatch=monkeypatch,
+    )
+    with pytest.raises(
+        TypeError,
+        match=r"^autofig requires an explicit instance parameter\.$",
+    ):
+        autofig(cast(type, module.Node))
+
+
+def test_resolve_annotation_uses_empty_metadata_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Annotation resolution supplies stable defaults for plain callables."""
+    captured: dict[str, object] = {}
+
+    def fake_get_type_hints(
+        obj: object,
+        *,
+        globalns: dict[str, object],
+        localns: dict[str, object],
+    ) -> dict[str, object]:
+        del localns
+        namespace = cast(SimpleNamespace, obj)
+        captured["no_type_check"] = vars(namespace)["__no_type_check__"]
+        captured["globalns"] = globalns
+        return {"value": int}
+
+    monkeypatch.setattr(decorator, "get_type_hints", fake_get_type_hints)
+
+    class Constructor:
+        def __call__(self, value: int = 1) -> None:
+            del value
+
+    constructor = cast("Callable[..., object]", Constructor())
+    assert (
+        decorator._resolve_annotation(
+            "value",
+            constructor=constructor,
+            annotations={"value": int},
+            localns={},
+        )
+        is int
+    )
+    assert captured == {"no_type_check": False, "globalns": {}}
 
 
 def _compile_module(
