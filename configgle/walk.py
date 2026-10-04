@@ -32,7 +32,7 @@ from collections.abc import (
 from dataclasses import dataclass
 from functools import partial
 from types import FunctionType, ModuleType
-from typing import cast
+from typing import Protocol, TypeGuard, cast
 
 import copy
 
@@ -233,14 +233,16 @@ def bind_late(root: object) -> None:
     """Call ``bind(root)`` on every ``LateBound`` reachable from ``root``, once.
 
     Walks the BUILT tree, not a config tree, so the shapes differ from
-    ``copy_tree``: a torch module exposes its subtree through ``modules()``
-    (duck-typed, so this module stays torch-free), and otherwise attributes and
-    containers are followed as ``_finalize_value`` follows them.
+    ``copy_tree``: a torch module exposes its subtree through ``modules()``,
+    and otherwise attributes and containers are followed as ``_finalize_value``
+    follows them. Every object the built tree holds is visited, since a
+    ``LateBound`` may sit anywhere in it.
 
     Args:
       root: The outermost built object; what every ``bind`` receives.
 
     """
+    torch_module_types: dict[type, bool] = {}
     seen = set[int]()
     stack: list[object] = [root]
     while stack:
@@ -248,23 +250,29 @@ def bind_late(root: object) -> None:
         # ``ModuleType`` is a leaf: a module-valued attribute (e.g. the shared
         # ``random`` a seedless RNG falls back to) otherwise opens the entire
         # imported graph, where a third-party object's permissive
-        # ``__getattr__`` synthesizes the ``modules`` probed below and details
-        # the walk far from anything the caller built.
-        if id(node) in seen or isinstance(
+        # ``__getattr__`` details the walk far from anything the caller built.
+        # Leaves are tested before ``seen``: they are most of a large built
+        # tree, and an id probe per leaf into a set of millions cost a fifth of
+        # the walk.
+        if isinstance(
             node,
             (type, int, float, str, bytes, bool, type(None), ModuleType, FunctionType),
         ):
             continue
+        if id(node) in seen:
+            continue
         seen.add(id(node))
         if isinstance(node, LateBound):
             node.bind(root)
-        # ``modules`` is looked up on the TYPE: an instance attribute of that
-        # name is data, and an instance probe runs a third-party ``__getattr__``
-        # (a module namespace, a marker registry, or wandb's disabled shim,
-        # which raises ``KeyError`` instead of reporting the method's absence).
-        modules = getattr(type(node), "modules", None)
-        if callable(modules):
-            stack.extend(cast(Iterator[object], modules(node)))
+        # Builtin containers come before the torch and ABC probes, which they
+        # can never satisfy; on a tree of millions of small lists those probes
+        # cost a quarter of the walk.
+        if isinstance(node, (list, tuple, set, frozenset)):
+            stack.extend(cast(Iterable[object], node))
+        elif isinstance(node, dict):
+            stack.extend(cast(dict[object, object], node).values())
+        elif _is_torch_module(node, torch_module_types):
+            stack.extend(node.modules())
         elif isinstance(node, Mapping):
             stack.extend(node.values())
         elif isinstance(node, (Sequence, AbstractSet)):
@@ -282,6 +290,33 @@ def bind_late(root: object) -> None:
                     stack.append(attribute)
                 except AttributeError:
                     continue
+
+
+class _ModuleTree(Protocol):
+    """The part of ``torch.nn.Module`` that ``bind_late`` calls."""
+
+    def modules(self) -> Iterator[object]: ...
+
+
+# Recognized by import path, never by a ``modules`` method: duck typing called
+# whatever ``modules`` a built object's class happened to define, and a catalog's
+# ``modules(self, kind)`` made ``make()`` raise ``TypeError``. Naming the class also
+# keeps torch out of configgle's imports; an instance cannot exist until torch is
+# imported anyway.
+def _is_torch_module(
+    node: object,
+    known: dict[type, bool],
+) -> TypeGuard[_ModuleTree]:
+    """Whether ``node`` is a ``torch.nn.Module``; ``known`` caches the answer by type."""
+    cls = type(node)
+    found = known.get(cls)
+    if found is None:
+        found = known[cls] = any(
+            base.__module__ == "torch.nn.modules.module"
+            and base.__qualname__ == "Module"
+            for base in cls.__mro__
+        )
+    return found
 
 
 def _make_value[ValueT](

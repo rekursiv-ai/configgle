@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from dataclasses import field
 from typing import TYPE_CHECKING, NamedTuple, Self, cast, override
 
+import collections
 import random
 import socket
 import types
@@ -499,8 +500,21 @@ def test_bind_late_skips_an_unset_slot():
     bind_late(Holder())  # Must not raise despite the unset slot.
 
 
-def test_bind_late_walks_a_torch_style_module_subtree():
-    """The class-level probe must still find a real ``modules()`` method."""
+class _TorchModule:
+    """Stands in for ``torch.nn.Module``, which ``bind_late`` knows by import path.
+
+    configgle stays torch-free, so the walk names torch's class instead of
+    importing it; to the walk, a class at that module and qualname is the real
+    one.
+    """
+
+
+_TorchModule.__module__ = "torch.nn.modules.module"
+_TorchModule.__qualname__ = "Module"
+
+
+def test_bind_late_walks_a_torch_module_through_modules():
+    """A torch module's subtree is what ``modules()`` yields."""
     seen: list[object] = []
 
     class Late(LateBound):
@@ -508,19 +522,82 @@ def test_bind_late_walks_a_torch_style_module_subtree():
         def bind(self, root: object) -> None:
             seen.append(root)
 
-    class Net:
-        """Duck-typed stand-in for ``nn.Module`` (this package stays torch-free)."""
+    hidden = Late()  # No attribute holds it: only ``modules()`` reaches it.
 
-        def __init__(self, children: list[object]) -> None:
-            self._children = children
-
+    class Net(_TorchModule):
         def modules(self) -> Iterator[object]:
             yield self
-            yield from self._children
+            yield hidden
 
-    root = Net([Late()])
+    root = Net()
     bind_late(root)
     assert seen == [root]
+
+
+def test_bind_late_does_not_call_a_foreign_modules_method():
+    """Only torch's module tree is walked through ``modules()``; others are data.
+
+    A catalog whose ``modules(self, kind)`` was reachable from a built object
+    was called with no arguments, and ``make()`` raised ``TypeError``. A
+    zero-argument ``modules`` is no safer: it is still someone else's method.
+    Both objects are walked as ordinary data carriers, so what they hold is
+    still reached.
+    """
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    class Catalog:
+        def __init__(self) -> None:
+            self.late = Late()
+
+        def modules(self, kind: str) -> list[str]:
+            return [kind]
+
+    class Registry:
+        def __init__(self) -> None:
+            self.late = Late()
+
+        def modules(self) -> list[str]:
+            raise AssertionError("bind_late must not call Registry.modules")
+
+    root = {"catalog": Catalog(), "registry": Registry()}
+    bind_late(root)
+    assert seen == [root, root]
+
+
+def test_bind_late_reaches_late_bound_objects_in_every_container():
+    """Builtin containers and other Mappings and Sequences are all searched."""
+    bound: list[str] = []
+
+    class Late(LateBound):
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        @override
+        def bind(self, root: object) -> None:
+            bound.append(self.name)
+
+    root = [
+        (Late("tuple"),),
+        {"key": [Late("dict")]},
+        {Late("set")},
+        frozenset({Late("frozenset")}),
+        types.MappingProxyType({"key": Late("mapping")}),
+        collections.deque([Late("sequence")]),
+    ]
+    bind_late(root)
+    assert sorted(bound) == [
+        "dict",
+        "frozenset",
+        "mapping",
+        "sequence",
+        "set",
+        "tuple",
+    ]
 
 
 def test_bind_late_still_binds_through_ordinary_attributes():
