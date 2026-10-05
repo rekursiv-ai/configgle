@@ -259,9 +259,7 @@ class FigPrinter(PrettyPrinter):
     # printing side-effect-free.
     def _try_to_finalize(self, obj: _T) -> _T:
         """Copy the config tree then finalize it for display purposes."""
-        # pragma: no mutate start -- None and False are equally falsy defaults.
         finalized_flag = getattr(obj, "_finalized", False)
-        # pragma: no mutate end
         if self._finalize and isinstance(obj, Finalizeable) and not finalized_flag:
             cached = (
                 None
@@ -279,9 +277,7 @@ class FigPrinter(PrettyPrinter):
                     self._finalized_copies[id(obj)] = (obj, finalized)
                 obj = finalized
             except Exception as e:  # noqa: BLE001 -- any finalize failure degrades to printing the unfinalized tree.
-                # pragma: no mutate start -- mutmut's trampoline shifts frames.
                 warnings.warn(f"{type(e).__name__}: {e}", stacklevel=2)
-                # pragma: no mutate end
         return obj
 
     # CPython's PrettyPrinter dispatches to ``_pprint_dataclass`` for dataclass
@@ -711,11 +707,9 @@ def _mask_memory_addresses(text: str) -> str:
         return text
     string_spans = _string_token_spans(text)
     for match in reversed(matches):
-        # pragma: no mutate start -- " at " precedes each match: ``<``/``<=`` agree.
         open_spans = [
             (start, end) for start, end in string_spans if match.start() < end
         ]
-        # pragma: no mutate end
         if any(match.end() > start for start, _ in open_spans):
             continue
         # One literal for every masked address, on every platform. Goldens are

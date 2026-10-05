@@ -214,26 +214,23 @@ def _resolve_annotation(
     if annotation is inspect.Parameter.empty:
         return object
     try:
-        hints = cast(
-            dict[str, object],
-            get_type_hints(
-                SimpleNamespace(
-                    __annotations__={name: annotation},
-                    __no_type_check__=cast(
-                        object,
-                        getattr(constructor, "__no_type_check__", False),
-                    ),
+        hints = get_type_hints(
+            SimpleNamespace(
+                __annotations__={name: annotation},
+                __no_type_check__=cast(
+                    object,
+                    getattr(constructor, "__no_type_check__", False),
                 ),
-                globalns=cast(
-                    dict[str, object],
-                    getattr(
-                        inspect.unwrap(constructor),
-                        "__globals__",
-                        {},
-                    ),
-                ),
-                localns=localns,
             ),
+            globalns=cast(
+                dict[str, object],
+                getattr(
+                    cast(object, inspect.unwrap(constructor)),
+                    "__globals__",
+                    {},
+                ),
+            ),
+            localns=localns,
         )
         return hints.get(name, object)
     except NameError:

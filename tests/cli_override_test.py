@@ -56,6 +56,37 @@ def test_apply_overrides_top_level_scalar() -> None:
     assert config.name == "run_a"
 
 
+@pytest.mark.parametrize("raw", ["123", "1.5", "run_a"])
+def test_apply_overrides_keeps_the_text_for_a_str_field(raw: str) -> None:
+    """``name=123`` means the text "123", as it did before the msgspec read."""
+    config = NestedJob.Config()
+    apply_overrides(config, [f"name={raw}"])
+    assert config.name == raw
+
+
+def test_apply_overrides_reads_a_quoted_json_string_as_its_text() -> None:
+    """``name="a b"`` is the JSON string, so the quotes are not kept."""
+    config = NestedJob.Config()
+    apply_overrides(config, ['name="a b"'])
+    assert config.name == "a b"
+
+
+@pytest.mark.parametrize("raw", ["abc", "[1]", "{}"])
+def test_apply_overrides_rejects_text_no_reading_fits(raw: str) -> None:
+    """A value neither its JSON nor its bare text can type fails, naming the path."""
+    config = NestedJob.Config()
+    with pytest.raises(ValueError, match=r"child\.steps"):
+        apply_overrides(config, [f"child.steps={raw}"])
+
+
+def test_apply_overrides_reads_a_number_for_a_numeric_field() -> None:
+    """``steps=7`` is the number, not the text."""
+    config = NestedJob.Config()
+    apply_overrides(config, ["child.steps=7", "child.lr=0.5"])
+    assert config.child.steps == 7
+    assert config.child.lr == 0.5
+
+
 def test_apply_overrides_nested_depth() -> None:
     """A dotted override walks into a nested Fig and casts the leaf."""
     config = NestedJob.Config()

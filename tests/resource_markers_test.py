@@ -148,7 +148,7 @@ def test_golden_marks_are_derived_only_when_selected(
 ) -> None:
     module = tmp_path / "selected_test.py"
     module.write_text(
-        "from pkg.testing.bfb import assert_bfb_against_golden as check\n"
+        "from numerics.testing.bfb import assert_bfb_against_golden as check\n"
         "\ndef test_selected():\n    check()\n",
         encoding="utf-8",
     )
@@ -179,7 +179,7 @@ def test_unknown_alias_lookup_reports_a_usage_error() -> None:
 def test_indirect_golden_caller_is_marked(tmp_path: Path) -> None:
     module = tmp_path / "bridge_test.py"
     module.write_text(
-        "import pkg.testing.bfb as bfb\n"
+        "import numerics.testing.bfb as bfb\n"
         "\ndef test_indirect():\n    bfb.assert_bfb_against_golden()\n",
         encoding="utf-8",
     )
@@ -194,7 +194,7 @@ def test_indirect_golden_caller_is_marked(tmp_path: Path) -> None:
 def test_imported_name_call_is_marked(tmp_path: Path) -> None:
     module = tmp_path / "name_test.py"
     module.write_text(
-        "from pkg.testing.bfb import assert_bfb_against_golden as check\n"
+        "from numerics.testing.bfb import assert_bfb_against_golden as check\n"
         "\ndef test_name():\n    check()\n",
         encoding="utf-8",
     )
@@ -248,7 +248,7 @@ def test_test_loading_a_checked_in_tensor_golden_is_marked(tmp_path: Path) -> No
 def test_test_reading_a_module_level_golden_path_is_marked(tmp_path: Path) -> None:
     module = tmp_path / "constant_test.py"
     module.write_text(
-        "from pkg.testing.golden import read_tensors\n"
+        "from numerics.testing.golden import read_tensors\n"
         '\nGOLDEN = _CWD / "testdata" / "data.pt"\n'
         "\ndef test_constant():\n    read_tensors(GOLDEN)\n",
         encoding="utf-8",
@@ -343,6 +343,84 @@ def test_module_path_ignores_invalid_and_external_specs(
 def test_openml_cold_fetch_keeps_its_hosted_runner_timeout_budget() -> None:
     """A cold OpenML download needs the previously established 120s budget."""
     assert resource_marker_timeout("network_openml") >= 120
+
+
+def test_resource_marker_family_rejects_malformed_names() -> None:
+    with pytest.raises(ValueError, match="separator"):
+        resource_markers.resource_marker_family("network")
+    with pytest.raises(ValueError, match="family"):
+        resource_markers.resource_marker_family("unknown_probe")
+
+
+def test_unknown_resource_marker_is_rejected() -> None:
+    with pytest.raises(pytest.UsageError, match="network_missing"):
+        resource_markers._fail_on_unknown_resource_markers(
+            {"network_missing"},
+            resource_markers=set(),
+        )
+
+
+def test_golden_call_graph_import_edges_are_resolved(tmp_path: Path) -> None:
+    direct = tmp_path / "direct.py"
+    direct.write_text(
+        "import numerics.testing.bfb as bfb\n",
+        encoding="utf-8",
+    )
+    assert resource_markers._function_facts(direct, "assert_anything") == (True, ())
+
+    imported = tmp_path / "imported.py"
+    imported.write_text(
+        "from numerics.testing.bfb import assert_bfb_against_golden\n",
+        encoding="utf-8",
+    )
+    assert resource_markers._function_facts(
+        imported,
+        "assert_bfb_against_golden",
+    ) == (True, ())
+    aliased = tmp_path / "aliased.py"
+    aliased.write_text(
+        "from numerics.testing.bfb import assert_bfb_against_golden as check\n",
+        encoding="utf-8",
+    )
+    assert resource_markers._function_facts(aliased, "check") == (True, ())
+
+
+def test_import_graph_without_golden_support_is_false(tmp_path: Path) -> None:
+    module = tmp_path / "plain.py"
+    module.write_text("import pathlib\n", encoding="utf-8")
+    assert resource_markers._imports_golden_support(module) is False
+
+
+def test_import_graph_skips_a_seen_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root.py"
+    root.write_text("import bridge\n", encoding="utf-8")
+    bridge = tmp_path / "bridge.py"
+    bridge.write_text("import bridge\n", encoding="utf-8")
+
+    def find_bridge(name: str) -> Path | None:
+        return bridge if name == "bridge" else None
+
+    monkeypatch.setattr(resource_markers, "module_path", find_bridge)
+    assert resource_markers._imports_golden_support(root) is False
+
+
+def test_import_graph_follows_local_modules_to_golden_support(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root.py"
+    bridge = tmp_path / "bridge.py"
+    root.write_text("import bridge\n", encoding="utf-8")
+    bridge.write_text("import numerics.testing.bfb\n", encoding="utf-8")
+
+    def find_bridge(name: str) -> Path | None:
+        return bridge if name == "bridge" else None
+
+    monkeypatch.setattr(resource_markers, "module_path", find_bridge)
+    assert resource_markers._imports_golden_support(root) is True
 
 
 class _Config:

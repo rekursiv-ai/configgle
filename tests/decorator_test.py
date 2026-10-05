@@ -82,7 +82,7 @@ class Later:
     apply_overrides(config, ['count="7"'])
     assert _field(config, "count") == 7
     assert type(_field(config, "count")) is int
-    child_hint = cast(object, get_type_hints(node.Config)["child"])
+    child_hint = get_type_hints(node.Config)["child"]
     child_type = cast(object, getattr(module, child_name))
     assert isinstance(child_type, type)
     assert child_hint == _union(child_type, type(None))
@@ -237,7 +237,7 @@ def test_constructor_type_parameter_is_preserved() -> None:
             self.value = value
             self.fallback = fallback
 
-    annotation = cast(object, get_type_hints(Generic.Config)["value"])
+    annotation = get_type_hints(Generic.Config)["value"]
     assert isinstance(get_args(annotation)[0], TypeVar)
     assert Generic.Config().make().value is None
 
@@ -253,7 +253,7 @@ def test_constructor_type_parameter_shadows_class_attribute() -> None:
             self.value = value
             self.fallback = fallback
 
-    annotation = cast(object, get_type_hints(Shadowed.Config)["value"])
+    annotation = get_type_hints(Shadowed.Config)["value"]
     assert isinstance(get_args(annotation)[0], TypeVar)
 
 
@@ -423,7 +423,7 @@ class Later:
     child = cast(type, getattr(node, child_name))
     later_name = "Later"
     later = cast(type, getattr(module, later_name))
-    hint = cast(object, get_type_hints(node.Config)["child"])
+    hint = get_type_hints(node.Config)["child"]
     outer_args = get_args(hint)
     assert outer_args[1] is type(None)
     assert get_args(outer_args[0]) == (_union(child, later),)
