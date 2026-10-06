@@ -428,37 +428,6 @@ See `help(configgle.pprint)` for the rest of the
 knobs (`indent`, `width`, `depth`, `compact`,
 `mask_memory_addresses`, etc.).
 
-### Pprint golden tests
-
-Use the public Configgle harness when a config's defaults and finalized
-propagation are part of its tested contract:
-
-```python
-from configgle.testing import assert_pprint_golden
-
-
-def test_sandwich_config_pprint() -> None:
-    assert_pprint_golden(
-        test_file=__file__,
-        name="sandwich",
-        config=Sandwich.Config(),
-    )
-```
-
-The harness finalizes the config and forces `hide_default_values=False`, so the
-golden catches inherited-default changes as well as explicit overrides. It
-stores `testdata/<name>.txt` beside the test. After an intentional change, read
-the diff, regenerate, inspect the file, then rerun without regeneration:
-
-```bash
-CONFIGGLE_REGENERATE_GOLDEN=1 uv --quiet run --frozen pytest <test_file>::<test_nodeid>
-uv --quiet run --frozen pytest <test_file>::<test_nodeid>
-```
-
-Import from `configgle.testing`, never through a consumer package's testing
-facade. Do not call `pformat` manually at the callsite; the harness owns the
-full finalized rendering policy.
-
 ## Other Config methods
 
 - `cfg.update(source=None, *, skip_missing=False, **kwargs)` -- overlay
