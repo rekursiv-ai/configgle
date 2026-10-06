@@ -6,6 +6,20 @@ All notable configgle changes are documented here. This project follows
 Releases up to and including 1.4.0 are described in the
 [GitHub release notes](https://github.com/rekursiv-ai/configgle/releases).
 
+## Unreleased
+
+### Removed
+
+- **Breaking:** `configgle.testing` and its `assert_pprint_golden`, added in
+  1.4.1. The helper moved to priml as
+  `priml.testing.golden.assert_pprint_golden`, which takes the same
+  `test_file`, `name`, and `config` arguments, writes the same
+  `testdata/<name>.txt` goldens, and adds an optional `normalize`. It
+  regenerates with `--regenerate-golden`; `CONFIGGLE_REGENERATE_GOLDEN=1` is no
+  longer read. Import it from priml, or compare
+  `config.pformat(finalize=True, mask_memory_addresses=True,
+  hide_default_values=False)` against your own golden.
+
 ## 1.4.1 - 2026-10-03
 
 ### Added
