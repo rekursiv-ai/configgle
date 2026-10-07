@@ -273,9 +273,8 @@ for ``finalize``/``make``. Opaque leaves (tensors, etc.) need a
 
 Deserialization imports the modules named in the payload, so treat a
 serialized config like ``pickle``: load only trusted data. For any object, not
-just a config, use ``configgle.custom_json.encode_graph`` and ``decode_graph``;
-``decode_graph`` imports and calls ``__reduce__`` only when its
-``DecodeCapabilities`` allow it.
+just a config, use ``configgle.codec.to_plain`` and ``from_plain``;
+``from_plain`` imports and calls ``__reduce__`` only with ``allow_imports=True``.
 
 ``traverse`` / ``Match`` -- Typed walk of a config tree. ``traverse(root,
 cls)`` yields a ``Match`` (node, dotted path, parent slot) for every node

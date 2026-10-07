@@ -16,23 +16,35 @@ import pickle
 
 import pytest
 
-from configgle.custom_json import (
-    DecodeCapabilities,
-    GraphHooks,
-    decode_graph,
-    encode_graph,
-    loads,
-    resolve_import,
+from configgle.codec import (
+    Hooks,
+    PlainTree,
+    ReadError,
+    from_plain,
+    to_plain,
 )
 from configgle.fig import Dataclass, Fig
 from configgle.inline import InlineConfig, PartialConfig
 
 
-def _decode_graph(tree: object, *, hooks: GraphHooks | None = None) -> object:
-    return decode_graph(
-        tree,
-        hooks=hooks,
-        capabilities=DecodeCapabilities(resolve=resolve_import, apply_reduce=True),
+def encode_graph(
+    value: object,
+    *,
+    hooks: Hooks | None = None,
+) -> PlainTree:
+    return to_plain(value, hooks=hooks or {})
+
+
+def loads(text: str) -> PlainTree:
+    return cast(PlainTree, json.loads(text))
+
+
+def _decode_graph(tree: object, *, hooks: Hooks | None = None) -> object:
+    return from_plain(
+        cast(PlainTree, tree),
+        object,
+        hooks=hooks or {},
+        allow_imports=True,
     )
 
 
@@ -134,7 +146,7 @@ def _encode_weight(weight: Weight) -> list[float]:
     return weight.data
 
 
-_WEIGHT_HOOKS: GraphHooks = {Weight: (_encode_weight, Weight)}
+_WEIGHT_HOOKS: Hooks = {Weight: (_encode_weight, Weight)}
 
 
 class _StatefulLeaf:
@@ -1202,8 +1214,8 @@ def test_local_mapping_subclass_degrades_to_base_dict():
 
 
 def test_deserialize_rejects_unresolvable_import_path():
-    """A ``py/type`` naming a nonexistent module raises ``ImportError`` on decode."""
-    with pytest.raises(ImportError, match="Cannot resolve path"):
+    """A ``py/type`` naming a nonexistent module raises ``ReadError`` on decode."""
+    with pytest.raises(ReadError, match="Cannot resolve path"):
         _decode_graph({"py/type": "no_such_module_xyz.Thing"})
 
 

@@ -25,7 +25,8 @@ from collections import OrderedDict
 from dataclasses import field
 from decimal import Decimal
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, Final, NamedTuple, override
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Final, NamedTuple, cast, override
 
 import enum
 import json
@@ -33,14 +34,7 @@ import os
 
 import pytest
 
-from configgle.custom_json import (
-    DecodeCapabilities,
-    GraphHooks,
-    decode_graph,
-    encode_graph,
-    loads,
-    resolve_import,
-)
+from configgle.codec import Hooks, PlainTree, from_plain, to_plain
 from configgle.fig import Fig
 from configgle.inline import InlineConfig
 
@@ -179,6 +173,8 @@ CASES: Final[Mapping[str, Callable[[], object]]] = {
     "tuple": lambda: (1, (2, 3), ()),
     "set": lambda: {1},
     "frozenset": lambda: frozenset({1}),
+    "complex": lambda: 1 + 2j,
+    "mappingproxy": lambda: MappingProxyType({"a": 1}),
     "path": lambda: PurePosixPath("/opt/scratch/x"),
     "decimal": lambda: Decimal("1.25"),
     "enum": lambda: Color.RED,
@@ -206,7 +202,9 @@ GOLDEN: Final[Mapping[str, str]] = {
     "bytes": '{"py/b64":"AP8gYmluYXJ5"}',
     "tuple": '{"py/tuple":[1,{"py/tuple":[2,3]},{"py/tuple":[]}]}',
     "set": '{"py/set":[1]}',
-    "frozenset": '{"py/reduce":[{"py/type":"builtins.frozenset"},{"py/tuple":[[1]]}]}',
+    "frozenset": '{"py/frozenset":[1]}',
+    "complex": '{"py/complex":[1.0,2.0]}',
+    "mappingproxy": '{"py/mappingproxy":{"a":1}}',
     "path": (
         '{"py/reduce":[{"py/type":"pathlib.PurePosixPath"},'
         '{"py/tuple":["/opt/scratch/x"]}]}'
@@ -260,7 +258,7 @@ payload written by an older configgle no longer reads back the same way.
 @pytest.mark.parametrize("name", sorted(CASES), ids=sorted(CASES))
 def test_a_case_serializes_to_its_frozen_bytes(name: str) -> None:
     wire = json.dumps(
-        encode_graph(CASES[name](), hooks=_hooks()),
+        to_plain(CASES[name](), hooks=_hooks()),
         separators=(",", ":"),
         sort_keys=False,
     )
@@ -279,12 +277,14 @@ def test_the_frozen_bytes_still_decode_to_the_value(name: str) -> None:
     # identity, which a fresh decode never satisfies.
     wire = GOLDEN[name].replace("{module}", MODULE)
 
-    restored = _decode_graph(loads(wire), hooks=_hooks())
-
-    assert (
-        json.dumps(encode_graph(restored, hooks=_hooks()), separators=(",", ":"))
-        == wire
+    restored = from_plain(
+        cast(PlainTree, json.loads(wire)),
+        object,
+        hooks=_hooks(),
+        allow_imports=True,
     )
+
+    assert json.dumps(to_plain(restored, hooks=_hooks()), separators=(",", ":")) == wire
 
 
 def test_every_case_has_a_golden() -> None:
@@ -297,11 +297,14 @@ def test_every_case_has_a_golden() -> None:
     "tag",
     [
         "py/b64",
+        "py/complex",
         "py/float",
+        "py/frozenset",
         "py/function",
         "py/hook",
         "py/id",
         "py/inline",
+        "py/mappingproxy",
         "py/object",
         "py/reduce",
         "py/set",
@@ -316,15 +319,20 @@ def test_every_wire_tag_is_frozen_by_some_case(tag: str) -> None:
     assert any(tag in wire for wire in GOLDEN.values()), f"no golden emits {tag}"
 
 
-def _decode_graph(tree: object, *, hooks: GraphHooks) -> object:
-    return decode_graph(
-        tree,
-        hooks=hooks,
-        capabilities=DecodeCapabilities(resolve=resolve_import, apply_reduce=True),
+def test_a_frozenset_written_as_a_reduce_still_decodes() -> None:
+    # Configgle 1.4 wrote a frozenset as a reduce recipe; such payloads persist.
+    legacy = '{"py/reduce":[{"py/type":"builtins.frozenset"},{"py/tuple":[[1]]}]}'
+
+    restored = from_plain(
+        cast(PlainTree, json.loads(legacy)),
+        object,
+        allow_imports=True,
     )
 
+    assert restored == frozenset({1})
 
-def _hooks() -> GraphHooks:
+
+def _hooks() -> Hooks:
     """Return the hook table the golden cases serialize under."""
     return {Weight: (_encode_weight, Weight)}
 

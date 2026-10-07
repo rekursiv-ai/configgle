@@ -14,12 +14,11 @@ naturally) and then coerced to the field's declared type.
 
 from __future__ import annotations
 
-from json import JSONDecodeError
 from typing import TYPE_CHECKING, get_type_hints
 
 import dataclasses
 
-from configgle.custom_json import ReadError, convert, loads
+from configgle.codec import ReadError, parse
 
 
 if TYPE_CHECKING:
@@ -69,9 +68,8 @@ def apply_overrides(config: Makeable[object], overrides: list[str]) -> None:
             _, node = _override_field(node, key, path)
         leaf = keys[-1]
         annotation, _ = _override_field(node, leaf, path)
-        parsed = _parse_override_value(raw, annotation)
         try:
-            value = convert(parsed, annotation, strict=False)
+            value = parse(raw, annotation)
         except ReadError as e:
             # ``read`` raises ``ReadError`` when ``raw`` cannot coerce to the
             # field type -- e.g. a scalar for a nested-config field
@@ -107,15 +105,3 @@ def _override_field(node: object, key: str, path: str) -> tuple[object, object]:
             f"Override path `{path}` has no field `{key}` on {type(node).__name__}.",
         )
     return hints[key], getattr(node, key)
-
-
-def _parse_override_value(raw: str, annotation: object) -> object:
-    """Parse a raw override value for a field declared ``annotation``."""
-    try:
-        literal = loads(raw)
-    except JSONDecodeError:
-        return raw
-    is_text_field = annotation is str
-    if is_text_field and not isinstance(literal, str):
-        return raw
-    return literal

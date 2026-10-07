@@ -1,6 +1,6 @@
 # Why configgle ships a bespoke serializer instead of jsonpickle
 
-`encode_graph`/`decode_graph` are configgle's own structural walk, not a wrapper
+`to_plain`/`from_plain` are configgle's own structural walk, not a wrapper
 over [jsonpickle](https://jsonpickle.github.io).
 
 **We roll our own implementation, but the wire format is jsonpickle's.** configgle
