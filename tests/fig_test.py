@@ -27,7 +27,7 @@ from configgle.fig import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from configgle.custom_json import DecodeCapabilities, GraphHooks
+    from configgle.codec import Dialect, Hooks, PlainTree
 
 
 class BaseConfig(Fig):
@@ -1638,26 +1638,38 @@ def test_finalize_replaces_a_child_when_finalize_returns_a_new_object() -> None:
 def test_serialize_and_deserialize_forward_hooks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Serialization methods pass custom hooks and decode capabilities."""
-    hooks: GraphHooks = {}
-    encoded = object()
+    """Serialization methods pass options, hooks, and the import grant through."""
+    hooks: Hooks = {Parent: (str, str)}
+    encoded: PlainTree = {"k": 1}
 
-    def fake_encode(config: object, *, hooks: GraphHooks) -> tuple[object, GraphHooks]:
-        return config, hooks
+    def fake_encode(
+        config: object,
+        *,
+        dialect: Dialect,
+        mutable: bool,
+        hooks: Hooks,
+    ) -> tuple[object, Dialect, bool, Hooks]:
+        return config, dialect, mutable, hooks
 
     def fake_decode(
-        tree: object,
+        tree: PlainTree,
+        target: object,
         *,
-        hooks: GraphHooks,
-        capabilities: DecodeCapabilities,
-    ) -> tuple[object, GraphHooks, bool]:
-        return tree, hooks, capabilities.apply_reduce
+        hooks: Hooks,
+        allow_imports: bool,
+    ) -> tuple[object, object, Hooks, bool]:
+        return tree, target, hooks, allow_imports
 
-    monkeypatch.setattr(fig, "encode_graph", fake_encode)
-    monkeypatch.setattr(fig, "decode_graph", fake_decode)
+    monkeypatch.setattr(fig, "to_plain", fake_encode)
+    monkeypatch.setattr(fig, "from_plain", fake_decode)
     config = Parent.Config()
-    assert config.serialize(hooks=hooks) == (config, hooks)
-    assert config.deserialize(encoded, hooks=hooks) == (encoded, hooks, True)
+    assert config.serialize(dialect="python", mutable=False, hooks=hooks) == (
+        config,
+        "python",
+        False,
+        hooks,
+    )
+    assert config.deserialize(encoded, hooks=hooks) == (encoded, object, hooks, True)
 
 
 def test_makes_alias_exposes_origin_and_type_argument() -> None:

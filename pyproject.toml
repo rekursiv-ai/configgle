@@ -22,7 +22,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "msgspec>=0.22.0",
     "typing_extensions",
 ]
 
@@ -444,7 +443,7 @@ ignore = [
 # runtime-evaluated-*: never move an import USED IN annotations of these.
 #   - pydantic.BaseModel: validates fields from annotations.
 #   - configgle Fig/Makes/Maker: resolves Config fields and owner __init__ hints.
-#   - dataclasses.dataclass: custom_json.to_json, cli_override, and
+#   - dataclasses.dataclass: codec.from_plain, cli_override, and
 #     tool_spec.coerce_kwargs call get_type_hints on any dataclass. This pins
 #     every dataclass field type eager; a heavy one (torch.Tensor) that the
 #     house `annotation-import` rule then flags takes an inline house-ignore.

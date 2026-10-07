@@ -68,10 +68,12 @@ from typing import (
     Any,
     ClassVar,
     Generic,
+    Literal,
     Protocol,
     Self,
     cast,
     dataclass_transform,
+    overload,
     override,
 )
 from typing_extensions import TypeVar
@@ -84,12 +86,13 @@ if TYPE_CHECKING:
 
 
 from configgle.absent import ABSENT
-from configgle.custom_json import (
-    DecodeCapabilities,
-    GraphHooks,
-    decode_graph,
-    encode_graph,
-    resolve_import,
+from configgle.codec import (
+    Dialect,
+    Hooks,
+    MutablePlainTree,
+    PlainTree,
+    from_plain,
+    to_plain,
 )
 from configgle.custom_types import (
     DataclassLike,
@@ -404,15 +407,48 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         """
         return update(self, source, skip_missing=skip_missing, **kwargs)
 
-    def serialize(self, *, hooks: GraphHooks | None = None) -> object:
-        """Serialize this config tree to an encodable dict tree.
+    @overload
+    def serialize(
+        self,
+        *,
+        dialect: Dialect = ...,
+        mutable: Literal[True] = ...,
+        hooks: Hooks | None = ...,
+    ) -> MutablePlainTree: ...
 
-        Returns a JSON-encodable structure (nested dicts/lists/primitives), not
-        a string -- the caller picks the transport. The tree is
-        transport-agnostic: hand it to ``json.dumps``, ``yaml.safe_dump``,
-        ``msgpack``, or embed it in a larger structure. Captures the config
-        as-is: ``serialize`` does not finalize, so derived defaults are left for
-        a later ``finalize``/``make`` on the loaded tree.
+    @overload
+    def serialize(
+        self,
+        *,
+        dialect: Dialect = ...,
+        mutable: Literal[False],
+        hooks: Hooks | None = ...,
+    ) -> PlainTree: ...
+
+    @overload
+    def serialize(
+        self,
+        *,
+        dialect: Dialect = ...,
+        mutable: bool,
+        hooks: Hooks | None = ...,
+    ) -> PlainTree: ...
+
+    def serialize(
+        self,
+        *,
+        dialect: Dialect = "json",
+        mutable: bool = True,
+        hooks: Hooks | None = None,
+    ) -> PlainTree:
+        """Serialize this config tree to a plain tree.
+
+        Returns plain data (nested dicts/lists/primitives), not a string -- the
+        caller picks the transport. The tree is transport-agnostic: hand it to
+        ``json.dumps``, ``yaml.safe_dump``, ``msgpack``, or embed it in a larger
+        structure. Captures the config as-is: ``serialize`` does not finalize,
+        so derived defaults are left for a later ``finalize``/``make`` on the
+        loaded tree.
 
         Example:
           >>> import json
@@ -421,17 +457,31 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
           >>> obj = cfg.make()
 
         Args:
-          hooks: Optional ``{type: (encode, decode)}`` map for leaves JSON cannot
-            represent natively (tensors, arrays, etc.).
+          dialect: The target format; ``"json"`` tags non-finite floats, which
+            ``"python"`` keeps native.
+          mutable: Build dicts and lists when true; ``MappingProxyType`` and
+            tuples when false.
+          hooks: Optional ``{type: (encode, decode)}`` map for leaves with no
+            plain form (tensors, arrays, etc.).
 
         Returns:
-          tree: An encodable tree that ``deserialize`` reverses into live objects.
+          tree: A plain tree that ``deserialize`` reverses into live objects.
 
         """
-        return encode_graph(self, hooks=hooks)
+        return to_plain(
+            self,
+            dialect=dialect,
+            mutable=mutable,
+            hooks=hooks or {},
+        )
 
     @classmethod
-    def deserialize(cls, tree: object, *, hooks: GraphHooks | None = None) -> Self:
+    def deserialize(
+        cls,
+        tree: PlainTree,
+        *,
+        hooks: Hooks | None = None,
+    ) -> Self:
         """Reconstruct a config from a tree produced by ``serialize``.
 
         Resolves config classes and callables by their recorded import path, so
@@ -455,14 +505,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         """
         return cast(
             Self,
-            decode_graph(
-                tree,
-                hooks=hooks,
-                capabilities=DecodeCapabilities(
-                    resolve=resolve_import,
-                    apply_reduce=True,
-                ),
-            ),
+            from_plain(tree, object, hooks=hooks or {}, allow_imports=True),
         )
 
     def pformat(

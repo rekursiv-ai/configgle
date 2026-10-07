@@ -58,7 +58,7 @@ def test_apply_overrides_top_level_scalar() -> None:
 
 @pytest.mark.parametrize("raw", ["123", "1.5", "run_a"])
 def test_apply_overrides_keeps_the_text_for_a_str_field(raw: str) -> None:
-    """``name=123`` means the text "123", as it did before the msgspec read."""
+    """``name=123`` means the text "123": a str field reads the raw text."""
     config = NestedJob.Config()
     apply_overrides(config, [f"name={raw}"])
     assert config.name == raw
