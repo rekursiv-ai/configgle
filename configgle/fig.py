@@ -640,7 +640,7 @@ class _Default:
 class _DataclassParams:
     __mro__: ClassVar[list[type]]
     __name__: ClassVar[str]
-    __slots__: ClassVar[tuple[str, ...]] = (
+    __slots__: ClassVar[str | Iterable[str]] = (
         "eq",
         "frozen",
         "init",
