@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field, make_dataclass
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import (
     Annotated,
     Literal,
+    NotRequired,
+    Optional,  # pyright: ignore[reportDeprecated] -- Imported to test its pre-3.14 origin.
     Protocol,
     SupportsIndex,
+    TypedDict,
     TypeVar,
+    Union,  # pyright: ignore[reportDeprecated] -- Imported to test its pre-3.14 origin.
     cast,
     override,
 )
@@ -21,6 +26,7 @@ from zoneinfo import ZoneInfo
 
 import datetime as dt
 import gc
+import json
 import math
 import threading
 import weakref
@@ -30,9 +36,11 @@ import pytest
 from configgle import codec
 from configgle.codec import (
     Invalid,
+    PlainTree,
     ReadError,
     from_plain,
     immutable,
+    loads,
     mutable,
     parse,
     to_plain,
@@ -415,6 +423,15 @@ class TestTypedDecode:
     def test_an_optional_reads_null_and_its_member(self) -> None:
         assert from_plain(None, int | None) is None
         assert from_plain(3, int | None) == 3
+
+    def test_a_typing_union_checks_its_members(self) -> None:
+        # Before 3.14, ``Optional``/``Union`` have origin ``typing.Union``, not
+        # ``types.UnionType``, and once read every value unchecked.
+        assert from_plain(3, Optional[int]) == 3  # noqa: UP045 -- Spelling under test.  # pyright: ignore[reportDeprecated] -- Spelling under test.
+        with pytest.raises(ReadError):
+            from_plain("x", Optional[int])  # noqa: UP045 -- Spelling under test.  # pyright: ignore[reportDeprecated] -- Spelling under test.
+        with pytest.raises(ReadError):
+            from_plain("x", Union[int, bytes])  # noqa: UP007 -- Spelling under test.  # pyright: ignore[reportDeprecated] -- Spelling under test.
 
     def test_a_union_picks_the_matching_kind(self) -> None:
         assert from_plain("1", int | str) == "1"
@@ -939,6 +956,234 @@ class TestParse:
     ) -> None:
         with pytest.raises(ReadError, match=match):
             parse(text, target)
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class Tagged:
+    pair: tuple[int, int] = (0, 0)
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class OtherTagged:
+    name: str = ""
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class Pair1:
+    x: int = 0
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class Pair2:
+    x: int = 0
+
+
+class Meta(TypedDict):
+    size: int
+    name: NotRequired[str]
+
+
+class TestTypedDict:
+    def test_a_typed_dict_reads_its_fields(self) -> None:
+        assert from_plain({"size": 3, "name": "a"}, Meta) == {"size": 3, "name": "a"}
+        assert from_plain({"size": 3}, Meta) == {"size": 3}
+
+    def test_a_field_reads_as_its_declared_type(self) -> None:
+        with pytest.raises(ReadError):
+            from_plain({"size": "3"}, Meta)
+        assert from_plain({"size": "3"}, Meta, strict=False) == {"size": 3}
+
+    def test_a_missing_required_field_raises(self) -> None:
+        with pytest.raises(ReadError, match="size"):
+            from_plain({"name": "a"}, Meta)
+
+    def test_an_unknown_field_is_dropped(self) -> None:
+        assert from_plain({"size": 3, "extra": 1}, Meta) == {"size": 3}
+
+    def test_a_non_mapping_raises(self) -> None:
+        with pytest.raises(ReadError):
+            from_plain([1], Meta)
+
+
+class TestLoads:
+    def test_text_reads_as_a_mutable_tree(self) -> None:
+        assert loads('{"a": [1, 2.5, null]}') == {"a": [1, 2.5, None]}
+        assert loads(b"[true]") == [True]
+
+    def test_non_finite_floats_read(self) -> None:
+        loaded = loads("[NaN, Infinity]")
+        assert isinstance(loaded, list)
+        assert math.isnan(cast("float", loaded[0]))
+        assert loaded[1] == math.inf
+
+    def test_bad_text_raises_json_decode_error(self) -> None:
+        with pytest.raises(json.JSONDecodeError):
+            loads("{")
+
+
+class TestDefault:
+    def test_none_reads_as_the_default(self) -> None:
+        assert from_plain(None, int, default=7) == 7
+        assert from_plain(None, dict[str, int], default={}) == {}
+
+    def test_a_present_value_ignores_the_default(self) -> None:
+        assert from_plain(3, int, default=7) == 3
+
+    def test_a_bad_value_still_raises(self) -> None:
+        with pytest.raises(ReadError):
+            from_plain("x", int, default=0)
+
+    def test_without_a_default_none_reads_as_none(self) -> None:
+        with pytest.raises(ReadError):
+            from_plain(None, int)
+        assert from_plain(None, int | None, default=None) is None
+
+
+class TestForeignInput:
+    def test_a_non_str_key_from_yaml_reads(self) -> None:
+        # ``yaml.safe_load`` reads ``on:`` as the bool key ``True``.
+        data = cast("PlainTree", {True: 1, "py": 2})
+        assert from_plain(data, dict[object, int]) == {True: 1, "py": 2}
+
+    def test_a_typed_leaf_passes_through(self) -> None:
+        moment = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+        assert from_plain(moment, dt.datetime) is moment
+        assert from_plain({"at": moment}, dict[str, dt.datetime]) == {"at": moment}
+
+    def test_an_untagged_object_member_is_the_input_itself(self) -> None:
+        # Callers edit a read record's ``object`` members in place, as
+        # ``custom_json.convert`` let them.
+        inner: dict[str, object] = {"b": [1]}
+        record = cast("PlainTree", {"a": inner})
+        read = from_plain(record, dict[str, object])
+        assert read == record
+        assert read is not record
+        assert read["a"] is inner
+        assert from_plain(record, object) is record
+
+    def test_a_tagged_object_member_still_decodes(self) -> None:
+        record = cast("PlainTree", {"a": {"b": {"py/tuple": [1]}}})
+        assert from_plain(record, dict[str, object]) == {"a": {"b": (1,)}}
+
+    def test_a_typed_leaf_of_the_wrong_type_raises(self) -> None:
+        with pytest.raises(ReadError):
+            from_plain(dt.datetime(2026, 1, 1, tzinfo=dt.UTC), int)
+
+
+class TestFreezeChecks:
+    def test_immutable_and_mutable_accept_any_plain_object(self) -> None:
+        source: dict[str, object] = {"a": [1, {"b": None}]}
+        assert immutable(source) == MappingProxyType(
+            {"a": (1, MappingProxyType({"b": None}))},
+        )
+        assert mutable(cast("object", (1, "x"))) == [1, "x"]
+
+    @pytest.mark.parametrize(
+        "bad",
+        [{1: "a"}, [object()], {"a": b"x"}],
+        ids=["int-key", "object", "bytes"],
+    )
+    def test_a_non_plain_part_raises(self, bad: object) -> None:
+        with pytest.raises(TypeError):
+            immutable(bad)
+        with pytest.raises(TypeError):
+            mutable(bad)
+
+
+class TestLax:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("true", True), ("False", False), ("0", False), ("1", True), (1, True)],
+    )
+    def test_bool_reads_tokens_and_zero_or_one(
+        self,
+        raw: object,
+        expected: bool,
+    ) -> None:
+        assert from_plain(raw, bool, strict=False) is expected
+
+    @pytest.mark.parametrize("raw", ["maybe", " Yes ", "", 0.5, 2, math.nan])
+    def test_bool_rejects_what_it_cannot_read(self, raw: object) -> None:
+        with pytest.raises(ReadError):
+            from_plain(raw, bool, strict=False)
+
+    def test_numbers_coerce_only_without_loss(self) -> None:
+        assert from_plain("5", int, strict=False) == 5
+        assert from_plain(3.0, int, strict=False) == 3
+        assert from_plain("2.5", float, strict=False) == 2.5
+        with pytest.raises(ReadError):
+            from_plain(1.9, int, strict=False)
+
+    @pytest.mark.parametrize(
+        ("target", "raw"),
+        [(str, 5), (int | None, True), (Literal[1], True), (int, "x")],
+    )
+    def test_other_json_types_are_refused(self, target: object, raw: object) -> None:
+        with pytest.raises(ReadError):
+            from_plain(raw, target, strict=False)
+
+    def test_strict_is_the_default(self) -> None:
+        with pytest.raises(ReadError):
+            from_plain("3", int)
+
+    def test_lax_reaches_nested_fields(self) -> None:
+        assert from_plain({"a": "3"}, dict[str, int], strict=False) == {"a": 3}
+
+
+class TestObjectTagForTarget:
+    def test_a_tag_naming_the_target_needs_no_imports(self) -> None:
+        tree = to_plain(Tagged(pair=(1, 2)))
+        assert from_plain(tree, Tagged) == Tagged(pair=(1, 2))
+
+    def test_the_tag_reads_with_declared_field_types(self) -> None:
+        tree = {"py/object": f"{__name__}.Tagged", "pair": [1, 2]}
+        assert from_plain(tree, Tagged).pair == (1, 2)
+
+    def test_the_tag_beats_member_order_when_fields_overlap(self) -> None:
+        tree = {"py/object": f"{__name__}.Pair2"}
+        assert type(from_plain(tree, Pair1 | Pair2)) is Pair2
+
+    def test_the_tag_selects_a_union_member(self) -> None:
+        tree = {"py/object": f"{__name__}.OtherTagged", "name": "a"}
+        assert from_plain(tree, Tagged | OtherTagged) == OtherTagged(name="a")
+
+    def test_a_mapping_target_keeps_the_tag_as_a_key(self) -> None:
+        tree = {"py/object": "no.such.Class", "x": 1}
+        assert from_plain(tree, dict[str, object]) == tree
+        assert from_plain([tree], list[dict[str, object]]) == [tree]
+
+    def test_a_mapping_target_keeps_a_value_tag_as_a_key(self) -> None:
+        tree = {"py/tuple": [1, 6]}
+        assert from_plain(tree, dict[str, object]) == tree
+        assert from_plain(tree, tuple[int, ...]) == (1, 6)
+
+    def test_an_object_member_without_imports_stays_a_record(self) -> None:
+        # No class can be built without imports, so the record is data, as
+        # ``custom_json.convert`` kept it; a typed read later builds it.
+        inner = {"py/object": f"{__name__}.Tagged", "pair": [1, 2]}
+        outer = from_plain({"spine": inner}, dict[str, object])
+        assert outer == {"spine": inner}
+        assert from_plain(outer["spine"], Tagged) == Tagged(pair=(1, 2))
+
+    def test_an_object_member_with_imports_builds(self) -> None:
+        inner = {"py/object": f"{__name__}.Tagged", "pair": [1, 2]}
+        read = from_plain({"spine": inner}, dict[str, object], allow_imports=True)
+        assert isinstance(read["spine"], Tagged)
+
+    def test_without_imports_a_dataclass_target_reads_any_tag(self) -> None:
+        # Data written before a class moved names its old path; the declared
+        # target reads it, as ``custom_json.convert`` did.
+        tree = {"py/object": "old.home.Tagged", "pair": [1, 2]}
+        assert from_plain(tree, Tagged) == Tagged(pair=(1, 2))
+
+    def test_with_imports_a_tag_naming_another_class_builds_it(self) -> None:
+        tree = {"py/object": f"{__name__}.OtherTagged", "name": "a"}
+        with pytest.raises(ReadError, match="cannot read"):
+            from_plain(tree, Tagged, allow_imports=True)
+
+    def test_a_decimal_reads_as_a_float(self) -> None:
+        assert from_plain(Decimal("1.50"), float) == 1.5
+        assert type(from_plain(Decimal("1.50"), float)) is float
 
 
 class TestCaches:
