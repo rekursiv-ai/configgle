@@ -877,7 +877,7 @@ def test_dataclass_params_iter_with_string_slots():
     """Test _DataclassParams.__iter__ handles string __slots__."""
 
     class StringSlotParams(_DataclassParams):
-        __slots__ = "extra"  # pyright: ignore[reportAssignmentType] -- The string form exercises the slot-iteration branch.  # noqa: PLC0205 -- The string form is the branch-test fixture.
+        __slots__ = "extra"  # noqa: PLC0205 -- The string form is the branch-test fixture.
 
     params = StringSlotParams()
     params.extra = True
