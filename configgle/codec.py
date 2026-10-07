@@ -65,7 +65,9 @@ from collections.abc import (
 )
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
+from numbers import Real
 from pathlib import Path, PurePath
 from types import (
     BuiltinFunctionType,
@@ -78,12 +80,15 @@ from typing import (
     Annotated,
     Final,
     Literal,
+    NotRequired,
     Protocol,
+    Required,
     TypeGuard,
     cast,
     get_args,
     get_origin,
     get_type_hints,
+    is_typeddict,
     overload,
 )
 from uuid import UUID
@@ -96,7 +101,10 @@ import inspect
 import json
 import math
 import sys
+import typing
 import weakref
+
+from configgle.absent import ABSENT
 
 
 __all__ = [
@@ -110,6 +118,7 @@ __all__ = [
     "ReadError",
     "from_plain",
     "immutable",
+    "loads",
     "mutable",
     "parse",
     "to_plain",
@@ -245,52 +254,99 @@ def to_plain(
 
 @overload
 def from_plain[T](
-    data: PlainTree,
+    data: object,
     target: type[T],
     *,
     hooks: Hooks = ...,
     allow_imports: bool = ...,
+    strict: bool = ...,
+) -> T: ...
+
+
+@overload
+def from_plain[T](
+    data: object,
+    target: type[T],
+    *,
+    default: None,
+    hooks: Hooks = ...,
+    allow_imports: bool = ...,
+    strict: bool = ...,
+) -> T | None: ...
+
+
+@overload
+def from_plain[T](
+    data: object,
+    target: type[T],
+    *,
+    default: T,
+    hooks: Hooks = ...,
+    allow_imports: bool = ...,
+    strict: bool = ...,
 ) -> T: ...
 
 
 @overload
 def from_plain(
-    data: PlainTree,
+    data: object,
     target: object,
     *,
+    default: object = ...,
     hooks: Hooks = ...,
     allow_imports: bool = ...,
+    strict: bool = ...,
 ) -> object: ...
 
 
 def from_plain(
-    data: PlainTree,
+    data: object,
     target: object,
     *,
+    default: object = ABSENT,
     hooks: Hooks = MappingProxyType({}),
     allow_imports: bool = False,
+    strict: bool = True,
 ) -> object:
     """Convert plain data to ``target``; a ``py/*`` tag decides where present.
 
+    Read one field as ``from_plain(row.get("name"), str, default="")``.
+
     Args:
       data: A plain tree, mutable or not, as any reader or ``to_plain`` made it.
+        A non-plain leaf already of its target type, such as a ``datetime``
+        from ``tomllib``, passes through.
       target: The type to produce; ``object`` reads by tags alone.
+      default: Returned when ``data`` is ``None`` (a missing or null field);
+        omit to read ``None`` like any other value.
       hooks: The codecs ``to_plain`` used.
       allow_imports: Whether tags may import modules and call code they name.
+        A ``py/object`` tag naming the target dataclass itself needs none.
+      strict: When false, also read numeric and boolean text (``"3"`` as
+        ``3``) and integral numbers across ``int``, ``float``, and ``bool``.
 
     Returns:
-      value: ``data`` as a ``target``.
+      value: ``data`` as a ``target``, or ``default``.
 
     Raises:
       ReadError: ``data`` does not fit ``target``, or a tag needs imports while
         ``allow_imports`` is false.
 
     """
-    state = _Decoding(hooks=hooks, allow_imports=allow_imports)
+    if data is None and default is not ABSENT:
+        return default
+    state = _Decoding(
+        hooks=hooks,
+        allow_imports=allow_imports,
+        strict=strict,
+        untagged=not _holds_tags(data),
+    )
+    # A non-plain leaf is checked where it is read, by ``_passes_through``.
+    tree = cast("PlainTree", data)
     try:
-        value = _decode(data, target, (), state)
+        value = _decode(tree, target, (), state)
     except ReadError as error:
-        whole = Invalid(raw=data, reason=str(error))
+        whole = Invalid(raw=tree, reason=str(error))
         raise ReadError(
             str(error),
             partial=whole,
@@ -305,6 +361,22 @@ def from_plain(
             bad=MappingProxyType(state.bad),
         )
     return value
+
+
+def loads(text: str | bytes) -> MutablePlainTree:
+    """Parse JSON text into a mutable plain tree; ``NaN``/``Infinity`` read too.
+
+    Args:
+      text: JSON document.
+
+    Returns:
+      tree: Plain dicts, lists, and scalars.
+
+    Raises:
+      json.JSONDecodeError: ``text`` is not valid JSON.
+
+    """
+    return cast("MutablePlainTree", json.loads(text))
 
 
 @overload
@@ -343,7 +415,23 @@ def parse(text: str, target: object) -> object:
             raise error from None
 
 
-def immutable(tree: PlainTree) -> PlainTree:
+@overload
+def immutable(tree: Plain) -> Plain: ...
+
+
+@overload
+def immutable(tree: Mapping[str, object]) -> Mapping[str, PlainTree]: ...
+
+
+@overload
+def immutable(tree: Sequence[object]) -> Sequence[PlainTree]: ...
+
+
+@overload
+def immutable(tree: object) -> PlainTree: ...
+
+
+def immutable(tree: object) -> PlainTree:
     """Copy a plain tree: mappings to ``MappingProxyType``, sequences to tuples.
 
     Args:
@@ -351,6 +439,9 @@ def immutable(tree: PlainTree) -> PlainTree:
 
     Returns:
       frozen: The read-only copy.
+
+    Raises:
+      TypeError: ``tree`` holds a non-str key or a value that is not plain.
 
     """
     return _freeze(tree)
@@ -361,18 +452,18 @@ def mutable(tree: Plain) -> Plain: ...
 
 
 @overload
-def mutable(
-    tree: Mapping[str, PlainTree],
-) -> dict[str, MutablePlainTree]: ...
+def mutable(tree: Mapping[str, object]) -> dict[str, MutablePlainTree]: ...
 
 
 @overload
-def mutable(
-    tree: Sequence[PlainTree],
-) -> list[MutablePlainTree]: ...
+def mutable(tree: Sequence[object]) -> list[MutablePlainTree]: ...
 
 
-def mutable(tree: PlainTree) -> MutablePlainTree:
+@overload
+def mutable(tree: object) -> MutablePlainTree: ...
+
+
+def mutable(tree: object) -> MutablePlainTree:
     """Copy a plain tree: each mapping to a dict, each sequence to a list.
 
     Args:
@@ -381,26 +472,47 @@ def mutable(tree: PlainTree) -> MutablePlainTree:
     Returns:
       thawed: The mutable copy.
 
+    Raises:
+      TypeError: ``tree`` holds a non-str key or a value that is not plain.
+
     """
     return _thaw(tree)
 
 
-def _freeze(tree: PlainTree) -> PlainTree:
+def _freeze(tree: object) -> PlainTree:
     """Copy ``tree`` to ``MappingProxyType`` and tuples at every level."""
     if tree is None or isinstance(tree, (str, int, float)):
         return tree
     if isinstance(tree, Mapping):
-        return MappingProxyType({key: _freeze(item) for key, item in tree.items()})
-    return tuple(_freeze(item) for item in tree)
+        node = cast("Mapping[object, object]", tree)
+        return MappingProxyType(
+            {_plain_key(key): _freeze(item) for key, item in node.items()},
+        )
+    return tuple(_freeze(item) for item in _plain_sequence(tree))
 
 
-def _thaw(tree: PlainTree) -> MutablePlainTree:
+def _thaw(tree: object) -> MutablePlainTree:
     """Copy ``tree`` to dicts and lists at every level."""
     if tree is None or isinstance(tree, (str, int, float)):
         return tree
     if isinstance(tree, Mapping):
-        return {key: _thaw(item) for key, item in tree.items()}
-    return [_thaw(item) for item in tree]
+        node = cast("Mapping[object, object]", tree)
+        return {_plain_key(key): _thaw(item) for key, item in node.items()}
+    return [_thaw(item) for item in _plain_sequence(tree)]
+
+
+def _plain_key(key: object) -> str:
+    """Return ``key`` when it is a str, the only key plain data allows."""
+    if isinstance(key, str):
+        return key
+    raise TypeError(f"plain mapping key must be str, got {key!r}")
+
+
+def _plain_sequence(tree: object) -> Sequence[object]:
+    """Return ``tree`` when it is a plain sequence."""
+    if isinstance(tree, Sequence) and not isinstance(tree, (bytes, bytearray)):
+        return tree
+    raise TypeError(f"cannot represent {type(tree).__name__} as plain data")
 
 
 @dataclass(slots=True, kw_only=True)
@@ -432,6 +544,9 @@ class _Decoding:
     Attributes:
       hooks: The codecs ``to_plain`` used.
       allow_imports: Whether tags may import modules and call code they name.
+      strict: Whether scalars must arrive as their own plain kind.
+      untagged: Whether the input holds no tag, so an ``object`` part is
+        returned as the input itself rather than copied.
       built: Every numbered object, by encounter order, for ``py/id``.
       bad: Each part that did not read, by where it sits.
 
@@ -439,6 +554,8 @@ class _Decoding:
 
     hooks: Hooks
     allow_imports: bool
+    strict: bool = True
+    untagged: bool = False
     built: list[object] = field(default_factory=list[object])
     bad: dict[FieldPath, Invalid] = field(default_factory=dict[FieldPath, Invalid])
 
@@ -553,6 +670,14 @@ def _decode(
 ) -> object:
     """Decode one node: ``py/id``, else its tag's decoder, else ``target``'s."""
     target = _resolve_alias(target)
+    if not _is_plain(data):
+        if _fits(data, target):
+            return data
+        # ``json.loads(parse_float=Decimal)`` and similar readers yield numbers
+        # that are not ``float``; ``custom_json.convert`` read them as floats.
+        if target is float and isinstance(data, (Real, Decimal)):
+            return float(data)
+        raise ReadError(f"cannot read {data!r} as {target}")
     decoder = _decoder_for(target)
     if decoder is _decode_union or not isinstance(data, Mapping):
         return decoder(data, target, at, state)
@@ -560,7 +685,18 @@ def _decode(
         value = _decode_reference(data, state)
     else:
         tag = _tag_of(data)
-        if tag is None:
+        # A mapping target reads a tag key as data, as ``custom_json.convert``
+        # did; callers then pick the payload by key. Without imports no class
+        # can be built, so an untyped ``py/object`` record stays a record too.
+        if (
+            tag is None
+            or (decoder is _decode_dict and tag != "py/mappingproxy")
+            or (
+                tag == "py/object"
+                and decoder is _decode_any
+                and not state.allow_imports
+            )
+        ):
             return decoder(data, target, at, state)
         if tag != "py/object" and len(data) != 1:
             raise ReadError(f"invalid {tag} envelope: {dict(data)!r}")
@@ -569,6 +705,14 @@ def _decode(
     if not _fits(value, target):
         raise ReadError(f"cannot read {value!r} as {target}")
     return value
+
+
+def _is_plain(data: object) -> bool:
+    """Return whether ``data``'s top node is plain: a leaf, mapping, or sequence."""
+    return data is None or (
+        isinstance(data, (str, int, float, Mapping, Sequence))
+        and not isinstance(data, (bytes, bytearray))
+    )
 
 
 def _encoder_for(kind: type) -> _Encoder:
@@ -609,6 +753,8 @@ def _decoder_for(target: object) -> _Decoder:
         return _decode_enum
     if is_dataclass(origin):
         return _decode_object
+    if is_typeddict(origin):
+        return _decode_typeddict
     if (
         origin.__dict__.get("_is_protocol") is True
         or inspect.isabstract(origin)
@@ -620,19 +766,36 @@ def _decoder_for(target: object) -> _Decoder:
 
 def _tag_of(node: Mapping[str, PlainTree]) -> str | None:
     """Return the highest-precedence ``py/*`` tag on ``node``, if any."""
-    if not any(key.startswith("py/") for key in node):
+    if not _has_tag_key(node):
         return None
     for tag in _TAGS:
         if tag in node:
             return tag
-    raise ReadError(f"unknown tag among {sorted(node)}")
+    raise ReadError(f"unknown tag among {sorted(map(str, node))}")
+
+
+def _holds_tags(data: object) -> bool:
+    """Return whether any mapping in ``data`` has a tag or escaped key."""
+    if isinstance(data, Mapping):
+        node = cast("Mapping[object, object]", data)
+        return any(
+            isinstance(key, str) and key.startswith(("py/", "json://")) for key in node
+        ) or any(_holds_tags(item) for item in node.values())
+    if isinstance(data, Sequence) and not isinstance(data, (str, bytes, bytearray)):
+        return any(_holds_tags(item) for item in data)
+    return False
+
+
+def _has_tag_key(keys: Iterable[object]) -> bool:
+    """Return whether any key reads as a tag; a YAML reader may yield non-str keys."""
+    return any(isinstance(key, str) and key.startswith("py/") for key in keys)
 
 
 def _fits(value: object, target: object) -> bool:
     """Return whether a tag-decoded ``value`` is acceptable as ``target``."""
     target = _resolve_alias(target)
     origin: object = get_origin(target) or target
-    if origin is UnionType:
+    if origin is UnionType or origin is typing.Union:  # pyright: ignore[reportDeprecated] -- A runtime origin test for pre-3.14 ``Optional``/``Union``, not an annotation.
         return any(
             _fits(value, member)
             for member in cast("tuple[object, ...]", get_args(target))
@@ -725,10 +888,15 @@ def _decode_bool(
     at: FieldPath,
     state: _Decoding,
 ) -> bool:
-    """Decode a bool."""
-    del target, at, state
+    """Decode a bool; lax also reads ``0``/``1`` and true/false text."""
+    del target, at
     if isinstance(data, bool):
         return data
+    if not state.strict:
+        if isinstance(data, str):
+            data = _LAX_BOOLS.get(data.lower(), data)
+        if isinstance(data, int) and data in (0, 1):
+            return bool(data)
     raise ReadError(f"cannot read {data!r} as bool")
 
 
@@ -738,11 +906,27 @@ def _decode_int(
     at: FieldPath,
     state: _Decoding,
 ) -> int:
-    """Decode an int, rejecting a bool and a float."""
-    del target, at, state
+    """Decode an int; lax also reads integral floats and numeric text."""
+    del target, at
     if isinstance(data, int) and not isinstance(data, bool):
         return data
+    if not state.strict and not isinstance(data, bool):
+        number = _lax_number(data)
+        if number is not None and number.is_integer():
+            return int(number)
     raise ReadError(f"cannot read {data!r} as int")
+
+
+def _lax_number(data: PlainTree) -> float | None:
+    """Return the finite number ``data`` is or spells, else ``None``."""
+    if isinstance(data, str):
+        try:
+            data = float(data)
+        except ValueError:
+            return None
+    if isinstance(data, (int, float)) and math.isfinite(data):
+        return float(data)
+    return None
 
 
 def _decode_str(
@@ -773,7 +957,7 @@ def _decode_float(
     state: _Decoding,
 ) -> float:
     """Decode a float from an int, a float, or a ``py/float`` payload."""
-    del target, at, state
+    del target, at
     if isinstance(data, float):
         return data
     if isinstance(data, int) and not isinstance(data, bool):
@@ -782,8 +966,8 @@ def _decode_float(
         try:
             number = float(data.strip())
         except ValueError:
-            number = 0.0
-        if not math.isfinite(number):
+            number = None
+        if number is not None and (not math.isfinite(number) or not state.strict):
             return number
     raise ReadError(f"cannot read {data!r} as float")
 
@@ -1138,6 +1322,11 @@ def _decode_mappingproxy(
     return MappingProxyType(_decode_dict(data, target, at, state))
 
 
+def _bad_key(key: Hashable, target: object) -> Hashable:
+    """Raise for a non-str key that does not fit ``target``."""
+    raise ReadError(f"cannot read key {key!r} as {target}")
+
+
 def _encode_key(key: object, state: _Encoding) -> str:
     """Return a dict key, ``json://``-escaping non-strings and tag lookalikes."""
     if isinstance(key, str) and not key.startswith(("py/", "json://")):
@@ -1145,13 +1334,16 @@ def _encode_key(key: object, state: _Encoding) -> str:
     return "json://" + json.dumps(mutable(_encode(key, state)))
 
 
+# A YAML reader yields non-str keys such as ``True``; they read as is.
 def _decode_key(
-    key: str,
+    key: Hashable,
     target: object,
     at: FieldPath,
     state: _Decoding,
 ) -> Hashable:
     """Return a dict key as ``target``, unescaping a ``json://`` key."""
+    if not isinstance(key, str):
+        return key if _fits(key, target) else _bad_key(key, target)
     raw: PlainTree = key
     if key.startswith("json://"):
         try:
@@ -1223,6 +1415,42 @@ def _encode_object(value: object, state: _Encoding) -> PlainTree:
     return state.make_dict(payload)
 
 
+def _decode_typeddict(
+    data: PlainTree,
+    target: object,
+    at: FieldPath,
+    state: _Decoding,
+) -> dict[str, object]:
+    """Decode a ``TypedDict``: declared keys by their types, unknown ones dropped."""
+    kind = cast("type", target)
+    if not isinstance(data, Mapping):
+        raise ReadError(f"expected object for {kind.__name__}, got {data!r}")
+    hints = _field_types(kind)
+    missing = sorted(_required_keys(kind) - set(data))
+    if missing:
+        raise ReadError(f"{kind.__name__}: missing required field(s) {missing}")
+    return {
+        key: _decode_part(raw, hints[key], (*at, key), state)
+        for key, raw in data.items()
+        if key in hints
+    }
+
+
+# Under ``from __future__ import annotations`` a class body's ``NotRequired``
+# is a string, so ``__required_keys__`` lists every key; the resolved hints
+# carry the qualifier.
+def _required_keys(kind: type) -> frozenset[str]:
+    """Return a TypedDict's required keys, read from its resolved hints."""
+    total = cast("bool", getattr(kind, "__total__", True))
+    hints = get_type_hints(kind, include_extras=True)
+    return frozenset(
+        key
+        for key, hint in hints.items()
+        if get_origin(hint) is not NotRequired
+        and (total or get_origin(hint) is Required)
+    )
+
+
 def _decode_object(
     data: PlainTree,
     target: object,
@@ -1233,6 +1461,11 @@ def _decode_object(
     name = target.__name__ if isinstance(target, type) else str(target)
     if not isinstance(data, Mapping):
         raise ReadError(f"expected object for {name}, got {data!r}")
+    if _names_dataclass(data, target, state):
+        fields_only: dict[str, PlainTree] = {
+            key: raw for key, raw in data.items() if key != "py/object"
+        }
+        data = fields_only
     if "py/object" in data:
         path = data["py/object"]
         if not isinstance(path, str):
@@ -1273,6 +1506,24 @@ def _decode_object(
             raise ReadError(f"cannot build {name}: {error}") from error
     state.built[index] = value
     return value
+
+
+# It does when the tag names ``target``, or when imports are off: the tag's class cannot
+# be built then, and data written before a class moved still names its old path.
+def _names_dataclass(
+    data: Mapping[str, PlainTree],
+    target: object,
+    state: _Decoding,
+) -> bool:
+    """Return whether dataclass ``target`` reads ``data`` with its own fields."""
+    return (
+        isinstance(target, type)
+        and is_dataclass(target)
+        and (
+            not state.allow_imports
+            or data.get("py/object") == f"{target.__module__}.{target.__qualname__}"
+        )
+    )
 
 
 def _encode_inline(value: object, state: _Encoding) -> PlainTree:
@@ -1490,7 +1741,9 @@ def _decode_any(
 ) -> object:
     """Decode untagged data for ``object``, ``Any``, or a Protocol, as is."""
     del target
-    if data is None or isinstance(data, (str, int, float)):
+    # Callers edit a read record's untyped members in place, so tag-free data
+    # must come back as the very objects passed in.
+    if state.untagged or data is None or isinstance(data, (str, int, float)):
         return data
     if isinstance(data, Mapping):
         return _decode_dict(data, object, at, state)
@@ -1505,7 +1758,14 @@ def _decode_union(
 ) -> object:
     """Decode the member the data's kind selects, else the first that fits."""
     members = cast("tuple[object, ...]", get_args(target))
-    tagged = isinstance(data, Mapping) and any(key.startswith("py/") for key in data)
+    tagged = isinstance(data, Mapping) and _has_tag_key(data)
+    if tagged:
+        # The member a ``py/object`` tag names goes first, so member order
+        # cannot pick a sibling whose fields happen to fit too.
+        path = cast("Mapping[str, PlainTree]", data).get("py/object")
+        members = tuple(
+            sorted(members, key=lambda member: _import_name(member) != path),
+        )
     for member in members if tagged else _union_candidates(data, members):
         built, bad = len(state.built), set(state.bad)
         try:
@@ -1518,6 +1778,13 @@ def _decode_union(
         for key in set(state.bad) - bad:
             del state.bad[key]
     raise ReadError(f"cannot read {data!r} as {target}")
+
+
+def _import_name(member: object) -> str | None:
+    """Return a class member's ``module.qualname``, else ``None``."""
+    if isinstance(member, type):
+        return f"{member.__module__}.{member.__qualname__}"
+    return None
 
 
 def _union_candidates(
@@ -1730,7 +1997,7 @@ def _attribute_names(value: object) -> Iterator[str]:
 # A cached value naming its own class would keep the weak key alive forever, so
 # only module-level classes whose hints do not name themselves are cached.
 def _field_types(kind: type) -> Mapping[str, object]:
-    """Return a dataclass's init-field types, resolved once and cached."""
+    """Return a dataclass's init-field or a TypedDict's key types, cached."""
     cached = _FIELD_TYPES.get(kind)
     if cached is not None:
         return cached
@@ -1741,7 +2008,9 @@ def _field_types(kind: type) -> Mapping[str, object]:
     except (AttributeError, NameError, TypeError) as error:
         raise ReadError(f"cannot resolve field types of {kind}: {error}") from error
     result = MappingProxyType(
-        {
+        {key: _resolve_alias(hint) for key, hint in hints.items()}
+        if is_typeddict(kind)
+        else {
             item.name: hints.get(item.name, object)
             for item in (fields(kind) if is_dataclass(kind) else ())
             if item.init
@@ -1782,6 +2051,12 @@ _TAGS: Final = (
 
 
 _NATIVE_LEAVES: Final = frozenset((str, int, bool))
+
+
+_LAX_BOOLS: Final[Mapping[str, int]] = MappingProxyType(
+    {"true": 1, "false": 0, "1": 1, "0": 0},
+)
+"""Text a lax read takes as a bool, by its lowercased spelling."""
 
 
 _CONCRETE_PATH: Final = type(Path())
@@ -1854,6 +2129,8 @@ _DECODERS: Final[Mapping[object, _Decoder]] = MappingProxyType(
         MappingProxyType: _decode_mappingproxy,
         type: _decode_type,
         UnionType: _decode_union,
+        # Before 3.14, ``Optional``/``Union`` have this origin, not ``UnionType``.
+        typing.Union: _decode_union,  # pyright: ignore[reportDeprecated] -- A runtime origin key, not an annotation.
     },
 )
 """Decoders by origin; ``_decoder_for`` adds Enum, dataclass, and Protocol targets."""
