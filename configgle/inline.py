@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import (
-    Callable,
-    Mapping,
-    MutableMapping,
-    MutableSequence,
-    Sequence,
-)
+from collections.abc import Callable, MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any, Self, cast, override
 
 import copy
@@ -182,28 +176,6 @@ class InlineConfig[T]:
             self._kwargs[key] = value
 
         return self
-
-    def __custom_json_inline__(
-        self,
-    ) -> tuple[object, list[object], dict[str, object]]:
-        """Return this deferred call as a graph serialization recipe."""
-        return self.func, list(self._args), dict(self._kwargs)
-
-    def __custom_json_inline_init__(
-        self,
-        func: object,
-        args: Sequence[object],
-        kwargs: Mapping[str, object],
-    ) -> None:
-        """Populate a graph-allocated instance from its recipe.
-
-        The decoder allocates without ``__init__`` so a cycle can reference this
-        object before its arguments exist; state is written here instead.
-        """
-        object.__setattr__(self, "func", func)
-        object.__setattr__(self, "_finalized", False)
-        object.__setattr__(self, "_args", list(args))
-        object.__setattr__(self, "_kwargs", dict(kwargs))
 
     @override
     def __eq__(self, other: object) -> bool:

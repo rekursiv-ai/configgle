@@ -229,23 +229,27 @@ GOLDEN: Final[Mapping[str, str]] = {
         '{"json://1":"int","json://{\\"py/tuple\\": [2, 3]}":"tuple","s":"str"}'
     ),
     "empty_containers": '{"a":[],"b":{},"c":{"py/tuple":[]},"d":{"py/set":[]}}',
-    "fig_leaf": '{"py/object":"{module}.Leaf.Config","k":7}',
+    "fig_leaf": '{"py/object":"{module}.Leaf.Config","k":7,"_finalized":false}',
     "fig_nested": (
         '{"py/object":"{module}.Branch.Config",'
-        '"leaf":{"py/object":"{module}.Leaf.Config","k":3},"tag":"t"}'
+        '"leaf":{"py/object":"{module}.Leaf.Config","k":3,"_finalized":false},'
+        '"tag":"t","_finalized":false}'
     ),
     "fig_shared_child": (
         '{"py/object":"{module}.Pair.Config",'
-        '"a":{"py/object":"{module}.Leaf.Config","k":1},"b":{"py/id":1}}'
+        '"a":{"py/object":"{module}.Leaf.Config","k":1,"_finalized":false},'
+        '"b":{"py/id":1},"_finalized":false}'
     ),
-    "fig_self_cycle": ('{"py/object":"{module}.Cyclic.Config","peer":{"py/id":0}}'),
+    "fig_self_cycle": (
+        '{"py/object":"{module}.Cyclic.Config","_finalized":false,"peer":{"py/id":0}}'
+    ),
     "shared_list": '{"x":[1,2],"y":{"z":{"py/id":1}}}',
     "cyclic_list": '[1,{"py/id":0}]',
     "hooked_leaf": '{"py/hook":["{module}.Weight",[1.5]]}',
     "inline_config": (
-        '{"py/inline":["configgle.inline.InlineConfig",'
-        '{"func":{"py/type":"pathlib.PurePosixPath"},'
-        '"args":["/opt/scratch/x"],"kwargs":{}}]}'
+        '{"py/object":"configgle.inline.InlineConfig",'
+        '"func":{"py/type":"pathlib.PurePosixPath"},"_finalized":false,'
+        '"_args":["/opt/scratch/x"],"_kwargs":{}}'
     ),
 }
 """The exact bytes each case serializes to, with ``{module}`` for this module.
@@ -303,7 +307,6 @@ def test_every_case_has_a_golden() -> None:
         "py/function",
         "py/hook",
         "py/id",
-        "py/inline",
         "py/mappingproxy",
         "py/object",
         "py/reduce",

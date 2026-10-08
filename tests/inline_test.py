@@ -9,7 +9,7 @@ import dataclasses
 
 import pytest
 
-from configgle.codec import to_plain
+from configgle.codec import from_plain, to_plain
 from configgle.custom_types import Makeable, MutableNamespace
 from configgle.fig import Fig
 from configgle.inline import InlineConfig, PartialConfig
@@ -19,13 +19,36 @@ class _DynamicLookup(Protocol):
     def __getattr__(self, key: str) -> object: ...
 
 
-def test_inline_config_owns_its_graph_recipe() -> None:
-    config: InlineConfig[str] = InlineConfig(str, 1)
+def test_inline_config_serializes_as_a_plain_object() -> None:
+    config: InlineConfig[str] = InlineConfig(str, 1, base=8)
 
-    assert config.__custom_json_inline__() == (str, [1], {})
-    encoded = to_plain(config)
-    assert isinstance(encoded, dict)
-    assert set(encoded) == {"py/inline"}
+    assert to_plain(config) == {
+        "py/object": "configgle.inline.InlineConfig",
+        "func": {"py/type": "builtins.str"},
+        "_finalized": False,
+        "_args": [1],
+        "_kwargs": {"base": 8},
+    }
+
+
+def test_a_finalized_inline_config_stays_finalized() -> None:
+    config: InlineConfig[str] = InlineConfig(str, 1).finalize()
+
+    restored = from_plain(to_plain(config), object, allow_imports=True)
+
+    assert isinstance(restored, InlineConfig)
+    assert restored._finalized is True
+    assert restored == config
+
+
+def test_an_inline_config_cycle_round_trips() -> None:
+    config: InlineConfig[object] = InlineConfig(list)
+    config._args.append(config)
+
+    restored = from_plain(to_plain(config), object, allow_imports=True)
+
+    assert isinstance(restored, InlineConfig)
+    assert restored._args[0] is restored
 
 
 def test_inline_config():
@@ -495,16 +518,6 @@ def test_inline_config_reads_reserved_attributes_after_missing_dynamic_key() -> 
     lookup: _DynamicLookup = config
     with pytest.raises(AttributeError, match="missing"):
         lookup.__getattr__("missing")
-
-
-def test_inline_config_custom_graph_initializer() -> None:
-    """Graph decoding can populate an allocated InlineConfig instance."""
-    config: InlineConfig[object] = InlineConfig(object)
-    config.__custom_json_inline_init__(str, [7], {"base": 8})
-    assert config.func is str
-    assert config._args == [7]
-    assert config._kwargs == {"base": 8}
-    assert config._finalized is False
 
 
 def test_inline_config_make_reuses_shared_nested_config_across_args_and_kwargs() -> (
