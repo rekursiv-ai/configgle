@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, get_type_hints
 
 import dataclasses
 
-from configgle.codec import ReadError, parse
+from configgle.lib.codec import ReadError, parse
 
 
 if TYPE_CHECKING:

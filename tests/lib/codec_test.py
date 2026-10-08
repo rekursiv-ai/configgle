@@ -1,4 +1,4 @@
-"""Tests for ``configgle.codec``."""
+"""Tests for ``configgle.lib.codec``."""
 
 from __future__ import annotations
 
@@ -34,8 +34,8 @@ import weakref
 
 import pytest
 
-from configgle import codec
-from configgle.codec import (
+from configgle.lib import codec
+from configgle.lib.codec import (
     Invalid,
     PlainTree,
     ReadError,

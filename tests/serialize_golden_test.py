@@ -34,9 +34,9 @@ import os
 
 import pytest
 
-from configgle.codec import Hooks, PlainTree, from_plain, to_plain
 from configgle.fig import Fig
 from configgle.inline import InlineConfig
+from configgle.lib.codec import Hooks, PlainTree, from_plain, to_plain
 
 
 if TYPE_CHECKING:

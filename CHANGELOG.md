@@ -8,6 +8,12 @@ Releases up to and including 1.4.0 are described in the
 
 ## Unreleased
 
+### Changed
+
+- **Breaking:** the `ABSENT` sentinel moves from `configgle.absent` to
+  `configgle.lib.absent`, beside the new `configgle.lib.codec`. Import
+  `ABSENT` and `Absent` from `configgle.lib.absent`.
+
 ### Removed
 
 - **Breaking:** `configgle.testing` and its `assert_pprint_golden`, added in

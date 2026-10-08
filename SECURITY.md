@@ -26,7 +26,7 @@ Please do not open public issues for vulnerabilities until we have investigated 
 Security reports are especially useful for:
 
 - Deserialization that resolves a dotted path to an object and imports it
-  (`Fig.deserialize` and `configgle.codec.from_plain`), including any
+  (`Fig.deserialize` and `configgle.lib.codec.from_plain`), including any
   way to widen what a config can name.
 - Config sources that reach the deserializer without being trusted first --
   files, environment, or command-line overrides.
