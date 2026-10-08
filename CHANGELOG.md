@@ -6,13 +6,30 @@ All notable configgle changes are documented here. This project follows
 Releases up to and including 1.4.0 are described in the
 [GitHub release notes](https://github.com/rekursiv-ai/configgle/releases).
 
-## Unreleased
+## 1.4.2 - 2026-10-07
 
 ### Changed
 
+- **Breaking:** serialization moves from `configgle.custom_json` to
+  `configgle.lib.codec`, and `custom_json` is gone. `encode_graph` and
+  `decode_graph` become `to_plain` and `from_plain`; `from_plain` imports and
+  calls `__reduce__` only with `allow_imports=True` (was `DecodeCapabilities`).
+  `GraphHooks` becomes `Hooks`.
+- `Fig.serialize()` takes `dialect` (`"json"`, the default, tags non-finite
+  floats; `"python"` keeps them native) and `mutable` (`False` returns
+  `MappingProxyType` and tuples). Its return type is now `PlainTree`.
+  Trees written by 1.4.1 still deserialize.
+- A serialized finalized config records `_finalized`, so it deserializes
+  finalized. A `Fig` subclass's custom `__getstate__`/`__setstate__` are kept.
+- Command-line overrides (`PATH=VALUE`) are parsed with the codec's typed
+  `parse`; a value that does not fit the field's annotation still raises.
 - **Breaking:** the `ABSENT` sentinel moves from `configgle.absent` to
-  `configgle.lib.absent`, beside the new `configgle.lib.codec`. Import
-  `ABSENT` and `Absent` from `configgle.lib.absent`.
+  `configgle.lib.absent`, beside `configgle.lib.codec`. Import `ABSENT` and
+  `Absent` from `configgle.lib.absent`.
+- Development: the bundled typeshed patch and pre-commit configuration are
+  updated, and a worker-count helper is vendored as
+  `configgle.lib.worker_count`. Runtime dependencies and the supported Python
+  versions (3.12+) are unchanged.
 
 ### Removed
 
