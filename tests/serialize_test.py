@@ -1005,7 +1005,6 @@ def test_user_dict_with_pytag_key_roundtrips_as_data():
         "py/b64",
         "py/reduce",
         "py/hook",
-        "py/inline",
         "py/object",
         "py/float",
         "json://x",

@@ -263,6 +263,23 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
             object.__setattr__(self, "_finalized", False)
             return self
 
+    # Without this pair, ``copy``, ``copy_tree``, and pickle of a frozen config
+    # drop ``_finalized`` and let ``finalized()`` re-run ``finalize``;
+    # ``_DataclassMeta`` keeps it from being replaced by the generated one.
+    @override
+    def __getstate__(self) -> dict[str, object]:
+        """Return every set slot by name, ``_finalized`` included."""
+        return {
+            name: cast(object, getattr(self, name))
+            for name in (*_get_object_attribute_names(self), "_finalized")
+            if hasattr(self, name)
+        }
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        """Restore slots from ``__getstate__``, bypassing frozen ``__setattr__``."""
+        for name, value in state.items():
+            object.__setattr__(self, name, value)
+
     def make(self) -> _ParentT_co:
         """Finalize this config and instantiate its parent class.
 
@@ -795,7 +812,13 @@ class _DataclassMeta(type):
             slots=slots,
             weakref_slot=slots if weakref_slot is None else weakref_slot,
         )
+        inherited = _inherited_state_methods(cls)
         cls = dataclasses.dataclass(cls, **kwargs)
+        # A frozen slotted dataclass gets a generated state pair that carries
+        # declared fields only; restoring an inherited pair keeps base state such
+        # as ``Maker._finalized`` through ``copy`` and pickle.
+        for method, function in inherited.items():
+            setattr(cls, method, function)
 
         if require_defaults:
             current_annotations = cast(
@@ -819,6 +842,18 @@ class _DataclassMeta(type):
 
         cls.__dataclass_params__ = kwargs
         return cast(_DataclassMeta, cls)
+
+
+def _inherited_state_methods(cls: type) -> dict[str, object]:
+    """Return the custom ``__getstate__``/``__setstate__`` ``cls`` inherits."""
+    defaults = vars(object)
+    return {
+        method: function
+        for method in ("__getstate__", "__setstate__")
+        if method not in vars(cls)
+        and (function := cast(object, getattr(cls, method, None))) is not None
+        and function is not defaults.get(method)
+    }
 
 
 @dataclass_transform(kw_only_default=True)

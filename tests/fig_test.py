@@ -320,6 +320,21 @@ def test_constructed_config_starts_unfinalized(config_type: type[Fig]) -> None:
     assert config_type.deserialize(config_type().serialize())._finalized is False
 
 
+@pytest.mark.parametrize("config_type", [_MutableConfig, _FrozenConfig])
+def test_a_finalized_config_stays_finalized(config_type: type[Fig]) -> None:
+    """Copy, pickle, and serialize keep a finalized config from re-finalizing."""
+    config = config_type().finalize()
+
+    copied = config.copy_tree()
+    unpickled = cast(Fig, pickle.loads(pickle.dumps(config)))
+    deserialized = config_type.deserialize(config.serialize())
+
+    assert copied._finalized is True
+    assert unpickled._finalized is True
+    assert deserialized._finalized is True
+    assert copied == unpickled == deserialized == config
+
+
 def test_finalized_copies_then_finalizes_a_pending_config() -> None:
     class TestConfig(Fig):
         x: int = 1
