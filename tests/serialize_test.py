@@ -16,15 +16,15 @@ import pickle
 
 import pytest
 
-from configgle.codec import (
+from configgle.fig import Dataclass, Fig
+from configgle.inline import InlineConfig, PartialConfig
+from configgle.lib.codec import (
     Hooks,
     PlainTree,
     ReadError,
     from_plain,
     to_plain,
 )
-from configgle.fig import Dataclass, Fig
-from configgle.inline import InlineConfig, PartialConfig
 
 
 def encode_graph(

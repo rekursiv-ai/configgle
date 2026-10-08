@@ -104,7 +104,7 @@ import sys
 import typing
 import weakref
 
-from configgle.absent import ABSENT
+from configgle.lib.absent import ABSENT
 
 
 __all__ = [

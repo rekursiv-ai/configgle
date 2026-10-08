@@ -9,10 +9,10 @@ import dataclasses
 
 import pytest
 
-from configgle.codec import from_plain, to_plain
 from configgle.custom_types import Makeable, MutableNamespace
 from configgle.fig import Fig
 from configgle.inline import InlineConfig, PartialConfig
+from configgle.lib.codec import from_plain, to_plain
 
 
 class _DynamicLookup(Protocol):

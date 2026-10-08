@@ -85,18 +85,18 @@ if TYPE_CHECKING:
     from ty_extensions import Intersection
 
 
-from configgle.absent import ABSENT
-from configgle.codec import (
+from configgle.custom_types import (
+    DataclassLike,
+    Makeable,
+)
+from configgle.lib.absent import ABSENT
+from configgle.lib.codec import (
     Dialect,
     Hooks,
     MutablePlainTree,
     PlainTree,
     from_plain,
     to_plain,
-)
-from configgle.custom_types import (
-    DataclassLike,
-    Makeable,
 )
 from configgle.pprinting import (
     _DEFAULT_CONTINUATION_PIPE_THRESHOLD,

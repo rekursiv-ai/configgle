@@ -27,7 +27,7 @@ from configgle.fig import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from configgle.codec import Dialect, Hooks, PlainTree
+    from configgle.lib.codec import Dialect, Hooks, PlainTree
 
 
 class BaseConfig(Fig):

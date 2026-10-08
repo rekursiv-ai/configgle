@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import pickle
 
-from configgle.absent import ABSENT, Absent
+from configgle.lib.absent import ABSENT, Absent
 
 
 def test_absent_is_singleton():
