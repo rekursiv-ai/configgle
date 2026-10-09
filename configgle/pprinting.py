@@ -36,6 +36,15 @@ _DEFAULT_CONTINUATION_PIPE_THRESHOLD: Final = 50
 
 _SHORT_SEQUENCE_MAX_WIDTH: Final = 40
 
+_ADDRESS_PATTERN: Final = r"(?<= at )0x[0-9a-fA-F]+"
+
+# One literal for every masked address, on every platform. Goldens are shared
+# across machines, so the width must not come from the recording host: sizing it
+# from ``id(object())`` made a golden recorded on a 64-bit interpreter
+# unreproducible on a 32-bit one, and sizing it per match leaked the original
+# address's length. (0xdefaced is prime.)
+_ADDRESS_MASK: Final = "0xdefacedeface"
+
 
 def pformat(
     obj: object,
@@ -183,6 +192,7 @@ class FigPrinter(PrettyPrinter):
         # re-set inherited private attrs; type checkers don't see parent's writes.
         self._indent_per_level: int = indent
         self._width: int = width
+        self._depth: int | None = depth
         self._finalize = finalize
         self._mask_memory_addresses = (
             _mask_memory_addresses if mask_memory_addresses else None
@@ -245,39 +255,120 @@ class FigPrinter(PrettyPrinter):
         context: dict[int, int],
         level: int,
     ) -> None:
-        super()._format(
-            self._try_to_finalize(object),
-            stream,
-            indent,
-            allowance,
-            context,
-            level,
-        )
+        object = self._try_to_finalize(object)
+        # CPython renders a container's or dataclass's whole subtree only to measure
+        # it, then lays a too-wide one out item by item and discards the text.
+        # Qualifying and masking that text made a render quadratic in depth: every
+        # level re-tokenized its descendants. A lower bound on the processed width
+        # decides CPython's branch without the text.
+        if (
+            (type(object) in (list, tuple, dict) or _is_laid_out_by_field(object))
+            and id(object) not in context
+            and (floor := self._repr_floor(object, context.copy())) is not None
+            and floor > self._width - indent - allowance
+        ):
+            context[id(object)] = 1
+            self._expand(object, stream, indent, allowance, context, level + 1)
+            del context[id(object)]
+            return
+        super()._format(object, stream, indent, allowance, context, level)
+
+    def _expand(  # noqa: PLR0917 -- mirrors CPython's positional pprint dispatch signature.
+        self,
+        obj: object,
+        stream: SupportsWrite[str],
+        indent: int,
+        allowance: int,
+        context: dict[int, int],
+        level: int,
+    ) -> None:
+        """Lay ``obj`` out with the method CPython's ``_format`` dispatches it to."""
+        if isinstance(obj, list):
+            items = cast(list[object], obj)
+            self._pprint_list(items, stream, indent, allowance, context, level)
+        elif isinstance(obj, tuple):
+            values = cast(tuple[object, ...], obj)
+            self._pprint_tuple(values, stream, indent, allowance, context, level)
+        elif isinstance(obj, dict):
+            mapping = cast(dict[object, object], obj)
+            self._pprint_dict(mapping, stream, indent, allowance, context, level)
+        else:
+            self._pprint_dataclass(obj, stream, indent, allowance, context, level)
+
+    # Qualifying only inserts module paths, and masking shortens a repr by at most
+    # each address's excess over the mask, so the raw text bounds the processed one;
+    # a container's bound sums its items'. ``None`` marks a node whose render
+    # finalizes something, recurses, or is cut by ``depth``: CPython's own path
+    # renders it, with the same side effects.
+    def _repr_floor(self, obj: object, context: dict[int, int]) -> int | None:
+        """Return a lower bound on the length of ``format(obj)``, or ``None``."""
+        if self._finalize_pending(obj):
+            return None
+        if type(obj) not in (list, tuple, dict):
+            # ``_safe_repr`` renders a builtin container's subclass item by item.
+            if isinstance(obj, (list, tuple, dict)):
+                return None
+            rendered = repr(obj)
+            return len(rendered) - sum(
+                max(0, address.end() - address.start() - len(_ADDRESS_MASK))
+                for address in re.finditer(_ADDRESS_PATTERN, rendered)
+            )
+        if not obj:
+            return 2
+        identity = id(obj)
+        if self._depth is not None or identity in context:
+            return None
+        if isinstance(obj, dict):
+            mapping = cast(dict[object, object], obj)
+            items = [*mapping.keys(), *mapping.values()]
+        else:
+            items = list(cast(list[object] | tuple[object, ...], obj))
+        # Brackets and ", " between items; a dict adds ": " per pair.
+        total = 2 * len(items)
+        context[identity] = 1
+        for item in items:
+            floor = self._repr_floor(item, context)
+            # The caller discards this context copy, so it needs no cleanup here.
+            if floor is None:
+                return None
+            total += floor
+        del context[identity]
+        return total
+
+    def _finalize_pending(self, obj: object) -> bool:
+        """Return whether ``_try_to_finalize`` would copy and finalize ``obj``."""
+        # An exact builtin type has no ``finalize``, and the runtime protocol check
+        # costs microseconds on each of a render's thousands of leaves.
+        if type(obj) in (int, float, str, bool, bytes, type(None), list, dict, tuple):
+            return False
+        finalized_flag = getattr(obj, "_finalized", False)
+        return self._finalize and not finalized_flag and isinstance(obj, Finalizeable)
 
     # ``finalize`` mutates in place, so the tree is copied first (via ``copy_tree``,
     # which duplicates the config spine but aliases heavy leaves like tensors) to keep
     # printing side-effect-free.
     def _try_to_finalize(self, obj: _T) -> _T:
         """Copy the config tree then finalize it for display purposes."""
-        finalized_flag = getattr(obj, "_finalized", False)
-        if self._finalize and isinstance(obj, Finalizeable) and not finalized_flag:
-            cached = (
-                None
-                if self._finalized_copies is None
-                else self._finalized_copies.get(id(obj))
-            )
-            # ``is obj`` guards address reuse: CPython hands a reclaimed id() to
-            # the next allocation, so a bare id() hit can belong to a config that
-            # has since been collected.
-            if cached is not None and cached[0] is obj:
-                return cast(_T, cached[1])
-            try:
-                finalized = copy_tree(obj).finalize()
-                if self._finalized_copies is not None:
-                    self._finalized_copies[id(obj)] = (obj, finalized)
-                obj = finalized
-            except Exception as e:  # noqa: BLE001 -- any finalize failure degrades to printing the unfinalized tree.
-                warnings.warn(f"{type(e).__name__}: {e}", stacklevel=2)
+        if not self._finalize_pending(obj):
+            return obj
+        assert isinstance(obj, Finalizeable)
+        cached = (
+            None
+            if self._finalized_copies is None
+            else self._finalized_copies.get(id(obj))
+        )
+        # ``is obj`` guards address reuse: CPython hands a reclaimed id() to
+        # the next allocation, so a bare id() hit can belong to a config that
+        # has since been collected.
+        if cached is not None and cached[0] is obj:
+            return cast(_T, cached[1])
+        try:
+            finalized = copy_tree(obj).finalize()
+            if self._finalized_copies is not None:
+                self._finalized_copies[id(obj)] = (obj, finalized)
+            obj = finalized
+        except Exception as e:  # noqa: BLE001 -- any finalize failure degrades to printing the unfinalized tree.
+            warnings.warn(f"{type(e).__name__}: {e}", stacklevel=2)
         return obj
 
     # CPython's PrettyPrinter dispatches to ``_pprint_dataclass`` for dataclass
@@ -413,7 +504,13 @@ class FigPrinter(PrettyPrinter):
             super()._format_items(items, stream, indent, allowance, context, level)
             return
 
-        one_line_str = self._try_format_items_on_one_line(items, context, level)
+        one_line_str = self._try_format_items_on_one_line(
+            items,
+            context,
+            level,
+            indent=indent,
+            allowance=allowance,
+        )
         content_width = len(one_line_str) + 2
 
         if self._should_format_on_one_line(content_width, indent, allowance):
@@ -426,15 +523,23 @@ class FigPrinter(PrettyPrinter):
         items: list[object],
         context: dict[int, int],
         level: int,
+        *,
+        indent: int,
+        allowance: int,
     ) -> str:
-        """Try to format items on a single line."""
-        one_line = io.StringIO()
-        delim = ""
+        """Format items on a single line, stopping once the line cannot fit."""
+        pieces: list[str] = []
+        content_width = 0
         for item in items:
-            one_line.write(delim)
-            self._format(item, one_line, 0, 0, context, level)
-            delim = ", "
-        return one_line.getvalue()
+            piece = io.StringIO()
+            self._format(item, piece, 0, 0, context, level)
+            pieces.append(piece.getvalue())
+            content_width += len(pieces[-1]) + 2
+            # The width only grows, so a prefix that cannot fit rules the line
+            # out; rendering the rest, as a list of large configs did, is waste.
+            if not self._should_format_on_one_line(content_width, indent, allowance):
+                break
+        return ", ".join(pieces)
 
     def _should_format_on_one_line(
         self,
@@ -507,6 +612,10 @@ class FigPrinter(PrettyPrinter):
 
 def _qualify_function_reprs(value: object, rendered: str) -> str:
     """Add module paths to function reprs nested in supported containers."""
+    # Every function repr starts so; skipping the walk without one saves a pass
+    # over each value's subtree.
+    if "<function " not in rendered:
+        return rendered
     functions: list[types.FunctionType] = []
     _collect_functions(value, functions, set())
     if not any(repr(function) in rendered for function in functions):
@@ -562,6 +671,9 @@ def _replace_unquoted(
 
 def _string_token_spans(text: str) -> list[tuple[int, int]]:
     """Return absolute spans occupied by Python string tokens."""
+    # Every string token holds a quote; most reprs hold none.
+    if "'" not in text and '"' not in text:
+        return []
     line_offsets = [0]
     for line in text.splitlines(keepends=True):
         line_offsets.append(line_offsets[-1] + len(line))
@@ -605,6 +717,34 @@ def _function_repr_children(value: object) -> list[object]:
     return []
 
 
+class _ReprParam(Protocol):
+    """The one ``__dataclass_params__`` member CPython's ``_format`` reads."""
+
+    repr: bool
+
+
+class _DataclassLayout(Protocol):
+    """A dataclass as CPython's ``_format`` inspects it."""
+
+    __dataclass_params__: _ReprParam
+
+
+# CPython's own test, narrowed to a function ``__wrapped__``, so every object this
+# accepts CPython lays out field by field too. A generated ``__repr__`` is never a
+# ``_dispatch`` key, which CPython checks first. Cast, not a runtime protocol: this
+# runs on every dataclass a render meets.
+def _is_laid_out_by_field(obj: object) -> bool:
+    """Return whether CPython's ``_format`` expands ``obj`` with ``_pprint_dataclass``."""
+    if not dataclasses.is_dataclass(obj) or isinstance(obj, type):
+        return False
+    wrapped = cast(object, getattr(obj.__repr__, "__wrapped__", None))
+    return (
+        isinstance(wrapped, types.FunctionType)
+        and "__create_fn__" in wrapped.__qualname__
+        and cast(_DataclassLayout, obj).__dataclass_params__.repr
+    )
+
+
 def _get_level_indents(level: int, indent_per_level: int) -> tuple[int, int]:
     """Return (item_indent, base_indent) for a given nesting level."""
     item_indent = indent_per_level * (level + 1)
@@ -614,9 +754,19 @@ def _get_level_indents(level: int, indent_per_level: int) -> tuple[int, int]:
 
 def _collapse_multiline_value(formatted_value: str, max_width: int) -> str:
     """Collapse multiline value to a single line if short enough."""
-    if "\n" not in formatted_value or _contains_repeated_string_whitespace(
-        formatted_value,
-    ):
+    if "\n" not in formatted_value:
+        return formatted_value
+
+    # Collapsing keeps every non-space character, so more than ``max_width`` of
+    # them keeps the value multiline. Counting stops there: tokenizing and
+    # collapsing each level's whole subtree text dominated the render.
+    visible = 0
+    for word in re.finditer(r"\S+", formatted_value):
+        visible += word.end() - word.start()
+        if visible > max_width:
+            return formatted_value
+
+    if _contains_repeated_string_whitespace(formatted_value):
         return formatted_value
 
     oneline = re.sub(r"\s+", " ", formatted_value).strip()
@@ -702,7 +852,7 @@ def _filter_non_default_items(
 
 def _mask_memory_addresses(text: str) -> str:
     """Replace object-repr memory addresses outside string tokens."""
-    matches = list(re.finditer(r"(?<= at )0x[0-9a-fA-F]+", text))
+    matches = list(re.finditer(_ADDRESS_PATTERN, text))
     if not matches:
         return text
     string_spans = _string_token_spans(text)
@@ -712,10 +862,5 @@ def _mask_memory_addresses(text: str) -> str:
         ]
         if any(match.end() > start for start, _ in open_spans):
             continue
-        # One literal for every masked address, on every platform. Goldens are
-        # shared across machines, so the width must not come from the recording
-        # host: sizing it from ``id(object())`` made a golden recorded on a 64-bit
-        # interpreter unreproducible on a 32-bit one, and sizing it per match
-        # leaked the original address's length. (0xdefaced is prime.)
-        text = text[: match.start()] + "0xdefacedeface" + text[match.end() :]
+        text = text[: match.start()] + _ADDRESS_MASK + text[match.end() :]
     return text
