@@ -1104,20 +1104,30 @@ def test_format_and_collapse_item_exact_allowance_boundary() -> None:
 def test_try_format_items_on_one_line_exact_width_boundary() -> None:
     printer = FigPrinter(width=30)
     item = list(range(10))
-    assert printer._try_format_items_on_one_line([item], {}, 0) == (
-        "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]"
-    )
+    assert printer._try_format_items_on_one_line(
+        [item],
+        {},
+        0,
+        indent=0,
+        allowance=0,
+    ) == ("[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]")
 
 
 def test_try_format_items_on_one_line_preserves_format_depth() -> None:
     printer = FigPrinter()
-    assert printer._try_format_items_on_one_line([[1, 2]], {}, 0) == "[1, 2]"
+    assert (
+        printer._try_format_items_on_one_line([[1, 2]], {}, 0, indent=0, allowance=0)
+        == "[1, 2]"
+    )
 
 
 def test_try_format_items_on_one_line_exact_delimiter() -> None:
     printer = FigPrinter()
-    assert printer._try_format_items_on_one_line([1, 2, 3], {}, 0) == "1, 2, 3"
-    assert printer._try_format_items_on_one_line([], {}, 0) == ""
+    assert (
+        printer._try_format_items_on_one_line([1, 2, 3], {}, 0, indent=0, allowance=0)
+        == "1, 2, 3"
+    )
+    assert printer._try_format_items_on_one_line([], {}, 0, indent=0, allowance=0) == ""
 
 
 def test_format_items_multiline_exact_layout() -> None:
@@ -1466,6 +1476,135 @@ def test_non_last_namespace_field_reserves_one_column(
     expected: str,
 ) -> None:
     assert FigPrinter(width=width, indent=2).pformat(_Trio(a={}, b=1)) == expected
+
+
+class _Repr:
+    """An object whose repr is fixed text."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    @override
+    def __repr__(self) -> str:
+        return self.text
+
+
+class _ListOf(list[object]):
+    """A list subclass that keeps the builtin repr."""
+
+
+class _Shrinks(Fig):
+    text: str = "x" * 60
+    """Long until finalized."""
+
+    @override
+    def finalize(self) -> Self:
+        self.text = ""
+        return super().finalize()
+
+
+@dataclasses.dataclass(repr=False, kw_only=True, slots=True)
+class _InheritsRepr(_Pair):
+    c: object = None
+
+
+# Masking turns this 32-character address into the 14-character mask.
+_LONG_ADDRESS: Final = "<x at 0x" + "f" * 30 + ">"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (_Pair(a=_Repr(_LONG_ADDRESS)), "_Pair(a=<x at 0xdefacedeface>, b=None)"),
+        (
+            [_Repr(_LONG_ADDRESS), _Repr(_LONG_ADDRESS)],
+            "[<x at 0xdefacedeface>, <x at 0xdefacedeface>]",
+        ),
+        ({"k": _Repr(_LONG_ADDRESS)}, "{'k': <x at 0xdefacedeface>}"),
+    ],
+)
+def test_a_repr_masking_shortens_to_the_width_prints_whole(
+    value: object,
+    expected: str,
+) -> None:
+    assert pformat(value, width=len(expected)) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ([_Shrinks()], "[_Shrinks(text='')]"),
+        ([_ListOf([_Shrinks()])], "[[_Shrinks(text='')]]"),
+    ],
+)
+def test_width_is_measured_on_the_finalized_items(
+    value: object,
+    expected: str,
+) -> None:
+    # CPython's item layout, unlike ours, never reproduces the one-line repr.
+    rendered = pformat(
+        value,
+        width=len(expected),
+        hide_default_values=False,
+        extra_compact=False,
+    )
+    assert rendered == expected
+
+
+def test_a_dataclass_without_its_own_repr_prints_by_repr() -> None:
+    value = _InheritsRepr(a=list(range(20)))
+    assert pformat(value, width=10) == repr(value)
+
+
+def test_depth_cut_items_are_measured_as_cut() -> None:
+    rendered = pformat([[1, 2, 3] * 5], depth=1, width=10, extra_compact=False)
+    assert rendered == "[[...]]"
+
+
+def test_a_self_containing_list_prints_its_recursion() -> None:
+    loop: list[object] = [1]
+    loop.append(loop)
+    assert pformat(loop, width=5) == f"[\n{' ' * 16}1,\n{' ' * 16}...\n{' ' * 8}]"
+
+
+def test_a_too_wide_tuple_lays_out_by_item() -> None:
+    assert FigPrinter(width=10, indent=2).pformat(tuple(range(12))) == (
+        "(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)"
+    )
+
+
+def test_qualification_keeps_text_without_a_bare_function_repr() -> None:
+    text = "<function elsewhere at 0x1>"
+    assert _qualify_function_reprs([_identity_function], text) == text
+
+
+def test_qualification_walks_a_cyclic_container_once() -> None:
+    cyclic: list[object] = [_identity_function]
+    cyclic.append(cyclic)
+    module = _identity_function.__module__
+    assert _qualify_function_reprs(cyclic, repr(cyclic)) == repr(cyclic).replace(
+        "<function ",
+        f"<function {module}.",
+    )
+
+
+def test_one_line_attempt_stops_at_the_first_item_too_wide() -> None:
+    printer = FigPrinter(width=20)
+    assert printer._try_format_items_on_one_line(
+        ["x" * 50, "y"],
+        {},
+        0,
+        indent=0,
+        allowance=0,
+    ) == repr("x" * 50)
+
+
+def test_collapse_keeps_a_value_exactly_max_width_long() -> None:
+    assert _collapse_multiline_value("(\n1\n)", 3) == "(1)"
+
+
+def test_quote_free_text_has_no_string_spans_even_when_untokenizable() -> None:
+    assert _string_token_spans("a\n    b\n  c") == []
 
 
 if __name__ == "__main__":
