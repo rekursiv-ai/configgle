@@ -424,6 +424,18 @@ cfg.pprint(hide_default_values=False)
 
 Pass `finalize=False` only when inspecting raw user input before propagation.
 
+To compare configs, call `udiff`; never run `difflib` over `pformat` output:
+
+```python
+print(base.udiff(variant))  # unified diff, defaults included
+print(base.udiff(variant, mode="fields"))  # one row per changed field path
+print(base.udiff(a, b, mode="sxs"))  # side by side; also "sxs-full"
+```
+
+`udiff` never mutates its sources. It takes every `pformat` option plus
+`n` (context lines) and `color` (`None` colors only on a terminal);
+`finalize=False` compares raw inputs.
+
 See `help(configgle.pprint)` for the rest of the
 knobs (`indent`, `width`, `depth`, `compact`,
 `mask_memory_addresses`, etc.).

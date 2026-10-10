@@ -393,6 +393,22 @@ cfg.pprint()  # prints to stdout
 s = cfg.pformat()  # returns string
 ```
 
+### `udiff`
+
+`udiff` compares a config against one or more others without mutating any of
+them. Defaults are shown, so configs of different classes expose differing
+defaults:
+
+```python
+print(exp000().udiff(exp001()))  # unified diff
+print(exp000().udiff(exp001(), mode="fields"))  # one row per changed field path
+print(exp000().udiff(exp001(), exp002(), mode="sxs"))  # side by side
+```
+
+Modes: `diff` (default), `sxs`/`sxs-compact`, `sxs-full`, `fields`. It also
+takes `n` (context lines), `color` (`None` colors only on a terminal), and any
+`pformat` option; pass `finalize=False` to compare raw inputs.
+
 ### `serialize()` / `deserialize()`
 
 `serialize()` returns a tree of plain Python containers (`dict`, `list`, `str`,
