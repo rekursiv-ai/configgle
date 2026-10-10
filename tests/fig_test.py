@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import field
-from typing import TYPE_CHECKING, NamedTuple, Protocol, Self, cast, override
+from typing import (
+    TYPE_CHECKING,
+    Literal,
+    NamedTuple,
+    Protocol,
+    Self,
+    cast,
+    override,
+)
 
 import dataclasses
 import io
@@ -997,6 +1005,203 @@ def test_pformat_method():
     assert "x=42" in result
 
 
+def test_diff_defaults_labels_and_direction() -> None:
+    class Config(Fig):
+        value: int = 2
+        """Value to compare."""
+
+    before = Config()
+    after = Config()
+    after.value = 3
+    result = before.udiff(after, color=False)
+    assert result == (
+        "--- \n+++ \n@@ -1 +1 @@\n"
+        f"-{Config.__qualname__}(value=2)\n+{Config.__qualname__}(value=3)"
+    )
+    assert before.udiff(Config(), color=False) == ""
+    assert before.udiff(after, color=False).startswith("--- \n+++ \n")
+    assert f"-{Config.__qualname__}()" in before.udiff(
+        after,
+        color=False,
+        hide_default_values=True,
+        width=12,
+    )
+    wrapped = before.udiff(after, indent=3, width=12)
+    assert "-      value=2" in wrapped
+    assert "+      value=3" in wrapped
+
+
+def test_diff_format_options_and_context() -> None:
+    before = Parent.Config()
+    after = Parent.Config()
+    after.b = 3
+    result = before.udiff(
+        after,
+        color=False,
+        n=0,
+        indent=3,
+        width=12,
+        depth=None,
+        compact=True,
+        sort_dicts=True,
+        underscore_numbers=False,
+        finalize=False,
+        mask_memory_addresses=False,
+        extra_compact=True,
+        continuation_pipe=-1,
+        hide_default_values=False,
+        short_sequence_max_width=9,
+    )
+    assert result == ("--- \n+++ \n@@ -3 +3 @@\n-      b=2.1783\n+      b=3")
+    assert "a=1.618" not in result
+
+
+def test_udiff_multiple_variants_share_one_baseline() -> None:
+    baseline = BaseConfig()
+    first = BaseConfig()
+    first.a = 2
+    second = BaseConfig()
+    second.a = 3
+    result = baseline.udiff(first, second, finalize=False, color=False)
+    assert "config[0] → config[1]" in result
+    assert "config[0] → config[2]" in result
+    assert result.count("-BaseConfig(a=1.618)") == 2
+    assert "+BaseConfig(a=2)" in result
+    assert "+BaseConfig(a=3)" in result
+    assert baseline.udiff(BaseConfig(), first, color=False).count("config[0] →") == 1
+
+
+def test_udiff_side_by_side_multiple_variants() -> None:
+    baseline = BaseConfig()
+    first = BaseConfig()
+    first.a = 2
+    second = BaseConfig()
+    second.a = 3
+    result = baseline.udiff(
+        first,
+        second,
+        mode="sxs",
+        finalize=False,
+        color=False,
+        width=120,
+    )
+    assert "config[0]" in result
+    assert "config[1]" in result
+    assert "config[2]" in result
+    row = next(line for line in result.splitlines() if "BaseConfig(a=" in line)
+    assert "BaseConfig(a=1.618)" in row
+    assert "BaseConfig(a=2)" in row
+    assert "BaseConfig(a=3)" in row
+    assert baseline.udiff(BaseConfig(), mode="sxs") == ""
+
+
+def test_udiff_fields_paths_missing_and_inline_arguments() -> None:
+    class Before(Fig):
+        value: object = None
+        """Value to compare."""
+
+        removed: int = 2
+        """Removed field."""
+
+    class After(Fig):
+        value: object = None
+        """Value to compare."""
+
+        added: object = None
+        """Added field."""
+
+    before = Before()
+    before.value = PartialConfig(int, base=10)
+    after = After()
+    after.value = PartialConfig(int, base=16)
+    result = before.udiff(after, mode="fields", color=False, finalize=False)
+    rows = [list(map(str.strip, line.split("│"))) for line in result.splitlines()]
+    assert ["value.base", "10", "16"] in rows
+    assert ["removed", "2", ""] in rows
+    assert ["added", "", "None"] in rows
+    assert "∅" not in result
+    assert "Before" in result
+    assert "After" in result
+    assert before.udiff(before, mode="fields") == ""
+
+
+def test_udiff_requires_a_comparison() -> None:
+    with pytest.raises(ValueError, match="at least one"):
+        BaseConfig().udiff()
+
+
+def test_udiff_rejects_negative_context() -> None:
+    with pytest.raises(ValueError, match="nonnegative"):
+        BaseConfig().udiff(BaseConfig(), n=-1)
+
+
+def test_udiff_colors_only_on_request_or_a_terminal() -> None:
+    before = BaseConfig()
+    after = BaseConfig()
+    after.a = 2
+    colored = before.udiff(after, color=True)
+    assert "\x1b[31m-BaseConfig(a=1.618)\x1b[0m" in colored
+    assert "\x1b[32m+BaseConfig(a=2)\x1b[0m" in colored
+    plain = before.udiff(after)
+    assert "\x1b[" not in plain
+    assert "-BaseConfig(a=1.618)" in plain
+
+
+@pytest.mark.parametrize("mode", ["bogus"])
+def test_udiff_rejects_an_unknown_mode(mode: str) -> None:
+    with pytest.raises(AssertionError, match="bogus"):
+        BaseConfig().udiff(
+            BaseConfig(),
+            mode=cast(Literal["diff"], mode),
+        )
+
+
+def test_diff_includes_different_class_defaults() -> None:
+    class Before(Fig):
+        value: int = 2
+        """Original default."""
+
+    class After(Fig):
+        value: int = 3
+        """Changed default."""
+
+    result = Before().udiff(After(), color=False)
+    assert f"-{Before.__qualname__}(value=2)" in result
+    assert f"+{After.__qualname__}(value=3)" in result
+
+
+def test_diff_finalization_and_nested_source_isolation() -> None:
+    class Leaf(Fig):
+        value: int = 2
+        """Input value."""
+
+        derived: int = 0
+        """Derived value."""
+
+        @override
+        def finalize(self) -> Self:
+            self.derived = self.value * 2
+            return super().finalize()
+
+    class Config(Fig):
+        leaf: Leaf = field(default_factory=Leaf)
+        """Nested configuration."""
+
+    before = Config()
+    after = Config()
+    after.leaf.value = 3
+    assert "derived=4" in before.udiff(after, color=False)
+    assert "derived=6" in before.udiff(after, color=False)
+    raw = before.udiff(after, finalize=False, color=False)
+    assert "derived=0" in raw
+    assert "derived=4" not in raw
+    assert before.leaf.derived == after.leaf.derived == 0
+    assert not before._finalized
+    assert not after._finalized
+    assert not before.leaf._finalized
+    assert not after.leaf._finalized
+
+
 def test_pprint_method(capsys: pytest.CaptureFixture[str]):
     """Test the pprint method on Maker."""
 
@@ -1008,7 +1213,7 @@ def test_pprint_method(capsys: pytest.CaptureFixture[str]):
             pass
 
     cfg = MyClass.Config(x=42)
-    cfg.pprint()
+    cfg.pprint(color=False)
     captured = capsys.readouterr()
     assert "x=42" in captured.out
 
@@ -1025,7 +1230,7 @@ def test_pprint_method_with_stream():
 
     cfg = MyClass.Config(x=42)
     buf = io.StringIO()
-    cfg.pprint(stream=buf)
+    cfg.pprint(stream=buf, color=False)
     assert "x=42" in buf.getvalue()
 
 
@@ -1718,7 +1923,7 @@ def test_pformat_default_options_are_forwarded(
     assert config.pformat() == "formatted"
     assert calls == {
         "config": config,
-        "indent": 8,
+        "indent": 4,
         "width": 80,
         "depth": None,
         "compact": False,
@@ -1748,8 +1953,9 @@ def test_pprint_default_options_are_forwarded(
     config.pprint()
     assert calls == {
         "config": config,
+        "color": None,
         "stream": None,
-        "indent": 8,
+        "indent": 4,
         "width": 80,
         "depth": None,
         "compact": False,

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Self, override
+from typing import TYPE_CHECKING, Final, Literal, Self, cast, override
 
 import ast
 import copy
@@ -13,12 +14,14 @@ import functools
 import glob
 import inspect
 import re
+import time
 import types
 import warnings
 
 import pytest
 
-from configgle import Fig, PartialConfig, pprinting
+from configgle import Fig, InlineConfig, PartialConfig, pprinting
+from configgle.coloring import color_config
 from configgle.pprinting import (
     FigPrinter,
     _add_pipes_to_lines,
@@ -29,9 +32,11 @@ from configgle.pprinting import (
     _get_level_indents,
     _mask_memory_addresses,
     _qualify_function_reprs,
+    _render_field_row,
     _replace_char_at_column,
     _replace_unquoted,
     _should_add_continuation_pipes,
+    _side_by_side_diff,
     _string_token_spans,
     pformat,
     pprint,
@@ -39,7 +44,7 @@ from configgle.pprinting import (
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from configgle.custom_types import PformatOptions
 
 
 _THIS: Final = Path(__file__).resolve()
@@ -95,6 +100,35 @@ def test_pformat_mask_memory_addresses():
     assert repr(obj) not in result
 
 
+def test_inline_calls_wrap_at_argument_boundaries() -> None:
+    partial = PartialConfig(int, "123", base=10)
+    rendered = pformat(partial, width=32, indent=2, finalize=False)
+    assert rendered == (
+        "PartialConfig(\n    <class 'int'>,\n    '123',\n    base=10\n  )"
+    )
+    assert "functools.partial" not in rendered
+    assert "functools.partial" in repr(partial)
+    assert pformat(PartialConfig(int), width=80) == "PartialConfig(<class 'int'>)"
+    inline = InlineConfig(int, "123", base=10)
+    assert "\n    base=10\n" in pformat(inline, width=32, indent=2)
+    assert "'123', base=10)" in repr(inline)
+    assert not inline._finalized
+
+
+def test_inline_nested_values_cycles_and_depth() -> None:
+    child = PartialConfig(int, base=10)
+    parent = PartialConfig(list[object], [child], nested=child)
+    rendered = pformat(parent, width=32, indent=2, finalize=False)
+    assert rendered.count("base=10") == 2
+    assert "nested=PartialConfig(\n" in rendered
+    assert "functools.partial" not in rendered
+    cyclic = PartialConfig(list[object])
+    cyclic.loop = cyclic
+    assert "..." in pformat(cyclic, width=32, finalize=False)
+    assert "PartialConfig(...)" in pformat(parent, depth=1, width=32, finalize=False)
+    assert "base=10" in pformat(parent, width=32, extra_compact=False)
+
+
 def _identity_function(
     function: Callable[[str], str],
 ) -> Callable[[str], str]:
@@ -132,18 +166,119 @@ def test_function_repr_preserves_callable_identity_in_sets() -> None:
     assert "glob.escape" in rendered
 
 
+def test_named_functions_render_without_repr_wrappers_or_addresses() -> None:
+    assert pformat(re.escape) == "re.escape"
+    assert pformat(PartialConfig(re.escape)) == "PartialConfig(re.escape)"
+    assert (
+        pformat(InlineConfig(re.escape, "hello")) == "InlineConfig(re.escape, 'hello')"
+    )
+
+
+def test_lambda_expression_source_and_same_line_identity() -> None:
+    functions: tuple[Callable[[int], int], Callable[[int], int]] = (
+        (lambda x: x * 2),
+        (lambda x: x + 3),
+    )
+    first, second = functions
+    assert pformat(first) == "lambda x: x * 2"
+    assert pformat(second) == "lambda x: x + 3"
+    assert pformat(PartialConfig(first)) == "PartialConfig(lambda x: x * 2)"
+    (quoted,) = (lambda: "│ <function fake at 0x123>",)
+    assert pformat(quoted) == "lambda: '│ <function fake at 0x123>'"
+
+
+def test_lambda_multiline_source_is_an_expression() -> None:
+    function: Callable[[int], int] = lambda x: x * 2 + 3  # noqa: E731 -- Testing lambda specifically.
+    assert ast.dump(ast.parse(pformat(function), mode="eval")) == ast.dump(
+        ast.parse("lambda x: x * 2 + 3", mode="eval"),
+    )
+
+
+def test_lambda_spanning_lines_renders_on_one_line() -> None:
+    function: Callable[[int], int] = lambda x: (  # noqa: E731 -- Testing lambda specifically.
+        x  # Kept on its own line so the source spans lines.
+        + 1
+    )
+    assert pformat([function, 1]) == "[lambda x: x + 1, 1]"
+
+
+def _defaulted(x: int, k: int = 3) -> int:
+    return x * k
+
+
+def _scaler(k: int) -> Callable[[int], int]:
+    return lambda x: x * k
+
+
+def _adder(k: int) -> Callable[[int], int]:
+    def add(x: int) -> int:
+        return x + k
+
+    return add
+
+
+class _SuperUser:
+    def method(self) -> str:
+        return super().__repr__()
+
+
+def test_functions_render_their_captured_values() -> None:
+    assert pformat(_scaler(1)) == "lambda x: x * k {k=1}"
+    assert pformat(_scaler(1)) != pformat(_scaler(2))
+    assert pformat(_adder(1)) == (f"{__name__}._adder.<locals>.add {{k=1}}")
+    scalers: list[Callable[[int], int]] = [lambda x, k=k: x * k for k in (1, 2)]
+    first, second = scalers
+    assert pformat(first) == "lambda x, k=k: x * k {k=1}"
+    assert pformat(second) == "lambda x, k=k: x * k {k=2}"
+    keyword = (lambda *, k=3: k,)[0]
+    assert pformat(keyword) == "lambda *, k=3: k {k=3}"
+    assert pformat(_SuperUser.method) == f"{__name__}._SuperUser.method"
+    assert pformat(_elapsed_sec) == f"{__name__}._elapsed_sec"
+    assert pformat(functools.partial) == "<class 'functools.partial'>"
+    assert pformat(re.escape) == "re.escape"
+    assert pformat(_defaulted) == f"{__name__}._defaulted"
+    scaler = _scaler(1)
+    assert isinstance(scaler, types.FunctionType)
+    unbound = types.FunctionType(
+        scaler.__code__,
+        {},
+        closure=(types.CellType(),),
+    )
+    assert pformat(unbound) == "lambda x: x * k"
+
+
+def test_repr_floor_bounds_function_leaves() -> None:
+    function = _scaler(3)
+    printer = FigPrinter()
+    for value in ([function, [function, "x"]], _Callback(function=function)):
+        floor = printer._repr_floor(value, {})
+        assert floor is not None
+        assert floor <= len(printer.format(value, {}, 0, 0)[0])
+
+
+@dataclasses.dataclass(slots=True, kw_only=True)
+class _Callback:
+    function: Callable[[int], int]
+
+
+def test_lambda_without_available_source_has_no_address() -> None:
+    function = types.FunctionType(
+        (lambda: None).__code__.replace(co_filename="<unavailable-lambda>"),
+        {},
+    )
+    assert pformat(function) == "<lambda>"
+
+
 def test_function_qualification_binds_modules_to_exact_addresses() -> None:
     first = types.FunctionType((lambda: None).__code__, {"__name__": "first_module"})
     second = types.FunctionType((lambda: None).__code__, {"__name__": "second_module"})
-    first.__qualname__ = second.__qualname__ = "shared"
+    first.__name__ = first.__qualname__ = "shared"
+    second.__name__ = second.__qualname__ = "shared"
     rendered = f"[{second!r}, {first!r}]"
 
     qualified = _qualify_function_reprs([first, second], rendered)
 
-    assert qualified == (
-        f"[<function second_module.shared at {hex(id(second))}>, "
-        f"<function first_module.shared at {hex(id(first))}>]"
-    )
+    assert qualified == "[second_module.shared, first_module.shared]"
 
 
 def test_function_qualification_ignores_repr_inside_string_value() -> None:
@@ -151,15 +286,12 @@ def test_function_qualification_ignores_repr_inside_string_value() -> None:
         (lambda: None).__code__,
         {"__name__": "string_collision_module"},
     )
-    function.__qualname__ = "shared"
+    function.__name__ = function.__qualname__ = "shared"
     rendered = repr([repr(function), function])
 
     qualified = _qualify_function_reprs([repr(function), function], rendered)
 
-    assert qualified == (
-        f"[{repr(function)!r}, "
-        f"<function string_collision_module.shared at {hex(id(function))}>]"
-    )
+    assert qualified == f"[{repr(function)!r}, string_collision_module.shared]"
 
 
 def test_function_qualification_handles_aliased_containers() -> None:
@@ -167,13 +299,13 @@ def test_function_qualification_handles_aliased_containers() -> None:
         (lambda: None).__code__,
         {"__name__": "aliased_module"},
     )
-    function.__qualname__ = "shared"
+    function.__name__ = function.__qualname__ = "shared"
     child = [function]
     rendered = repr([child, child])
 
     qualified = _qualify_function_reprs([child, child], rendered)
 
-    expected = f"<function aliased_module.shared at {hex(id(function))}>"
+    expected = "aliased_module.shared"
     assert qualified == f"[[{expected}], [{expected}]]"
 
 
@@ -256,18 +388,15 @@ def test_non_compact_dataclass_fields_hang_under_the_class_name() -> None:
 def test_qualification_skips_a_quoted_copy_after_an_earlier_replacement() -> None:
     first = types.FunctionType((lambda: None).__code__, {"__name__": "alpha"})
     second = types.FunctionType((lambda: None).__code__, {"__name__": "beta"})
-    first.__qualname__ = "first"
-    second.__qualname__ = "second"
+    first.__name__ = first.__qualname__ = "first"
+    second.__name__ = second.__qualname__ = "second"
     # The first replacement lengthens the text, so the quoted copy of the second
     # repr only stays skipped if every later span shifts with it.
     rendered = repr([first, repr(second), second])
 
     qualified = _qualify_function_reprs([first, repr(second), second], rendered)
 
-    assert qualified == (
-        f"[<function alpha.first at {hex(id(first))}>, {repr(second)!r}, "
-        f"<function beta.second at {hex(id(second))}>]"
-    )
+    assert qualified == f"[alpha.first, {repr(second)!r}, beta.second]"
 
 
 def test_string_token_spans_returns_empty_on_an_unterminated_string() -> None:
@@ -319,10 +448,308 @@ def test_pformat_finalize():
         assert len(w) == 0
 
 
+class _Terminal(StringIO):
+    @override
+    def isatty(self) -> bool:
+        return True
+
+
+def test_pprint_colors_only_terminals_by_default(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    log = StringIO()
+    pprint({"value": 2}, stream=log)
+    assert log.getvalue() == "{'value': 2}\n"
+    pprint({"value": 2})
+    assert capsys.readouterr().out == "{'value': 2}\n"
+    terminal = _Terminal()
+    pprint({"value": 2}, stream=terminal)
+    assert "\x1b[95m'value'\x1b[0m" in terminal.getvalue()
+    assert "\x1b[95m2\x1b[0m" in terminal.getvalue()
+    forced = StringIO()
+    pprint({"value": 2}, stream=forced, color=True)
+    assert "\x1b[95m2\x1b[0m" in forced.getvalue()
+    disabled = _Terminal()
+    pprint({"value": 2}, stream=disabled, color=False)
+    assert disabled.getvalue() == "{'value': 2}\n"
+
+
+def test_format_diff_colors_only_a_terminal_stdout_by_default() -> None:
+    plain = pprinting.format_diff([1, 2], mode="diff", n=0, color=None, options={})
+    assert plain == "--- \n+++ \n@@ -1 +1 @@\n-1\n+2"
+
+
+@pytest.mark.parametrize("mode", ["bogus"])
+def test_format_diff_rejects_an_unknown_mode(mode: str) -> None:
+    with pytest.raises(AssertionError, match="bogus"):
+        pprinting.format_diff(
+            [1, 2],
+            mode=cast(Literal["diff"], mode),
+            n=0,
+            color=False,
+            options={},
+        )
+
+
+def test_color_config_scales_linearly() -> None:
+    small = pformat(list(range(4_000)), width=40)
+    large = pformat(list(range(64_000)), width=40)
+    small_sec = min(_elapsed_sec(color_config, small) for _ in range(3))
+    large_sec = _elapsed_sec(color_config, large)
+    # Linear is 16x; quadratic splicing measured 50x+ at this size.
+    assert large_sec < 32 * small_sec
+
+
+def test_pprint_plain_format_stays_plain() -> None:
+    colored = color_config(
+        "Outer.Config(child=Inner(value=2), text='hi', yes=True, no=False, missing=None)",
+    )
+    assert "\x1b[96mOuter.Config\x1b[0m(child=\x1b[96mInner\x1b[0m(value=" in colored
+    assert "\x1b[95mTrue\x1b[0m" in colored
+    assert "\x1b[95mFalse\x1b[0m" in colored
+    assert "\x1b[95mNone\x1b[0m" in colored
+    assert pformat({"value": 2}) == "{'value': 2}"
+
+
+@pytest.mark.parametrize("text", ["Config(\n  x=2\n)", "Config(\n  x=2", "a\n  b\n c"])
+def test_syntax_color_preserves_multiline_and_incomplete_reprs(text: str) -> None:
+    colored = color_config(text)
+    assert re.sub(r"\x1b\[[0-9;]*m", "", colored) == text
+
+
+def test_side_by_side_aligns_insertions_deletions_and_unequal_columns() -> None:
+    result = _side_by_side_diff(
+        [["a", "b", "c"], ["start", "a", "c", "end"], ["a", "B", "extra", "c"]],
+        n=3,
+        width=12,
+        color=False,
+    )
+    rows = [line.split("│") for line in result.splitlines()[1:]]
+    assert [[row[i].strip() for row in rows if row[i].strip()] for i in range(3)] == [
+        ["a", "b", "c"],
+        ["start", "a", "c", "end"],
+        ["a", "B", "extra", "c"],
+    ]
+    common = next(row for row in rows if row[0].strip() == "c")
+    assert [cell.strip() for cell in common] == ["c", "c", "c"]
+
+
+def test_side_by_side_wraps_and_colors_without_losing_text() -> None:
+    result = _side_by_side_diff([["abcdefgh"], ["ijklmnop"]], n=0, width=4, color=True)
+    assert "\x1b[31mabcd\x1b[0m" in result
+    assert "\x1b[31mefgh\x1b[0m" in result
+    assert "\x1b[32mijkl\x1b[0m" in result
+    assert "\x1b[32mmnop\x1b[0m" in result
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result)
+    assert all(len(line) <= 11 for line in plain.splitlines())
+
+
+def test_sxs_modes_and_live_terminal_width(monkeypatch: pytest.MonkeyPatch) -> None:
+    before = {"changed": "a" * 90, "same": 7}
+    after = {"changed": "b" * 90, "same": 7}
+    monkeypatch.setenv("COLUMNS", "60")
+    narrow = pprinting.format_diff(
+        [before, after],
+        mode="sxs",
+        n=0,
+        color=False,
+        options={},
+    )
+    assert max(map(len, narrow.splitlines())) <= 60
+    assert "'same'" not in narrow
+    monkeypatch.setenv("COLUMNS", "100")
+    wide = pprinting.format_diff(
+        [before, after],
+        mode="sxs-compact",
+        n=0,
+        color=False,
+        options={},
+    )
+    assert max(map(len, wide.splitlines())) > 60
+    full = pprinting.format_diff(
+        [before, after],
+        mode="sxs-full",
+        n=0,
+        color=False,
+        options={"width": 120},
+    )
+    assert "'same'" in full
+    assert max(map(len, full.splitlines())) <= 120
+    assert (
+        pprinting.format_diff(
+            [before, after],
+            mode="sxs",
+            n=0,
+            color=False,
+            options={"width": 100},
+        )
+        == wide
+    )
+
+
+def test_side_by_side_context_omits_unchanged_rows() -> None:
+    baseline = ["a", "b", "c", "d", "e"]
+    variant = ["A", "b", "c", "d", "E"]
+    result = _side_by_side_diff([baseline, variant], n=0, width=12, color=False)
+    assert "…" not in result
+    rows = [list(map(str.strip, line.split("│"))) for line in result.splitlines()]
+    assert ["b", "b"] in rows
+    assert ["c", "c"] in rows
+    assert ["d", "d"] in rows
+    assert _side_by_side_diff([baseline, baseline], n=0, width=12, color=False) == ""
+
+
+def test_fields_nested_containers_cycles_depth_and_color() -> None:
+    before: dict[str, object] = {"nested": [1, None], "same": 7}
+    after: dict[str, object] = {"nested": [2, None], "same": 7}
+    before["cycle"] = before
+    after["cycle"] = after
+    result = pprinting.format_diff(
+        [before, after],
+        mode="fields",
+        n=0,
+        color=True,
+        options={"finalize": False, "width": 80},
+    )
+    assert "['nested'][0]" in result
+    assert "['same']" not in result
+    assert "\x1b[31m" in result
+    assert "\x1b[32m" in result
+    shallow = pprinting.format_diff(
+        [before, after],
+        mode="fields",
+        n=0,
+        color=False,
+        options={"depth": 1, "finalize": False},
+    )
+    assert "\x1b[" not in shallow
+
+
+def test_field_rows_exact_alignment_color_and_multiline_blanks() -> None:
+    assert _render_field_row(
+        ("x", "a\nb", "z", None),
+        widths=[3, 4, 2, 2],
+        color=True,
+    ) == [
+        "x   │ \x1b[31ma   \x1b[0m │ \x1b[32mz \x1b[0m │",
+        "    │ \x1b[31mb   \x1b[0m │    │",
+    ]
+    assert _render_field_row(
+        ("x", "a", "a", "b"),
+        widths=[3, 4, 2, 2],
+        color=True,
+    ) == ["x   │ \x1b[31ma   \x1b[0m │ a  │ \x1b[32mb \x1b[0m"]
+    assert _render_field_row(
+        ("x", "", None),
+        widths=[3, 4, 2],
+        color=False,
+    ) == ["x   │      │"]
+
+
+def test_side_by_side_keeps_headers_whole_when_narrow() -> None:
+    result = pprinting.format_diff(
+        [1, 2, 3, 4, 5],
+        mode="sxs",
+        n=0,
+        color=False,
+        options={"width": 20},
+    )
+    assert [cell.strip() for cell in result.splitlines()[0].split("│")] == [
+        f"config[{i}]" for i in range(5)
+    ]
+
+
+class _DerivedLeaf(Fig):
+    value: int = 2
+    """Input value."""
+
+    derived: int = 0
+    """Derived value."""
+
+    @override
+    def finalize(self) -> Self:
+        self.derived = self.value * 2
+        return super().finalize()
+
+
+def _field_rows(configs: list[object], options: PformatOptions) -> list[list[str]]:
+    result = pprinting.format_diff(
+        configs,
+        mode="fields",
+        n=0,
+        color=False,
+        options=options,
+    )
+    return [list(map(str.strip, line.split("│"))) for line in result.splitlines()]
+
+
+def test_fields_finalizes_configs_nested_in_containers() -> None:
+    before = [_DerivedLeaf()]
+    after = [_DerivedLeaf()]
+    after[0].value = 3
+    assert ["[0].derived", "4", "6"] in _field_rows([before, after], {})
+    assert before[0].derived == after[0].derived == 0
+
+
+def test_fields_depth_counts_levels_and_shows_whole_leaves() -> None:
+    rows = _field_rows(
+        [{"x": {"y": {"z": 1}}}, {"x": {"y": {"z": 2}}}],
+        {"depth": 1, "finalize": False},
+    )
+    assert rows[1:] == [["['x']", "{'y': {'z': 1}}", "{'y': {'z': 2}}"]]
+    rows = _field_rows(
+        [{"a.b.c": {"d": 1}}, {"a.b.c": {"d": 2}}],
+        {"depth": 2, "finalize": False},
+    )
+    assert rows[1:] == [["['a.b.c']['d']", "1", "2"]]
+
+
+def test_fields_inline_rows_follow_the_rendered_call() -> None:
+    rows = _field_rows(
+        [PartialConfig(int, "1", base=10), PartialConfig(float, "1", base=10)],
+        {"finalize": False},
+    )
+    assert rows[1:] == [["func", "<class 'int'>", "<class 'float'>"]]
+    rows = _field_rows(
+        [InlineConfig(int, "1"), InlineConfig(int, "2")],
+        {"finalize": False},
+    )
+    assert rows[1:] == [["[0]", "'1'", "'2'"]]
+
+
+def test_fields_finalization_fallback_and_source_isolation() -> None:
+    class Config(Fig):
+        value: int = 1
+        """Value to derive."""
+
+        @override
+        def finalize(self) -> Self:
+            self.value *= 2
+            return super().finalize()
+
+    before = Config()
+    after = Config()
+    after.value = 3
+    result = before.udiff(after, mode="fields", color=False)
+    assert ["value", "2", "6"] in [
+        list(map(str.strip, line.split("│"))) for line in result.splitlines()
+    ]
+    assert before.value == 1
+    assert after.value == 3
+
+    class Broken(Config):
+        @override
+        def finalize(self) -> Self:
+            raise ValueError("cannot finalize")
+
+    with pytest.warns(UserWarning, match="cannot finalize"):
+        assert Broken().udiff(after, mode="fields", color=False)
+
+
 def test_pprint_basic():
     """Test pprint function."""
     stream = StringIO()
-    pprint({"a": 1, "b": 2}, stream=stream)
+    pprint({"a": 1, "b": 2}, stream=stream, color=False)
     output = stream.getvalue()
     assert "'a': 1" in output
     assert "'b': 2" in output
@@ -1144,16 +1571,16 @@ def test_pformat_options_have_exact_rendering_effects() -> None:
 
 def test_pprint_options_have_exact_rendering_effects() -> None:
     stream = StringIO()
-    pprint([1, 2], stream=stream, extra_compact=False)
+    pprint([1, 2], stream=stream, extra_compact=False, color=False)
     assert stream.getvalue() == "[1, 2]\n"
     stream = StringIO()
-    pprint([1, 2], stream=stream, extra_compact=True)
+    pprint([1, 2], stream=stream, extra_compact=True, color=False)
     assert stream.getvalue() == "[1, 2]\n"
 
 
 def test_exact_namespace_layout() -> None:
     assert pformat(_SimpleData(x=99, y="world"), width=20) == (
-        "_SimpleData(\n                x=99,\n                y='world'\n        )"
+        "_SimpleData(\n        x=99,\n        y='world'\n    )"
     )
 
 
@@ -1183,7 +1610,7 @@ def test_fig_printer_init_records_every_option_exactly() -> None:
     assert object.__getattribute__(printer, "_compact") is True
 
     defaults = FigPrinter()
-    assert defaults._indent_per_level == 8
+    assert defaults._indent_per_level == 4
     assert defaults._width == 80
     assert defaults._finalize is True
     assert defaults._mask_memory_addresses is not None
@@ -1227,7 +1654,7 @@ def test_public_default_rendering_is_exact() -> None:
     obj = Obj()
     assert "0xdefacedeface" in pformat(obj)
     stream = StringIO()
-    pprint({"z": 1, "a": 2}, stream=stream)
+    pprint({"z": 1, "a": 2}, stream=stream, color=False)
     assert stream.getvalue() == "{'z': 1, 'a': 2}\n"
 
 
@@ -1300,7 +1727,7 @@ def test_public_wrappers_forward_every_option(monkeypatch: pytest.MonkeyPatch) -
     pprint(object(), stream=default_stream)
     expected_pprint = {"stream": stream, **expected_pformat}
     expected_defaults = {
-        "indent": 8,
+        "indent": 4,
         "width": 80,
         "depth": None,
         "compact": False,
@@ -1320,6 +1747,7 @@ def test_public_wrappers_forward_every_option(monkeypatch: pytest.MonkeyPatch) -
         {
             "stream": default_stream,
             **expected_defaults,
+            "indent": 4,
         },
     ]
 
@@ -1379,7 +1807,7 @@ def test_pformat_forwards_hide_default_and_short_sequence_width() -> None:
     assert pformat(_SimpleData(), hide_default_values=True) == "_SimpleData()"
     assert "x=1" in pformat(_SimpleData(), hide_default_values=False)
     assert pformat([1, 2], width=3, short_sequence_max_width=1) == (
-        "[\n                1,\n                2\n        ]"
+        "[\n        1,\n        2\n    ]"
     )
 
 
@@ -1564,7 +1992,7 @@ def test_depth_cut_items_are_measured_as_cut() -> None:
 def test_a_self_containing_list_prints_its_recursion() -> None:
     loop: list[object] = [1]
     loop.append(loop)
-    assert pformat(loop, width=5) == f"[\n{' ' * 16}1,\n{' ' * 16}...\n{' ' * 8}]"
+    assert pformat(loop, width=5) == "[\n        1,\n        ...\n    ]"
 
 
 def test_a_too_wide_tuple_lays_out_by_item() -> None:
@@ -1582,9 +2010,8 @@ def test_qualification_walks_a_cyclic_container_once() -> None:
     cyclic: list[object] = [_identity_function]
     cyclic.append(cyclic)
     module = _identity_function.__module__
-    assert _qualify_function_reprs(cyclic, repr(cyclic)) == repr(cyclic).replace(
-        "<function ",
-        f"<function {module}.",
+    assert _qualify_function_reprs(cyclic, repr(cyclic)) == (
+        f"[{module}.{_identity_function.__qualname__}, [...]]"
     )
 
 
@@ -1605,6 +2032,12 @@ def test_collapse_keeps_a_value_exactly_max_width_long() -> None:
 
 def test_quote_free_text_has_no_string_spans_even_when_untokenizable() -> None:
     assert _string_token_spans("a\n    b\n  c") == []
+
+
+def _elapsed_sec(function: Callable[[str], str], text: str) -> float:
+    start = time.perf_counter()
+    function(text)
+    return time.perf_counter() - start
 
 
 if __name__ == "__main__":
