@@ -7,12 +7,13 @@ from typing import Protocol, Self, cast, override
 import copy
 import dataclasses
 
+from treekle.codec import from_plain, to_plain
+
 import pytest
 
 from configgle.custom_types import Makeable, MutableNamespace
 from configgle.fig import Fig
 from configgle.inline import InlineConfig, PartialConfig
-from configgle.lib.codec import from_plain, to_plain
 
 
 class _DynamicLookup(Protocol):

@@ -345,6 +345,16 @@ def test_openml_cold_fetch_keeps_its_hosted_runner_timeout_budget() -> None:
     assert resource_marker_timeout("network_openml") >= 120
 
 
+def test_e2b_auth_keeps_integration_selection_and_network_deadline() -> None:
+    """Selecting the E2B resource must preserve the real-network test tier."""
+    item = _Item("network_e2b")
+    apply_resource_markers([item], resource_markers=("network_e2b",))
+    assert item.get_closest_marker("integration") is not None
+    timeout = item.get_closest_marker("timeout")
+    assert timeout is not None
+    assert timeout.args == (resource_marker_timeout("network_e2b"),)
+
+
 def test_resource_marker_family_rejects_malformed_names() -> None:
     with pytest.raises(ValueError, match="separator"):
         resource_markers.resource_marker_family("network")
