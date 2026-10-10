@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import itertools
 import tokenize
 
 
@@ -26,21 +27,24 @@ def color_config(text: str) -> str:
     tokens: list[tokenize.TokenInfo] = []
     with contextlib.suppress(tokenize.TokenError, IndentationError):
         tokens.extend(tokenize.generate_tokens(io.StringIO(text).readline))
-    pieces: list[str] = []
-    done = 0
+    # Text between consecutive edges is plain, then styled, alternately; cutting
+    # there builds the result in one pass, where splicing each span rescanned it.
+    edges = [0]
+    styles: list[str] = []
     index = 0
     while index < len(tokens):
         token = tokens[index]
         stop_index, style = _token_style(tokens, index=index)
         if style:
-            start = offsets[token.start[0] - 1] + token.start[1]
             last = tokens[stop_index]
-            stop = offsets[last.end[0] - 1] + last.end[1]
-            pieces.extend((text[done:start], _styled(text[start:stop], style=style)))
-            done = stop
+            edges.append(offsets[token.start[0] - 1] + token.start[1])
+            edges.append(offsets[last.end[0] - 1] + last.end[1])
+            styles.append(style)
         index = stop_index + 1
-    pieces.append(text[done:])
-    return "".join(pieces)
+    pieces = [text[start:stop] for start, stop in itertools.pairwise(edges)]
+    for span, style in enumerate(styles):
+        pieces[2 * span + 1] = _styled(pieces[2 * span + 1], style=style)
+    return "".join(pieces) + text[edges[-1] :]
 
 
 def color_diff(line: str) -> str:

@@ -370,17 +370,17 @@ def exp001():
 
 print(pformat(exp001(), continuation_pipe=0))
 # Model.Config(
-#    channels_in=512,
-#    num_layers=12,
-#    mlp=MLP.Config(
-#    │       c_in=512,
-#    │       c_out=1_024,
-#    │       num_layers=4,
-#    │       dropout=0.2,
-#    │       use_bias=False
-#    ),
-#    output_mlp=MLP.Config(c_in=1_024, dropout=0.3)
-# )
+#         channels_in=512,
+#         num_layers=12,
+#         mlp=MLP.Config(
+#         │   c_in=512,
+#         │   c_out=1_024,
+#         │   num_layers=4,
+#         │   dropout=0.2,
+#         │   use_bias=False
+#         ),
+#         output_mlp=MLP.Config(c_in=1_024, dropout=0.3)
+#     )
 ```
 
 Default values are hidden, continuation pipes show where nested blocks belong,
