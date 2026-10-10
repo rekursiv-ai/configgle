@@ -14,7 +14,7 @@ import json
 import operator
 import pickle
 
-from treekle.codec import (
+from treekle import (
     Hooks,
     PlainTree,
     ReadError,

@@ -7,7 +7,7 @@ from typing import Protocol, Self, cast, override
 import copy
 import dataclasses
 
-from treekle.codec import from_plain, to_plain
+from treekle import from_plain, to_plain
 
 import pytest
 
