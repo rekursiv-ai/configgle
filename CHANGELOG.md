@@ -6,6 +6,36 @@ All notable configgle changes are documented here. This project follows
 Releases up to and including 1.4.0 are described in the
 [GitHub release notes](https://github.com/rekursiv-ai/configgle/releases).
 
+## Unreleased
+
+### Added
+
+- `Maker.udiff(*others, mode=...)` compares a config against one or more
+  others. `mode="diff"` (the default) is a unified diff, `"sxs"` /
+  `"sxs-compact"` and `"sxs-full"` are aligned side-by-side columns sized to
+  the terminal, and `"fields"` lists only the changed field paths. It accepts
+  every `pformat` option, shows default values, and never mutates its inputs.
+- `pprint` and `udiff` take `color`. The default, `None`, colors only when the
+  output stream is a terminal, so files and logs stay plain.
+
+### Changed
+
+- **Breaking:** `pformat` and `pprint` indent 4 spaces per level, down from 8.
+  Goldens recorded from either now differ in whitespace; regenerate them.
+- Functions print as their qualified name, without the `<function ... at
+  0x...>` wrapper. A lambda prints as its source, such as `lambda x: x * 2`.
+  A lambda or local function also prints the values it captured or defaults,
+  as in `lambda x: x * k {k=1}`, so two closures over different values no
+  longer print alike.
+- `InlineConfig` and `PartialConfig` print as their call, with arguments
+  wrapped one per line when too wide. `PartialConfig` omits its internal
+  `functools.partial`.
+
+### Fixed
+
+- Rendering cost no longer grows exponentially with nesting depth; each node is
+  rendered once per print. A 16-level list renders in about a millisecond.
+
 ## 1.4.2 - 2026-10-07
 
 ### Changed
