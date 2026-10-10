@@ -14,17 +14,18 @@ import json
 import operator
 import pickle
 
-import pytest
-
-from configgle.fig import Dataclass, Fig
-from configgle.inline import InlineConfig, PartialConfig
-from configgle.lib.codec import (
+from treekle.codec import (
     Hooks,
     PlainTree,
     ReadError,
     from_plain,
     to_plain,
 )
+
+import pytest
+
+from configgle.fig import Dataclass, Fig
+from configgle.inline import InlineConfig, PartialConfig
 
 
 def encode_graph(

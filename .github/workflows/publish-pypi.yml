@@ -32,6 +32,14 @@ jobs:
         run: |
           uv run python -c "import configgle; print(configgle.__file__)"
 
+      # Resolve the wheel against PyPI alone -- a symbol that exists only on
+      # treekle main fails HERE, before an irreversible upload, instead of in a
+      # user's `pip install`.
+      - name: Validate against published dependencies
+        run: |
+          wheels=(dist/configgle-*.whl)
+          uv run --isolated --with "${wheels[0]}" python -P -c "import configgle"
+
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:

@@ -242,6 +242,7 @@ name = "configgle"
 version = "1.4.2"
 source = { editable = "." }
 dependencies = [
+    { name = "treekle" },
     { name = "typing-extensions" },
 ]
 
@@ -311,7 +312,10 @@ typecheck = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "typing-extensions" }]
+requires-dist = [
+    { name = "treekle", git = "https://github.com/rekursiv-ai/treekle?branch=main" },
+    { name = "typing-extensions" },
+]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1113,6 +1117,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/94/96/e07752635b9853617
 wheels = [
     { url = "https://files.pythonhosted.org/packages/13/bc/8c13eb66537dce1d2bd3a57132902f38d0e7f5bb46fa9f4daed9fe9d76ee/tomlkit-0.15.1-py3-none-any.whl", hash = "sha256:177a05aece5a8ca5266fd3c448abb47b8d352f09d477d3ca8332db4d89b24304", size = 49449, upload-time = "2026-07-17T01:48:05.728Z" },
 ]
+
+[[package]]
+name = "treekle"
+version = "0.1.0"
+source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#89eb8e605762234c50ef28a723d04201cd5aba9c" }
 
 [[package]]
 name = "trove-classifiers"

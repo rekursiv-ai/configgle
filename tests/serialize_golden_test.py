@@ -32,11 +32,12 @@ import enum
 import json
 import os
 
+from treekle.codec import Hooks, PlainTree, from_plain, to_plain
+
 import pytest
 
 from configgle.fig import Fig
 from configgle.inline import InlineConfig
-from configgle.lib.codec import Hooks, PlainTree, from_plain, to_plain
 
 
 if TYPE_CHECKING:
@@ -110,7 +111,7 @@ class Pair:
         """First slot."""
 
         b: Leaf.Config = field(default_factory=Leaf.Config)
-        """Second slot; set to ``a`` to exercise ``py/id``."""
+        """Second slot; set to ``a`` to exercise ``py/ref``."""
 
     def __init__(self, config: Config) -> None:
         del config
@@ -238,13 +239,13 @@ GOLDEN: Final[Mapping[str, str]] = {
     "fig_shared_child": (
         '{"py/object":"{module}.Pair.Config",'
         '"a":{"py/object":"{module}.Leaf.Config","k":1,"_finalized":false},'
-        '"b":{"py/id":1},"_finalized":false}'
+        '"b":{"py/ref":["a"]},"_finalized":false}'
     ),
     "fig_self_cycle": (
-        '{"py/object":"{module}.Cyclic.Config","_finalized":false,"peer":{"py/id":0}}'
+        '{"py/object":"{module}.Cyclic.Config","_finalized":false,"peer":{"py/ref":[]}}'
     ),
-    "shared_list": '{"x":[1,2],"y":{"z":{"py/id":1}}}',
-    "cyclic_list": '[1,{"py/id":0}]',
+    "shared_list": '{"x":[1,2],"y":{"z":{"py/ref":["x"]}}}',
+    "cyclic_list": '[1,{"py/ref":[]}]',
     "hooked_leaf": '{"py/hook":["{module}.Weight",[1.5]]}',
     "inline_config": (
         '{"py/object":"configgle.inline.InlineConfig",'
@@ -306,7 +307,7 @@ def test_every_case_has_a_golden() -> None:
         "py/frozenset",
         "py/function",
         "py/hook",
-        "py/id",
+        "py/ref",
         "py/mappingproxy",
         "py/object",
         "py/reduce",
@@ -320,6 +321,41 @@ def test_every_wire_tag_is_frozen_by_some_case(tag: str) -> None:
     # The goldens above only defend the tags they happen to contain. This is
     # what fails when a tag is added to the format and left unfrozen.
     assert any(tag in wire for wire in GOLDEN.values()), f"no golden emits {tag}"
+
+
+LEGACY_INDEX_REFERENCES: Final[Mapping[str, str]] = {
+    "fig_shared_child": (
+        '{"py/object":"{module}.Pair.Config",'
+        '"a":{"py/object":"{module}.Leaf.Config","k":1,"_finalized":false},'
+        '"b":{"py/id":1},"_finalized":false}'
+    ),
+    "fig_self_cycle": (
+        '{"py/object":"{module}.Cyclic.Config","_finalized":false,"peer":{"py/id":0}}'
+    ),
+    "shared_list": '{"x":[1,2],"y":{"z":{"py/id":1}}}',
+    "cyclic_list": '[1,{"py/id":0}]',
+}
+"""Configgle 1.4 wrote back-references as ``py/id`` encounter numbers."""
+
+
+@pytest.mark.parametrize(
+    "name",
+    sorted(LEGACY_INDEX_REFERENCES),
+    ids=sorted(LEGACY_INDEX_REFERENCES),
+)
+def test_a_legacy_index_reference_still_decodes(name: str) -> None:
+    # Such payloads persist, so they must read back to the value today's
+    # writer encodes, ``py/ref`` and all.
+    legacy = LEGACY_INDEX_REFERENCES[name].replace("{module}", MODULE)
+
+    restored = from_plain(
+        cast(PlainTree, json.loads(legacy)),
+        object,
+        allow_imports=True,
+    )
+
+    wire = json.dumps(to_plain(restored), separators=(",", ":"))
+    assert wire == GOLDEN[name].replace("{module}", MODULE)
 
 
 def test_a_frozenset_written_as_a_reduce_still_decodes() -> None:
