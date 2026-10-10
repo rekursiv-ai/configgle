@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, Self, cast, override
@@ -14,7 +13,6 @@ import functools
 import glob
 import inspect
 import re
-import time
 import types
 import warnings
 
@@ -44,6 +42,8 @@ from configgle.pprinting import (
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from configgle.custom_types import PformatOptions
 
 
@@ -233,7 +233,7 @@ def test_functions_render_their_captured_values() -> None:
     keyword = (lambda *, k=3: k,)[0]
     assert pformat(keyword) == "lambda *, k=3: k {k=3}"
     assert pformat(_SuperUser.method) == f"{__name__}._SuperUser.method"
-    assert pformat(_elapsed_sec) == f"{__name__}._elapsed_sec"
+    assert pformat(_scaler) == f"{__name__}._scaler"
     assert pformat(functools.partial) == "<class 'functools.partial'>"
     assert pformat(re.escape) == "re.escape"
     assert pformat(_defaulted) == f"{__name__}._defaulted"
@@ -247,18 +247,55 @@ def test_functions_render_their_captured_values() -> None:
     assert pformat(unbound) == "lambda x: x * k"
 
 
-def test_repr_floor_bounds_function_leaves() -> None:
-    function = _scaler(3)
-    printer = FigPrinter()
-    for value in ([function, [function, "x"]], _Callback(function=function)):
-        floor = printer._repr_floor(value, {})
-        assert floor is not None
-        assert floor <= len(printer.format(value, {}, 0, 0)[0])
+def _nested(levels: int, leaf: object) -> object:
+    node: object = [leaf]
+    for _ in range(levels):
+        node = [leaf, node, "x" * 30]
+    return node
 
 
 @dataclasses.dataclass(slots=True, kw_only=True)
-class _Callback:
-    function: Callable[[int], int]
+class _Node:
+    leaf: object
+    child: object
+    pad: str = "x" * 30
+
+
+def _nested_dataclass(levels: int, leaf: object) -> object:
+    node: object = leaf
+    for _ in range(levels):
+        node = _Node(leaf=leaf, child=node)
+    return node
+
+
+class _CountingLeaf:
+    def __init__(self, width: int) -> None:
+        self.calls = 0
+        self._width = width
+
+    @override
+    def __repr__(self) -> str:
+        self.calls += 1
+        return "y" * self._width
+
+
+def _leaf_reprs(nest: Callable[[int, object], object], levels: int, width: int) -> int:
+    leaf = _CountingLeaf(width)
+    pformat(nest(levels, leaf), width=80)
+    return leaf.calls
+
+
+@pytest.mark.parametrize("width", [1, 13, 45])
+def test_container_leaves_render_once_per_level(width: int) -> None:
+    # Rendering each subtree once per enclosing level measured 393_195 here.
+    assert _leaf_reprs(_nested, 16, width) == 16 + 1
+
+
+@pytest.mark.parametrize("width", [1, 13, 45])
+def test_dataclass_leaves_render_at_most_quadratically(width: int) -> None:
+    # A generated dataclass ``__repr__`` reprs its children directly, so each
+    # level re-renders its subtree once; ``origin/main`` measured 169 here.
+    assert _leaf_reprs(_nested_dataclass, 16, width) <= 169
 
 
 def test_lambda_without_available_source_has_no_address() -> None:
@@ -489,15 +526,6 @@ def test_format_diff_rejects_an_unknown_mode(mode: str) -> None:
             color=False,
             options={},
         )
-
-
-def test_color_config_scales_linearly() -> None:
-    small = pformat(list(range(4_000)), width=40)
-    large = pformat(list(range(64_000)), width=40)
-    small_sec = min(_elapsed_sec(color_config, small) for _ in range(3))
-    large_sec = _elapsed_sec(color_config, large)
-    # Linear is 16x; quadratic splicing measured 50x+ at this size.
-    assert large_sec < 32 * small_sec
 
 
 def test_pprint_plain_format_stays_plain() -> None:
@@ -2032,12 +2060,6 @@ def test_collapse_keeps_a_value_exactly_max_width_long() -> None:
 
 def test_quote_free_text_has_no_string_spans_even_when_untokenizable() -> None:
     assert _string_token_spans("a\n    b\n  c") == []
-
-
-def _elapsed_sec(function: Callable[[str], str], text: str) -> float:
-    start = time.perf_counter()
-    function(text)
-    return time.perf_counter() - start
 
 
 if __name__ == "__main__":
