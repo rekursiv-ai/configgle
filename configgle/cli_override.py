@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, get_type_hints
 
 import dataclasses
 
-from treekle.codec import ReadError, parse
+from treekle import ReadError, parse
 
 
 if TYPE_CHECKING:

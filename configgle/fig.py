@@ -86,8 +86,7 @@ if TYPE_CHECKING:
     from ty_extensions import Intersection
 
 
-from treekle.absent import ABSENT
-from treekle.codec import (
+from treekle import (
     Dialect,
     Hooks,
     MutablePlainTree,
@@ -95,6 +94,7 @@ from treekle.codec import (
     from_plain,
     to_plain,
 )
+from treekle.absent import ABSENT
 
 from configgle.custom_types import (
     DataclassLike,

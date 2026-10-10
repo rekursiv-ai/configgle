@@ -32,7 +32,7 @@ import enum
 import json
 import os
 
-from treekle.codec import Hooks, PlainTree, from_plain, to_plain
+from treekle import Hooks, PlainTree, from_plain, to_plain
 
 import pytest
 
