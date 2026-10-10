@@ -10,6 +10,7 @@ from typing import (
     ClassVar,
     Protocol,
     Self,
+    TypedDict,
     override,
     runtime_checkable,
 )
@@ -29,9 +30,27 @@ __all__ = [
     "LateBound",
     "Makeable",
     "MutableNamespace",
+    "PformatOptions",
     "RelaxedConfigurable",
     "RelaxedMakeable",
 ]
+
+
+class PformatOptions(TypedDict, total=False):
+    """Optional keyword arguments accepted by config pretty formatting."""
+
+    indent: int
+    width: int
+    depth: int | None
+    compact: bool
+    sort_dicts: bool
+    underscore_numbers: bool
+    finalize: bool
+    mask_memory_addresses: bool
+    extra_compact: bool
+    continuation_pipe: int
+    hide_default_values: bool
+    short_sequence_max_width: int
 
 
 @runtime_checkable

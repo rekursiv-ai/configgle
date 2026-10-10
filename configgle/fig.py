@@ -71,6 +71,7 @@ from typing import (
     Literal,
     Protocol,
     Self,
+    Unpack,
     cast,
     dataclass_transform,
     overload,
@@ -88,6 +89,7 @@ if TYPE_CHECKING:
 from configgle.custom_types import (
     DataclassLike,
     Makeable,
+    PformatOptions,
 )
 from configgle.lib.absent import ABSENT
 from configgle.lib.codec import (
@@ -101,6 +103,7 @@ from configgle.lib.codec import (
 from configgle.pprinting import (
     _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
     _SHORT_SEQUENCE_MAX_WIDTH,
+    format_diff,
     pformat,
     pprint,
 )
@@ -527,7 +530,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
 
     def pformat(
         self,
-        indent: int = 8,
+        indent: int = 4,
         width: int = 80,
         depth: int | None = None,
         *,
@@ -578,13 +581,61 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
             short_sequence_max_width=short_sequence_max_width,
         )
 
+    def udiff(
+        self,
+        *others: Maker[object],
+        mode: Literal["diff", "sxs", "sxs-compact", "sxs-full", "fields"] = "diff",
+        color: bool | None = None,
+        n: int = 3,
+        **format_options: Unpack[PformatOptions],
+    ) -> str:
+        """Compare configs as unified lines, side-by-side trees, or field paths.
+
+        Formats trees without mutating any source.
+        Includes defaults so different config classes expose differing defaults.
+        Use ``finalize=False`` to compare inputs instead of derived values.
+
+        Args:
+          *others: Configs to compare against this config, the shared baseline.
+          mode: Unified diff, compact/full side-by-side trees, or changed paths.
+            ``sxs`` means ``sxs-compact``.
+          color: Highlight changes with ANSI terminal colors; ``None`` colors only
+            when stdout is a terminal.
+          n: Context lines in diff and compact side-by-side modes.
+          **format_options: Options accepted by ``pformat``; defaults match
+            ``pformat`` except ``hide_default_values=False``. Side-by-side width
+            defaults to the live terminal width and covers the entire table.
+
+        Returns:
+          diff: Formatted differences without a trailing newline; empty when the
+            configs render identically.
+
+        Raises:
+          ValueError: If no comparison config is given or ``n`` is negative.
+
+        """
+        if not others:
+            raise ValueError("udiff requires at least one comparison config")
+        if n < 0:
+            raise ValueError("n must be nonnegative")
+        options = PformatOptions(hide_default_values=False)
+        options.update(format_options)
+        return format_diff(
+            [self, *others],
+            mode=mode,
+            n=n,
+            color=color,
+            options=options,
+        )
+
     def pprint(
         self,
         stream: IO[str] | None = None,
-        indent: int = 8,
+        indent: int = 4,
         width: int = 80,
         depth: int | None = None,
         *,
+        color: bool | None = None,
         compact: bool = False,
         sort_dicts: bool = False,
         underscore_numbers: bool = True,
@@ -599,6 +650,8 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
 
         Args:
           stream: Output stream (defaults to sys.stdout).
+          color: Highlight config syntax with ANSI terminal colors; ``None``
+            colors only a terminal stream.
           indent: Spaces per indent level.
           width: Maximum line width.
           depth: Maximum nesting depth (None for unlimited).
@@ -617,6 +670,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         pprint(
             self,
             stream=stream,
+            color=color,
             indent=indent,
             width=width,
             depth=depth,
