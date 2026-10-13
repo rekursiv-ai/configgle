@@ -919,6 +919,6 @@ def _compile_module(
 
 
 if __name__ == "__main__":
-    from configgle.lib.testing.main import test_main
+    from configgle.lib.testing.runner import test_main
 
     test_main(__file__)

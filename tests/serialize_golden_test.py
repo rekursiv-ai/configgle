@@ -230,16 +230,16 @@ GOLDEN: Final[Mapping[str, str]] = {
         '{"json://1":"int","json://{\\"py/tuple\\": [2, 3]}":"tuple","s":"str"}'
     ),
     "empty_containers": '{"a":[],"b":{},"c":{"py/tuple":[]},"d":{"py/set":[]}}',
-    "fig_leaf": '{"py/object":"{module}.Leaf.Config","k":7,"_finalized":false}',
+    "fig_leaf": '{"py/object":"{module}.Leaf.Config","_finalized":false,"k":7}',
     "fig_nested": (
-        '{"py/object":"{module}.Branch.Config",'
-        '"leaf":{"py/object":"{module}.Leaf.Config","k":3,"_finalized":false},'
-        '"tag":"t","_finalized":false}'
+        '{"py/object":"{module}.Branch.Config","_finalized":false,'
+        '"leaf":{"py/object":"{module}.Leaf.Config","_finalized":false,"k":3},'
+        '"tag":"t"}'
     ),
     "fig_shared_child": (
-        '{"py/object":"{module}.Pair.Config",'
-        '"a":{"py/object":"{module}.Leaf.Config","k":1,"_finalized":false},'
-        '"b":{"py/ref":["a"]},"_finalized":false}'
+        '{"py/object":"{module}.Pair.Config","_finalized":false,'
+        '"a":{"py/object":"{module}.Leaf.Config","_finalized":false,"k":1},'
+        '"b":{"py/ref":["a"]}}'
     ),
     "fig_self_cycle": (
         '{"py/object":"{module}.Cyclic.Config","_finalized":false,"peer":{"py/ref":[]}}'
@@ -249,8 +249,8 @@ GOLDEN: Final[Mapping[str, str]] = {
     "hooked_leaf": '{"py/hook":["{module}.Weight",[1.5]]}',
     "inline_config": (
         '{"py/object":"configgle.inline.InlineConfig",'
-        '"func":{"py/type":"pathlib.PurePosixPath"},"_finalized":false,'
-        '"_args":["/opt/scratch/x"],"_kwargs":{}}'
+        '"_args":["/opt/scratch/x"],"_finalized":false,"_kwargs":{},'
+        '"func":{"py/type":"pathlib.PurePosixPath"}}'
     ),
 }
 """The exact bytes each case serializes to, with ``{module}`` for this module.
@@ -382,6 +382,6 @@ def _encode_weight(weight: Weight) -> list[float]:
 
 
 if __name__ == "__main__":
-    from configgle.lib.testing.main import test_main
+    from configgle.lib.testing.runner import test_main
 
     test_main(__file__)

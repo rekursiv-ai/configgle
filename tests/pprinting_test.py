@@ -20,6 +20,7 @@ import pytest
 
 from configgle import Fig, InlineConfig, PartialConfig, pprinting
 from configgle.coloring import color_config
+from configgle.lib.testing.resources import recursion_headroom
 from configgle.pprinting import (
     FigPrinter,
     _add_pipes_to_lines,
@@ -39,6 +40,7 @@ from configgle.pprinting import (
     pformat,
     pprint,
 )
+from configgle.tree import drive
 
 
 if TYPE_CHECKING:
@@ -113,6 +115,15 @@ def test_inline_calls_wrap_at_argument_boundaries() -> None:
     assert "\n    base=10\n" in pformat(inline, width=32, indent=2)
     assert "'123', base=10)" in repr(inline)
     assert not inline._finalized
+
+
+def test_an_inline_call_of_partial_renders_its_callable() -> None:
+    assert pformat(InlineConfig(functools.partial)) == (
+        "InlineConfig(<class 'functools.partial'>)"
+    )
+    wrapped = pformat(InlineConfig(functools.partial, int, "1"))
+    assert wrapped == "InlineConfig(<class 'functools.partial'>, <class 'int'>, '1')"
+    assert wrapped != pformat(InlineConfig(int, "1"))
 
 
 def test_inline_nested_values_cycles_and_depth() -> None:
@@ -855,7 +866,7 @@ def test_pretty_printer_format_finalizes_nested_configs_without_warning() -> Non
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        pp.format(cfg, {}, 0, 0)
+        _ = pp.format(cfg, {}, 0, 0)
 
     assert not caught
     assert finalizations == 1
@@ -1551,27 +1562,23 @@ def test_should_format_on_one_line_exact_boundaries() -> None:
 def test_format_and_collapse_item_exact_allowance_boundary() -> None:
     printer = FigPrinter(width=31)
     item = list(range(10))
-    assert printer._format_and_collapse_item(item, {}, 0, 0) == (
-        "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]"
+    assert drive(printer._multiline_items([item], {}, 0)) == (
+        "\n    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]\n"
     )
 
 
 def test_try_format_items_on_one_line_exact_width_boundary() -> None:
     printer = FigPrinter(width=30)
     item = list(range(10))
-    assert printer._try_format_items_on_one_line(
-        [item],
-        {},
-        0,
-        indent=0,
-        allowance=0,
+    assert drive(
+        printer._one_line_items([item], {}, 0, indent=0, allowance=0),
     ) == ("[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]")
 
 
 def test_try_format_items_on_one_line_preserves_format_depth() -> None:
     printer = FigPrinter()
     assert (
-        printer._try_format_items_on_one_line([[1, 2]], {}, 0, indent=0, allowance=0)
+        drive(printer._one_line_items([[1, 2]], {}, 0, indent=0, allowance=0))
         == "[1, 2]"
     )
 
@@ -1579,10 +1586,10 @@ def test_try_format_items_on_one_line_preserves_format_depth() -> None:
 def test_try_format_items_on_one_line_exact_delimiter() -> None:
     printer = FigPrinter()
     assert (
-        printer._try_format_items_on_one_line([1, 2, 3], {}, 0, indent=0, allowance=0)
+        drive(printer._one_line_items([1, 2, 3], {}, 0, indent=0, allowance=0))
         == "1, 2, 3"
     )
-    assert printer._try_format_items_on_one_line([], {}, 0, indent=0, allowance=0) == ""
+    assert drive(printer._one_line_items([], {}, 0, indent=0, allowance=0)) == ""
 
 
 def test_format_items_multiline_exact_layout() -> None:
@@ -2043,14 +2050,19 @@ def test_qualification_walks_a_cyclic_container_once() -> None:
     )
 
 
+def test_qualification_finds_a_function_after_a_cycle_back_edge() -> None:
+    cyclic: list[object] = []
+    cyclic.extend([cyclic, _partial_function])
+    module = _partial_function.__module__
+    assert _qualify_function_reprs(cyclic, repr(cyclic)) == (
+        f"[[...], {module}.{_partial_function.__qualname__}]"
+    )
+
+
 def test_one_line_attempt_stops_at_the_first_item_too_wide() -> None:
     printer = FigPrinter(width=20)
-    assert printer._try_format_items_on_one_line(
-        ["x" * 50, "y"],
-        {},
-        0,
-        indent=0,
-        allowance=0,
+    assert drive(
+        printer._one_line_items(["x" * 50, "y"], {}, 0, indent=0, allowance=0),
     ) == repr("x" * 50)
 
 
@@ -2062,7 +2074,23 @@ def test_quote_free_text_has_no_string_spans_even_when_untokenizable() -> None:
     assert _string_token_spans("a\n    b\n  c") == []
 
 
+def test_a_config_deeper_than_the_recursion_limit_formats() -> None:
+    class Holder(Fig):
+        value: object = None
+
+    depth = 200
+    nested: object = 0
+    for _ in range(depth):
+        nested = [nested]
+
+    with recursion_headroom(100):
+        text = pformat(Holder(value=nested))
+
+    assert text.count("[") == depth
+    assert "0" in text
+
+
 if __name__ == "__main__":
-    from configgle.lib.testing.main import test_main
+    from configgle.lib.testing.runner import test_main
 
     test_main(__file__)

@@ -1,28 +1,23 @@
-"""Structural tree walks for the config lifecycle: copy and finalize.
+"""Structural tree walks for the config lifecycle: copy, finalize, make, find.
 
-The pure structural recursion underlying ``Fig``'s lifecycle, kept apart from
-the class hierarchy in ``fig.py``. Two walks live here:
+Each walk is ``tree``'s ``tree_map``, ``traverse``, or ``walk`` with a
+config-specific visit, so every one walks the same shapes (Figs, slotted
+objects, lists, dicts, sets, tuples) with no recursion:
 
 - ``copy_tree`` -- a "semi-deep" copy: every nested config and mutable container
   is duplicated while leaf values (primitives, tensors, loggers) are aliased.
-- ``_finalize_value`` -- finalizes every nested ``Finalizeable`` reachable
-  through containers and data objects, in place.
+- ``finalize_value`` -- finalizes every nested ``Finalizeable``, in place.
+- ``make_value`` -- builds every nested ``Makeable``.
+- ``traverse`` -- finds every node of a type, with the handle to replace it.
 
-The two mirror each other shape-for-shape (the same Figs/slotted objects/lists/
-dicts/sets/tuples are walked); ``finalize`` is "``copy_tree`` then mutate".
-
-These functions reference no concrete config class. They dispatch to user types
-structurally -- ``getattr(type(value), "copy_tree")`` and
-``isinstance(value, Finalizeable)`` -- so this module imports only
-``custom_types`` and the stdlib. That keeps the dependency edge one-way
-(``fig`` -> ``walk`` -> ``custom_types``): ``fig.py``'s methods call down into
-these walks; this module never imports back up.
+These functions reference no concrete config class; they dispatch on the
+``Finalizeable`` and ``Makeable`` protocols, so ``fig`` imports this module and
+this module never imports back up.
 """
 
 from __future__ import annotations
 
 from collections.abc import (
-    Callable,
     Iterable,
     Iterator,
     Mapping,
@@ -34,20 +29,26 @@ from functools import partial
 from types import FunctionType, ModuleType
 from typing import Protocol, TypeGuard, cast
 
-import copy
+from treekle.absent import ABSENT
 
 from configgle.custom_types import Finalizeable, LateBound, Makeable
+from configgle.tree import (
+    Match as TreeMatch,
+    attributes,
+    traverse as tree_traverse,
+    tree_map,
+    walk,
+)
 
 
 __all__ = [
     "Match",
     "bind_late",
     "copy_tree",
+    "finalize_value",
+    "make_value",
     "traverse",
 ]
-
-
-_SKIP_ATTRS = frozenset(("__weakref__", "__dict__", "_finalized"))
 
 
 def copy_tree[ValueT](
@@ -56,96 +57,30 @@ def copy_tree[ValueT](
 ) -> ValueT:
     """Copy a config tree down through Figs/containers, aliasing leaf values.
 
-    Returns a copy in which every nested config (Fig, dataclass, or any object
-    with its own ``__slots__``) and every container holding such configs is
-    duplicated, while leaf values (primitives, tensors, loggers -- anything that
-    is not a data container) are shared by reference. This is the copy a config
-    needs before in-place mutation: it isolates the structure that ``finalize``
-    (or any edit) may touch, without the cost/incorrectness of deep-copying heavy
-    leaves like tensors.
+    Every nested config (Fig, dataclass, or any object with its own
+    ``__slots__``) and every mutable container is duplicated, while leaf values
+    (primitives, tensors, loggers -- anything that is not a data container) are
+    shared by reference. This is the copy a config needs before in-place
+    mutation, without deep-copying heavy leaves like tensors. A tuple or
+    frozenset is kept unless a part of it was copied.
 
-    An object that defines its own ``copy_tree`` (every ``Maker``, plus any user
-    type) controls how it is copied: the free function delegates to
-    ``value.copy_tree(visited)``. This is the dual of how a ``Fig`` overrides
-    ``finalize`` to control how it is finalized. The default ``Maker.copy_tree``
-    performs the same structural walk this function does for plain data objects.
-
-    ``visited`` maps ``id(obj)`` to its copy, so a sub-config reached more than
-    once -- shared by two fields (a DAG) or via a cycle -- is copied once and the
-    shared/back reference is preserved.
-
-    The traversal mirrors ``_finalize_value``'s -- the same shapes (Figs,
-    slotted objects, lists, dicts including keys, sets, tuples) are walked, minus
-    the ``finalize`` call -- so ``finalize`` is "copy_tree then mutate". Both
-    preserve an immutable container (tuple/frozenset) whose elements are all
-    unchanged.
+    An object whose class overrides ``copy_tree`` controls how it is copied:
+    the walk calls ``value.copy_tree(visited)`` for it. This is the dual of how
+    a ``Fig`` overrides ``finalize``.
 
     Args:
       value: The config (or container/value) to copy.
-      visited: Maps ``id(obj)`` to its copy; supplied internally during
-        recursion. Callers may omit it (a fresh map is created).
+      visited: Maps ``id(obj)`` to its copy, so a node reached twice -- shared
+        by two fields, or through a cycle -- is copied once. Callers may omit
+        it; an override threads it through ``super().copy_tree(visited)``.
 
     Returns:
       copied: A structural copy; nested configs/containers fresh, leaves aliased.
 
     """
-    if visited is None:
-        visited = {}
-
-    # Primitives and types: immutable leaves, shared as-is.
-    if isinstance(value, (type, int, float, str, bytes, bool, type(None))):
-        return value
-
-    # Delegate to a custom/Maker ``copy_tree`` so the object controls its own
-    # copy semantics (the dual of overriding ``finalize``). Checked after leaves
-    # so primitives never hit attribute lookup.
-    own = getattr(type(value), "copy_tree", None)
-    if callable(own):
-        return cast(ValueT, own(value, visited))
-
-    # Immutable containers (tuple, frozenset): preserve the original unless a
-    # mutable element inside it was copied. They cannot be mutated in place, so
-    # the only reason to rebuild one is to carry a freshly copied element.
-    if isinstance(value, (tuple, frozenset)):
-        container = cast(tuple[object, ...] | frozenset[object], value)
-        return cast(ValueT, _copy_immutable_container(container, visited))
-
-    # Mutable containers (list, dict, set): always copy so an in-place mutation
-    # never reaches the original. Narrowed through ``object`` because
-    # subtracting the classes excluded above from an unsolved ``ValueT``
-    # empties the surviving ABC intersections.
-    node = cast(object, value)
-    if isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
-        copied = [copy_tree(v, visited) for v in node]
-    elif isinstance(node, Mapping):
-        # Bound here rather than off the narrowed union below: that union's
-        # mapping arm carries an unsolved key type into ``type(...)``.
-        mapping = cast(Mapping[object, object], node)
-        rebuild_container = cast(Callable[[object], ValueT], type(mapping))
-        return rebuild_container(
-            {copy_tree(k, visited): copy_tree(v, visited) for k, v in mapping.items()},
-        )
-    elif isinstance(node, AbstractSet):
-        copied = {copy_tree(v, visited) for v in node}
-    else:
-        # Only recurse into data containers (dataclasses or classes with their
-        # own ``__slots__``). Plain objects without config data (loggers, file
-        # handles, tensors) are leaves: aliased.
-        obj_type = type(value)
-        if not (
-            hasattr(obj_type, "__dataclass_fields__")
-            or "__slots__" in obj_type.__dict__
-        ):
-            return value
-
-        return cast(ValueT, _copy_slots(value, visited))
-
-    # ``value`` is narrowed to a Sequence/Mapping/AbstractSet union here, so
-    # ``type(value)`` statically resolves to ``type[object]`` and the call reads
-    # as ``object.__init__``. Name the real contract: a one-argument iterable
-    # constructor whose element type is erased at runtime.
-    ctor = cast(Callable[[object], ValueT], type(node))
-    return ctor(copied)
+    visited = {} if visited is None else visited
+    own = _own_copy(value, root=None, visited=visited)
+    return _copy_walk(value, visited) if own is ABSENT else cast(ValueT, own)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -177,24 +112,13 @@ class Match[ConfigT]:
         Args:
           new: The node to write in place of ``config``.
 
-        Raises:
-          ValueError: The match is the root, which has no parent to write to.
-
         """
-        if self.parent is None:
-            raise ValueError("The root of a traversal has no parent to replace it in.")
-        _replace_at(self.parent, self.attr, new)
-
-
-def _replace_at(parent: object, attr: str | int | object | None, new: object) -> None:
-    if isinstance(parent, list):
-        cast(list[object], parent)[cast(int, attr)] = new
-    elif isinstance(parent, dict):
-        cast(dict[object, object], parent)[attr] = new
-    elif isinstance(parent, _TupleSlot):
-        parent.write(cast(int, attr), new)
-    else:
-        object.__setattr__(parent, cast(str, attr), new)
+        TreeMatch(
+            fqn=self.fqn,
+            node=self.config,
+            parent=self.parent,
+            attr=self.attr,
+        ).replace(new)
 
 
 def traverse[ConfigT](
@@ -221,15 +145,13 @@ def traverse[ConfigT](
       match: The node, its dotted path, and the handle to replace it.
 
     """
-    yield from _traverse(
-        root,
-        cls,
-        recurse=recurse,
-        seen=set(),
-        fqn="",
-        parent=None,
-        attr=None,
-    )
+    for found in tree_traverse(root, cls, recurse=recurse):
+        yield Match[ConfigT](
+            fqn=found.fqn,
+            config=found.node,
+            parent=found.parent,
+            attr=found.attr,
+        )
 
 
 def bind_late(root: object) -> None:
@@ -237,7 +159,7 @@ def bind_late(root: object) -> None:
 
     Walks the BUILT tree, not a config tree, so the shapes differ from
     ``copy_tree``: a torch module exposes its subtree through ``modules()``,
-    and otherwise attributes and containers are followed as ``_finalize_value``
+    and otherwise attributes and containers are followed as ``finalize_value``
     follows them. Every object the built tree holds is visited, since a
     ``LateBound`` may sit anywhere in it.
 
@@ -245,60 +167,97 @@ def bind_late(root: object) -> None:
       root: The outermost built object; what every ``bind`` receives.
 
     """
-    torch_module_types: dict[type, bool] = {}
-    seen = set[int]()
-    stack: list[object] = [root]
-    while stack:
-        node = stack.pop()
-        # ``ModuleType`` is a leaf: a module-valued attribute (e.g. the shared
-        # ``random`` a seedless RNG falls back to) otherwise opens the entire
-        # imported graph, where a third-party object's permissive
-        # ``__getattr__`` details the walk far from anything the caller built.
-        # Leaves are tested before ``seen``: they are most of a large built
-        # tree, and an id probe per leaf into a set of millions cost a fifth of
-        # the walk.
-        if isinstance(
-            node,
-            (type, int, float, str, bytes, bool, type(None), ModuleType, FunctionType),
-        ):
-            continue
-        if id(node) in seen:
-            continue
-        seen.add(id(node))
+    parts = partial(_built_parts, torch_module_types={})
+    for node in walk(root, parts=parts):
         if isinstance(node, LateBound):
             node.bind(root)
-        # Builtin containers come before the torch and ABC probes, which they
-        # can never satisfy; on a tree of millions of small lists those probes
-        # cost a quarter of the walk.
-        if isinstance(node, (list, tuple, set, frozenset)):
-            stack.extend(cast(Iterable[object], node))
-        elif isinstance(node, dict):
-            stack.extend(cast(dict[object, object], node).values())
-        elif _is_torch_module(node, torch_module_types):
-            stack.extend(node.modules())
-        elif isinstance(node, Mapping):
-            stack.extend(node.values())
-        elif isinstance(node, (Sequence, AbstractSet)):
-            stack.extend(node)
-        elif (
-            hasattr(type(node), "__dataclass_fields__")
-            or "__slots__" in type(node).__dict__
-            or type(node).__module__ != "builtins"
-        ):
-            # A user-defined object is walked as a data carrier; a builtin
-            # (a random.Random, a logger's lock) is a leaf.
-            for name in _get_object_attribute_names(node):
-                try:
-                    attribute = cast(object, getattr(node, name))
-                    stack.append(attribute)
-                except AttributeError:
-                    continue
+
+
+def make_value[ValueT](
+    value: ValueT,
+    made: dict[int, object] | None = None,
+    making: set[int] | None = None,
+) -> ValueT:
+    """Materialize nested Makeables through lists, tuples, and mappings.
+
+    Args:
+      value: The tree whose Makeables to build.
+      made: Maps ``id(config)`` to what it built, so a shared config builds once.
+      making: Ids of configs being built, so a cycle raises instead of looping.
+
+    Returns:
+      materialized: ``value`` with every reachable Makeable replaced by its build.
+
+    Raises:
+      ValueError: A Makeable reaches itself through its arguments.
+
+    """
+    return tree_map(
+        value,
+        visit=partial(
+            _made,
+            made={} if made is None else made,
+            making=set[int]() if making is None else making,
+        ),
+    )
+
+
+# The whole tree was already duplicated by ``copy_tree`` before ``finalize`` ran, so
+# finalizing in place is isolated from the caller's original. A child ``finalize`` may
+# return a different object than it received; that result takes its place.
+def finalize_value[ValueT](value: ValueT) -> ValueT:
+    """Finalize every pending ``Finalizeable`` reachable through containers."""
+    return tree_map(value, visit=_finalized, in_place=True)
 
 
 class _ModuleTree(Protocol):
     """The part of ``torch.nn.Module`` that ``bind_late`` calls."""
 
     def modules(self) -> Iterator[object]: ...
+
+
+# ``ModuleType`` has no parts: a module-valued attribute (e.g. the shared ``random`` a
+# seedless RNG falls back to) otherwise opens the entire imported graph, where a
+# third-party object's permissive ``__getattr__`` details the walk far from anything
+# the caller built. Builtin containers come before the torch and ABC probes, which
+# they can never satisfy; on a tree of millions of small lists those probes cost a
+# quarter of the walk.
+def _built_parts(
+    node: object,
+    *,
+    torch_module_types: dict[type, bool],
+) -> Iterable[object]:
+    """Return the parts of a built object that ``bind_late`` walks into."""
+    if isinstance(node, (list, tuple, set, frozenset)):
+        return cast(Iterable[object], node)
+    if isinstance(node, dict):
+        return cast(dict[object, object], node).values()
+    if isinstance(node, (ModuleType, FunctionType)):
+        return ()
+    if _is_torch_module(node, torch_module_types):
+        return node.modules()
+    if isinstance(node, Mapping):
+        return cast(Mapping[object, object], node).values()
+    if isinstance(node, (Sequence, AbstractSet)):
+        return cast(Iterable[object], node)
+    if (
+        hasattr(type(node), "__dataclass_fields__")
+        or "__slots__" in type(node).__dict__
+        or type(node).__module__ != "builtins"
+    ):
+        # A user-defined object is walked as a data carrier; a builtin
+        # (a random.Random, a logger's lock) is a leaf.
+        return [part for _, part in attributes(node)]
+    return ()
+
+
+# A Finalizeable is its own finalization unit: its own ``finalize`` owns its fields, so
+# the walk stops there, which also ends a cycle back to an already-finalized node.
+def _finalized(node: object) -> object:
+    """Return a ``Finalizeable`` finalized once, else ``ABSENT`` to walk on."""
+    if not isinstance(node, Finalizeable):
+        return ABSENT
+    return node if getattr(node, "_finalized", None) else node.finalize()
 
 
 # Recognized by import path, never by a ``modules`` method: duck typing called
@@ -322,300 +281,48 @@ def _is_torch_module(
     return found
 
 
-def _make_value[ValueT](
-    value: ValueT,
-    made: dict[int, object] | None = None,
-    making: set[int] | None = None,
-) -> ValueT:
-    """Materialize nested Makeables through sequences and mappings."""
-    if made is None:
-        made = {}
-    if making is None:
-        making = set()
+def _copy_walk[ValueT](value: ValueT, visited: dict[int, object]) -> ValueT:
+    """Copy ``value``'s tree, handing each overriding node to its own ``copy_tree``."""
+    return tree_map(
+        value,
+        visit=partial(_own_copy, root=value, visited=visited),
+        done=visited,
+    )
 
-    if isinstance(value, Makeable):
-        value_id = id(value)
-        if value_id in made:
-            return cast(ValueT, made[value_id])
-        if value_id in making:
-            raise ValueError("cannot materialize a cyclic Makeable graph")
-        making.add(value_id)
-        try:
-            result = value.make()
-        finally:
-            making.remove(value_id)
-        made[value_id] = result
-        return cast(ValueT, result)
 
-    if isinstance(value, (type, int, float, str, bytes, bool, type(None))):
-        return value
-
-    if isinstance(value, list):
-        list_value = cast(list[object], value)
-        materialized_items: list[object] = [
-            _make_value(item, made, making) for item in list_value
-        ]
-        return cast(ValueT, materialized_items)
-    if isinstance(value, tuple):
-        tuple_value = cast(tuple[object, ...], value)
-        materialized_items = [_make_value(item, made, making) for item in tuple_value]
-        if all(
-            materialized is tuple_value[i]
-            for i, materialized in enumerate(materialized_items)
-        ):
-            return cast(ValueT, tuple_value)
-        if type(tuple_value) is tuple:
-            return cast(ValueT, tuple(materialized_items))
-        return cast(
-            ValueT,
-            type(tuple_value)(*materialized_items),  # ty: ignore[invalid-argument-type] -- The generic callback is narrowed only at runtime by the walker.  # pyright: ignore[reportArgumentType] -- The generic callback is narrowed only at runtime by the walker.
+# The root is walked, never handed back to its own ``copy_tree``: ``Maker.copy_tree``
+# and every ``super().copy_tree(visited)`` land in ``_copy_walk`` on it. The default
+# is walked inline too, so only an override costs a stack frame; ``Maker`` is named
+# rather than imported because ``fig`` imports this module.
+def _own_copy(node: object, *, root: object, visited: dict[int, object]) -> object:
+    """Return ``node`` copied by its class's own ``copy_tree``, else ``ABSENT``."""
+    own: object = getattr(type(node), "copy_tree", None)
+    if (
+        node is root
+        or not callable(own)
+        or (
+            isinstance(own, FunctionType)
+            and own.__module__ == "configgle.fig"
+            and own.__qualname__ == "Maker.copy_tree"
         )
-    if isinstance(value, Mapping):
-        materialized = {
-            _make_value(key, made, making): _make_value(item, made, making)
-            for key, item in cast(Mapping[object, object], value).items()
-        }
-        # See ``copy_tree``: the narrowed union erases the concrete mapping type.
-        ctor = cast(Callable[[object], ValueT], type(cast(object, value)))
-        return ctor(materialized)
-    return value
-
-
-def _get_object_attribute_names(obj: object) -> Iterator[str]:
-    """Yield attribute names, excluding __weakref__, __dict__, and _finalized."""
-    seen = set[str]()
-    if hasattr(type(obj), "__slots__"):
-        for cls in type(obj).__mro__:
-            # CPython accepts ANY iterable of identifiers for ``__slots__`` --
-            # a list and a set are as legal as a tuple -- so narrowing to
-            # ``str | tuple`` would silently drop every field of such a class.
-            raw_slots = cast(object, getattr(cls, "__slots__", ()))
-            if isinstance(raw_slots, str):
-                slots: Iterable[str] = (raw_slots,)
-            else:
-                assert isinstance(raw_slots, Iterable)
-                slots = (str(s) for s in raw_slots)
-            for slot in slots:
-                if slot not in seen and slot not in _SKIP_ATTRS:
-                    seen.add(slot)
-                    yield slot
-    if hasattr(obj, "__dict__"):
-        for key in sorted(vars(obj)):
-            if key not in seen and key not in _SKIP_ATTRS:
-                yield key
-
-
-# An immutable container cannot be mutated in place, so it is rebuilt only to carry a
-# freshly copied (mutable) element; otherwise the original is returned. The caller
-# restores the precise type (the element type is erased at runtime).
-def _copy_immutable_container(
-    value: tuple[object, ...] | frozenset[object],
-    visited: dict[int, object],
-) -> object:
-    """Copy a tuple/frozenset, preserving it when no element changed."""
-    items: list[object] = list(value)
-    copied: list[object] = [copy_tree(item, visited) for item in items]
-    if all(c is items[i] for i, c in enumerate(copied)):
-        return value  # Nothing inside changed -- keep the immutable original.
-    if isinstance(value, frozenset):
-        return frozenset(copied)
-    if type(value) is tuple:
-        return tuple(copied)
-    # Namedtuple subclass: reconstructed by positional unpacking. Its field types
-    # are erased at runtime, so neither checker can model ``type(value)(*copied)``.
-    return type(value)(*copied)  # ty: ignore[invalid-argument-type] -- The generic callback is narrowed only at runtime by the walker.  # pyright: ignore[reportArgumentType] -- The generic callback is narrowed only at runtime by the walker.
-
-
-# The terminal copy walk shared by both ``copy_tree`` entry points: the free function
-# reaches it for plain data objects (the leg after leaves, custom ``copy_tree``
-# delegation, and containers), and ``Fig.copy_tree`` calls it as its base
-# implementation. Keeping it here -- not inside ``Fig.copy_tree`` -- is what lets the
-# method be a thin dispatch target: the free function delegates to
-# ``value.copy_tree(visited)`` for any object that defines one, so if ``Fig.copy_tree``
-# delegated back to the free function the two would recurse without bound. This helper
-# is that base case.
-#
-# ``visited`` (required here -- the caller has already created it) maps ``id(obj)`` to
-# its copy, so a node reached twice via a DAG or cycle is copied once and the
-# shared/back reference is preserved.
-def _copy_slots(value: object, visited: dict[int, object]) -> object:
-    """Structurally copy one data object (dataclass / ``__slots__`` carrier)."""
-    cached = visited.get(id(value))
-    if cached is not None:
-        return cached
-    r = copy.copy(value)
-    visited[id(value)] = r
-    for name in _get_object_attribute_names(r):
-        try:
-            attr_value = cast(object, getattr(r, name))
-        except AttributeError:
-            # Declared-but-unset slot: nothing to copy.
-            continue
-        copied_attr = copy_tree(attr_value, visited)
-        if copied_attr is not attr_value:
-            object.__setattr__(r, name, copied_attr)
-    return r
-
-
-# Visits every nested ``Finalizeable`` reachable through sequences, mappings, and data
-# objects (dataclasses or classes with their own ``__slots__``) and finalizes it. The
-# whole tree was already duplicated by ``copy_tree`` before ``finalize`` ran, so the
-# work here is isolated from the caller's original.
-#
-# A child ``finalize`` may return a *different* object than it received, so the returned
-# value is threaded back: containers are rebuilt and object attrs are reassigned when an
-# element changed identity.
-def _finalize_value[ValueT](value: ValueT) -> ValueT:
-    """Finalize nested Fig instances, recursing through containers and objects."""
-    # A Finalizeable is its own finalization unit: finalize it if pending, else
-    # it is already done. Either way return WITHOUT recursing into its fields --
-    # its own ``finalize`` owns that, and stopping here terminates cyclic trees
-    # (a back-edge to an already-finalized node returns instead of looping).
-    if isinstance(value, Finalizeable):
-        if not getattr(value, "_finalized", None):
-            return value.finalize()
-        return value
-
-    # Classes, types, and primitives never need finalization.
-    if isinstance(value, (type, int, float, str, bytes, bool, type(None))):
-        return value
-
-    node = cast(object, value)  # See ``copy_tree``.
-    if isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
-        finalized_items: list[object] = [_finalize_value(v) for v in node]
-        if isinstance(node, tuple):
-            # Preserve the original tuple/namedtuple when no element changed
-            # identity (an in-place finalize); rebuild only to carry a replaced
-            # element. Matches ``_copy_immutable_container``.
-            if all(f is node[i] for i, f in enumerate(finalized_items)):
-                return value
-            if type(node) is tuple:
-                # One iterable argument for a plain tuple; a namedtuple takes
-                # its fields positionally instead.
-                return cast(Callable[[object], ValueT], tuple)(finalized_items)
-            rebuild = cast(Callable[..., ValueT], type(node))
-            return rebuild(*finalized_items)
-        finalized = finalized_items
-    elif isinstance(node, Mapping):
-        # Bound here rather than off the narrowed union below: that union's
-        # mapping arm carries an unsolved key type into ``type(...)``.
-        mapping = cast(Mapping[object, object], node)
-        rebuild_container = cast(Callable[[object], ValueT], type(mapping))
-        finalized = {_finalize_value(k): _finalize_value(v) for k, v in mapping.items()}
-        return rebuild_container(finalized)
-    elif isinstance(node, AbstractSet):
-        # An ``eq=False`` Fig is hashable and can be a set member, so its
-        # elements are finalized and the set is rebuilt. (A default ``eq=True``
-        # Fig is unhashable and cannot appear here.)
-        finalized = {_finalize_value(v) for v in node}
-    else:
-        # Only recurse into data containers (dataclasses or classes with their
-        # own __slots__). Skip plain objects like loggers, file handles, etc.
-        obj_type = type(value)
-        if not (
-            hasattr(obj_type, "__dataclass_fields__")
-            or "__slots__" in obj_type.__dict__
-        ):
-            return value
-        for name in _get_object_attribute_names(value):
-            try:
-                attr_value = cast(object, getattr(value, name))
-            except AttributeError:
-                continue
-            finalized_attr = _finalize_value(attr_value)
-            if finalized_attr is not attr_value:
-                object.__setattr__(value, name, finalized_attr)
-        return value
-
-    # Reconstruct the container with the finalized items.
-    # See ``copy_tree``: the narrowed union erases the concrete container type.
-    ctor = cast(Callable[[object], ValueT], type(node))
-    return ctor(finalized)
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class _TupleSlot:
-    """A tuple standing in as ``parent`` so ``replace`` can rebuild it.
-
-    Tuples are immutable, so a match inside one records the tuple's OWN
-    position and rebuilds it there on write.
-    """
-
-    tuple_parent: object
-    tuple_attr: str | int | object
-
-    def current(self) -> tuple[object, ...]:
-        """Read the tuple as its parent holds it now, after any earlier rebuild.
-
-        Returns:
-          held: The tuple currently stored at this slot.
-
-        """
-        parent, attr = self.tuple_parent, self.tuple_attr
-        if isinstance(parent, (list, dict)):
-            held = cast(Mapping[object, object] | Sequence[object], parent)[
-                cast(int, attr)
-            ]
-        elif isinstance(parent, _TupleSlot):
-            held = parent.current()[cast(int, attr)]
-        else:
-            held = cast(object, getattr(parent, cast(str, attr)))
-        return cast(tuple[object, ...], held)
-
-    def write(self, index: int, new: object) -> None:
-        items = self.current()
-        rebuilt = list(items)
-        rebuilt[index] = new
-        as_tuple = (
-            tuple(rebuilt) if type(items) is tuple else type(items)(*rebuilt)  # ty: ignore[invalid-argument-type] -- Namedtuple field types are erased at runtime.  # pyright: ignore[reportArgumentType] -- Namedtuple field types are erased at runtime.
-        )
-        _replace_at(self.tuple_parent, self.tuple_attr, as_tuple)
-
-
-def _traverse[ConfigT](
-    node: object,
-    cls: type[ConfigT] | tuple[type[ConfigT], ...],
-    *,
-    recurse: bool,
-    seen: set[int],
-    fqn: str,
-    parent: object | None,
-    attr: str | int | object | None,
-) -> Iterator[Match[ConfigT]]:
-    """Walk one node for ``traverse``; ``seen`` de-duplicates shared subtrees."""
-    if isinstance(node, (type, int, float, str, bytes, bool, type(None))):
-        return
-    if id(node) in seen:
-        return
-    seen.add(id(node))
-    if isinstance(node, cls):
-        yield Match(fqn=fqn, config=node, parent=parent, attr=attr)
-        if not recurse:
-            return
-    step = partial(_traverse, cls=cls, recurse=recurse, seen=seen)
-    if isinstance(node, tuple):
-        items = cast(tuple[object, ...], node)
-        slot = _TupleSlot(tuple_parent=parent, tuple_attr=attr)
-        for i, item in enumerate(items):
-            yield from step(item, fqn=f"{fqn}[{i}]", parent=slot, attr=i)
-    elif isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
-        for i, item in enumerate(node):
-            yield from step(item, fqn=f"{fqn}[{i}]", parent=node, attr=i)
-    elif isinstance(node, Mapping):
-        mapping = cast(Mapping[object, object], node)
-        for key, item in mapping.items():
-            yield from step(item, fqn=f"{fqn}[{key!r}]", parent=mapping, attr=key)
-    elif isinstance(node, AbstractSet):
-        for item in node:
-            yield from step(item, fqn=f"{fqn}{{...}}", parent=None, attr=None)
-    elif (
-        hasattr(type(node), "__dataclass_fields__")
-        or "__slots__" in type(node).__dict__
     ):
-        for name in _get_object_attribute_names(node):
-            try:
-                child = cast(object, getattr(node, name))
-            except AttributeError:
-                continue
-            child_fqn = f"{fqn}.{name}" if fqn else name
-            yield from step(child, fqn=child_fqn, parent=node, attr=name)
+        return ABSENT
+    return own(node, visited)
+
+
+def _made(node: object, *, made: dict[int, object], making: set[int]) -> object:
+    """Return a Makeable built once, else walk a list, tuple, or mapping."""
+    if isinstance(node, Makeable):
+        key = id(node)
+        if key in made:
+            return made[key]
+        if key in making:
+            raise ValueError("cannot materialize a cyclic Makeable graph")
+        making.add(key)
+        try:
+            result = node.make()
+        finally:
+            making.remove(key)
+        made[key] = result
+        return result
+    return ABSENT if isinstance(node, (list, tuple, Mapping)) else node

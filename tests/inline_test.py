@@ -23,13 +23,61 @@ class _DynamicLookup(Protocol):
 def test_inline_config_serializes_as_a_plain_object() -> None:
     config: InlineConfig[str] = InlineConfig(str, 1, base=8)
 
-    assert to_plain(config) == {
-        "py/object": "configgle.inline.InlineConfig",
-        "func": {"py/type": "builtins.str"},
-        "_finalized": False,
-        "_args": [1],
-        "_kwargs": {"base": 8},
-    }
+    tree = to_plain(config)
+
+    assert isinstance(tree, dict)
+    assert list(tree.items()) == [
+        ("py/object", "configgle.inline.InlineConfig"),
+        ("_args", [1]),
+        ("_finalized", False),
+        ("_kwargs", {"base": 8}),
+        ("func", {"py/type": "builtins.str"}),
+    ]
+
+
+@pytest.mark.parametrize(
+    "config",
+    [InlineConfig(str, 1), PartialConfig(int, base=8)],
+    ids=["inline", "partial"],
+)
+def test_an_inline_config_has_every_makeable_member(
+    config: InlineConfig[object],
+) -> None:
+    members = cast("frozenset[str]", vars(Makeable)["__protocol_attrs__"])
+
+    assert config.parent_class is None
+    assert [name for name in sorted(members) if not hasattr(config, name)] == []
+
+
+def test_a_config_reports_the_call_it_defers() -> None:
+    assert InlineConfig(int, "1", base=2).deferred_call() == (int, ["1"], {"base": 2})
+    assert PartialConfig(int, "1", base=2).deferred_call() == (
+        int,
+        ["1"],
+        {"base": 2},
+    )
+
+
+def test_an_inline_config_is_a_fig() -> None:
+    before = PartialConfig(int, base=8)
+    after = PartialConfig(int, base=16)
+
+    assert "base=8" in before.udiff(after, color=False)
+    assert "base=16" in before.udiff(after, color=False)
+    assert before.udiff(PartialConfig(int, base=8), color=False) == ""
+
+
+@dataclasses.dataclass(kw_only=True, slots=True)
+class _HoldsMakeable:
+    made: Makeable[object]
+
+
+def test_an_inline_config_reads_back_as_a_makeable_field() -> None:
+    held = _HoldsMakeable(made=PartialConfig(int, base=8))
+
+    restored = from_plain(to_plain(held), _HoldsMakeable, allow_imports=True)
+
+    assert restored.made == held.made
 
 
 def test_a_finalized_inline_config_stays_finalized() -> None:
@@ -498,18 +546,15 @@ def test_dynamic_namespace_rejects_fig():
     assert not isinstance(config, MutableNamespace)
 
 
-def test_setattr_fallback_before_kwargs_initialized():
-    """Test __setattr__ fallback when _kwargs is not yet set."""
-
-    # Subclass without slots so object.__setattr__ can succeed.
-    class DictConfig(InlineConfig[object]):
+def test_a_subclass_is_slotted_like_every_fig() -> None:
+    class Subclass(InlineConfig[object]):
         pass
 
-    cfg = object.__new__(DictConfig)
-    # _kwargs slot is unset, so setting an arbitrary attr falls through
-    # the except AttributeError path to object.__setattr__.
-    cfg.custom = "value"
-    assert object.__getattribute__(cfg, "custom") == "value"
+    config = Subclass(func=str)
+
+    assert "__dict__" not in dir(config)
+    with pytest.raises(AttributeError):
+        object.__setattr__(config, "custom", "value")
 
 
 def test_inline_config_reads_reserved_attributes_after_missing_dynamic_key() -> None:
@@ -539,6 +584,26 @@ def test_inline_config_make_reuses_shared_nested_config_across_args_and_kwargs()
     shared = Value.Config()
     config = InlineConfig(make_pair, shared, right=shared)
     left, right = config.make()
+    assert left is right
+
+
+def _pair(left: object, *, right: object) -> tuple[object, object]:
+    return left, right
+
+
+def test_finalized_keeps_a_list_an_argument_and_a_keyword_share() -> None:
+    shared: list[int] = [1]
+
+    finalized = InlineConfig(_pair, shared, right=shared).finalized()
+
+    assert finalized._args[0] is finalized._kwargs["right"]
+
+
+def test_make_passes_a_list_an_argument_and_a_keyword_share_once() -> None:
+    shared: list[int] = [1]
+
+    left, right = InlineConfig(_pair, shared, right=shared).make()
+
     assert left is right
 
 
@@ -649,6 +714,6 @@ def test_inline_config_update_kwargs_skips_then_continues() -> None:
 
 
 if __name__ == "__main__":
-    from configgle.lib.testing.main import test_main
+    from configgle.lib.testing.runner import test_main
 
     test_main(__file__)

@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any, Self, cast, override
 
-import copy
 import dataclasses
 import functools
 import reprlib
 
-from configgle.walk import _finalize_value, _make_value, copy_tree
+from configgle.fig import Fig
+from configgle.walk import finalize_value, make_value
 
 
 if TYPE_CHECKING:
@@ -19,19 +19,10 @@ if TYPE_CHECKING:
 
 __all__ = ["InlineConfig", "PartialConfig"]
 
-_INLINE_CONFIG_SLOTS = frozenset(
-    ("parent_class", "func", "_finalized", "_args", "_kwargs"),
-)
+_INLINE_CONFIG_SLOTS = frozenset(("func", "_finalized", "_args", "_kwargs"))
 
 
-@dataclasses.dataclass(  # house-ignore[dataclass] -- Positional construction is the public API; kw_only would break callers.
-    slots=True,
-    init=False,
-    repr=True,
-    eq=False,
-    weakref_slot=True,
-)
-class InlineConfig[T]:
+class InlineConfig[T](Fig, init=False, eq=False, repr=False, require_defaults=False):
     """Config wrapper for arbitrary callables with deferred execution.
 
     Stores a function and its arguments, calling them when make() is invoked.
@@ -39,23 +30,16 @@ class InlineConfig[T]:
 
     """
 
-    parent_class: None = dataclasses.field(default=None, init=False, repr=False)
     func: Callable[..., T]
-    _finalized: bool = dataclasses.field(
-        default=False,
-        init=False,
-        repr=False,
-    )
-    _args: MutableSequence[object] = dataclasses.field(
-        default_factory=list[object],
-        init=False,
-        repr=False,
-    )
+    """The callable ``make`` invokes."""
+
+    _args: MutableSequence[object] = dataclasses.field(default_factory=list[object])
+    """Its positional arguments."""
+
     _kwargs: MutableMapping[str, object] = dataclasses.field(
         default_factory=dict[str, object],
-        init=False,
-        repr=False,
     )
+    """Its keyword arguments."""
 
     def __init__(
         self,
@@ -65,10 +49,10 @@ class InlineConfig[T]:
         **kwargs: object,
     ) -> None:
         self.func = func
-        self._finalized = False
         self._args = list(args)
         self._kwargs = kwargs
 
+    @override
     def make(self) -> T:
         """Finalize and invoke the wrapped function.
 
@@ -80,39 +64,25 @@ class InlineConfig[T]:
 
         """
         r = self.finalized()
-        made: dict[int, object] = {}
-        making = {id(r)}
-        args = _make_value(r._args, made, making)  # noqa: SLF001 -- The implementation must inspect its private config state.
-        kwargs = _make_value(r._kwargs, made, making)  # noqa: SLF001 -- The implementation must inspect its private config state.
+        # One walk over both, so a value an argument and a keyword share stays one.
+        args, kwargs = make_value(
+            (r._args, r._kwargs),  # noqa: SLF001 -- The implementation must inspect its private config state.
+            making={id(r)},
+        )
         return r.func(*args, **kwargs)
 
-    def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
-        """Copy this config tree down to leaf values (args/kwargs duplicated).
-
-        Args:
-          visited: Shared ``id(obj) -> copy`` map so shared/cyclic references
-            stay consistent; supplied by the free ``copy_tree`` during recursion.
+    def deferred_call(self) -> tuple[object, list[object], dict[str, object]]:
+        """Return the call this config stands for, as its author wrote it.
 
         Returns:
-          r: Deep copy of this config with recursively copied children.
+          func: The callable the config names.
+          args: Its positional arguments.
+          kwargs: Its keyword arguments.
 
         """
-        if visited is None:
-            visited = {}
-        cached = visited.get(id(self))
-        if cached is not None:
-            return cast(Self, cached)
-        r = copy.copy(self)
-        visited[id(self)] = r
-        r._args = [copy_tree(v, visited) for v in r._args]  # noqa: SLF001 -- The implementation must inspect its private config state.
-        r._kwargs = {k: copy_tree(v, visited) for k, v in r._kwargs.items()}  # noqa: SLF001 -- The implementation must inspect its private config state.
-        return r
+        return self.func, list(self._args), dict(self._kwargs)
 
-    def finalized(self) -> Self:
-        """Return a finalized copy, running ``finalize`` only if still pending."""
-        copied = self.copy_tree()
-        return copied if self._finalized else copied.finalize()
-
+    @override
     def finalize(self) -> Self:
         """Finalize nested configs in place and mark this config finalized.
 
@@ -125,10 +95,10 @@ class InlineConfig[T]:
 
         """
         self._finalized = True
-        self._args = _finalize_value(self._args)
-        self._kwargs = _finalize_value(self._kwargs)
+        self._args, self._kwargs = finalize_value((self._args, self._kwargs))
         return self
 
+    @override
     def update(
         self,
         source: DataclassLike | Makeable[object] | None = None,
@@ -179,8 +149,6 @@ class InlineConfig[T]:
 
     @override
     def __eq__(self, other: object) -> bool:
-        # Generated equality reads ``parent_class``, a slot ``__init__`` never
-        # sets, so ``==`` raised. Identity is the call: type, callable, args.
         if type(other) is not type(self):
             return NotImplemented
         assert isinstance(other, InlineConfig)
@@ -213,12 +181,7 @@ class InlineConfig[T]:
         if key in _INLINE_CONFIG_SLOTS:
             object.__setattr__(self, key, value)
             return
-        try:
-            self._kwargs[key] = value
-            return
-        except AttributeError:
-            pass
-        object.__setattr__(self, key, value)
+        self._kwargs[key] = value
 
     @override
     @reprlib.recursive_repr()
@@ -237,11 +200,6 @@ class InlineConfig[T]:
 class PartialConfig[T](InlineConfig[Callable[..., T]]):
     """InlineConfig that returns a functools.partial instead of calling the function."""
 
-    # Empty slots: without this, subclassing the slotted InlineConfig grants a
-    # (always-empty) __dict__, and serializers that prefer __dict__ over slots
-    # (jsonpickle) would then flatten nothing and silently drop all state.
-    __slots__ = ()
-
     def __init__(
         self,
         /,
@@ -250,3 +208,8 @@ class PartialConfig[T](InlineConfig[Callable[..., T]]):
         **kwargs: object,
     ) -> None:
         super().__init__(functools.partial, func, *args, **kwargs)
+
+    @override
+    def deferred_call(self) -> tuple[object, list[object], dict[str, object]]:
+        _, args, kwargs = super().deferred_call()
+        return args[0], args[1:], kwargs

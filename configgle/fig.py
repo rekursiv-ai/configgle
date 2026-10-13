@@ -95,6 +95,7 @@ from treekle import (
     to_plain,
 )
 from treekle.absent import ABSENT
+from treekle.reflect import attribute_names
 
 from configgle.custom_types import (
     DataclassLike,
@@ -108,11 +109,11 @@ from configgle.pprinting import (
     pformat,
     pprint,
 )
+from configgle.tree import attributes
 from configgle.walk import (
-    _copy_slots,
-    _finalize_value,
-    _get_object_attribute_names,
+    _copy_walk,
     bind_late,
+    finalize_value,
 )
 
 
@@ -275,7 +276,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         """Return every set slot by name, ``_finalized`` included."""
         return {
             name: cast(object, getattr(self, name))
-            for name in (*_get_object_attribute_names(self), "_finalized")
+            for name in attribute_names(self)
             if hasattr(self, name)
         }
 
@@ -299,13 +300,10 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
     def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
         """Copy this config's tree down to leaf values.
 
-        The default implementation copies ``self`` and recurses through its
-        fields (the shared ``_copy_slots`` walk, which the free ``copy_tree``
-        also uses for plain data objects). Override to customize copy semantics
-        for a config -- the dual of overriding ``finalize`` -- and
-        thread ``visited`` through any ``super().copy_tree(visited)`` /
-        ``copy_tree(value, visited)`` calls so shared and cyclic references stay
-        consistent.
+        Override to customize copy semantics for a config -- the dual of
+        overriding ``finalize`` -- and thread ``visited`` through any
+        ``super().copy_tree(visited)`` / ``copy_tree(value, visited)`` calls so
+        shared and cyclic references stay consistent.
 
         Args:
           visited: Maps ``id(obj)`` to its copy, so a config reached twice (a
@@ -317,9 +315,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
             leaf values aliased.
 
         """
-        if visited is None:
-            visited = {}
-        return cast(Self, _copy_slots(self, visited))
+        return _copy_walk(self, {} if visited is None else visited)
 
     def finalized(self) -> Self:
         """Return a finalized copy, running ``finalize`` only if still pending.
@@ -367,7 +363,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         # (``make``/``pprint`` run ``copy_tree().finalize()`` on a fresh tree), so
         # this is the only write that matters -- but ``copy_tree`` preserves the
         # identity of a sub-config shared by two fields (a DAG), and the flag lets
-        # ``_finalize_value`` finalize that shared node exactly once. The flag
+        # ``finalize_value`` finalize that shared node exactly once. The flag
         # also drives pprint's display (finalize=True skips marked configs).
         # ``object.__setattr__`` bypasses frozen dataclass restrictions.
         object.__setattr__(self, "_finalized", True)
@@ -384,23 +380,20 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         # stale ``True`` would make ``make`` skip finalization altogether and
         # silently build from underived defaults.
         try:
-            for name in _get_object_attribute_names(self):
-                self._finalize_attribute(name)
+            fields = dict(attributes(self))
+            finalized_values = finalize_value(tuple(fields.values()))
+            for (name, value), new in zip(
+                fields.items(),
+                finalized_values,
+                strict=True,
+            ):
+                if new is not value:
+                    object.__setattr__(self, name, new)
         except Exception:
             object.__setattr__(self, "_finalized", False)
             raise
 
         return self
-
-    def _finalize_attribute(self, name: str) -> None:
-        """Finalize one attribute in place; a slot never set is left alone."""
-        try:
-            value: object = getattr(self, name)  # pyright: ignore[reportAny] -- Slot lookup by runtime name; the field's type is unknowable.
-        except AttributeError:
-            return
-        finalized_value = _finalize_value(value)
-        if finalized_value is not value:
-            object.__setattr__(self, name, finalized_value)
 
     def update(
         self,
@@ -1093,27 +1086,16 @@ def update[MakerT: Maker[Any]](
       config: The same config, updated, for method chaining.
 
     """
-    valid_keys: set[str] | None = None
-    if skip_missing:
-        valid_keys = set(_get_object_attribute_names(config))
-
-    # Apply source attributes (kwargs take precedence).
-    if source is not None:
-        for name in _get_object_attribute_names(source):
-            if name in kwargs:
-                continue
-            if valid_keys is not None and name not in valid_keys:
-                continue
-            try:
-                value: object = getattr(source, name)  # pyright: ignore[reportAny] -- Field lookup by runtime name; the value is forwarded verbatim.
-            except AttributeError:
-                continue
-            setattr(config, name, value)
-
-    # Apply kwargs.
-    for key, value in kwargs.items():
-        if valid_keys is not None and key not in valid_keys:
+    # ``_finalized`` is lifecycle state, not a field: only ``finalize`` sets it.
+    valid_keys = set(attribute_names(config)) if skip_missing else None
+    updates = (
+        {name: value for name, value in attributes(source) if name not in kwargs}
+        if source is not None
+        else {}
+    )
+    updates.update(kwargs)
+    for key, value in updates.items():
+        if key == "_finalized" or (valid_keys is not None and key not in valid_keys):
             continue
         setattr(config, key, value)
-
     return config

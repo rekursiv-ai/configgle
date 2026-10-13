@@ -13,150 +13,18 @@ import pytest
 
 from configgle.custom_types import LateBound
 from configgle.fig import Fig
+from configgle.lib.testing.resources import recursion_headroom
 from configgle.walk import (
-    _finalize_value,
-    _get_object_attribute_names,
-    _make_value,
     bind_late,
     copy_tree,
+    finalize_value,
+    make_value,
     traverse,
 )
 
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
-
-def test_get_object_attribute_names_filters_int_indices():
-    """Test that _get_object_attribute_names only yields string attribute names."""
-
-    # Test with object (should yield attribute names)
-    class TestObj:
-        def __init__(self):
-            self.x = 1
-            self.y = 2
-
-    obj = TestObj()
-    names = list(_get_object_attribute_names(obj))
-    assert set(names) == {"x", "y"}
-
-    # Test with list (should yield nothing - no string attributes)
-    # This protects against the bug where integer indices would be stringified.
-    lst = [1, 2, 3]
-    names = list(_get_object_attribute_names(lst))
-    assert names == []
-
-
-def test_get_object_attribute_names_with_string_slots():
-    """Test _get_object_attribute_names with __slots__ as a string."""
-
-    class StringSlots:
-        __slots__ = "value"  # noqa: PLC0205 -- The string form is the branch-specific fixture under test.
-
-        def __init__(self):
-            self.value = 42
-
-    obj = StringSlots()
-    names = list(_get_object_attribute_names(obj))
-    assert "value" in names
-
-
-def test_get_object_attribute_names_inherited_slots_across_mro():
-    """Slots declared on a base class are yielded for a subclass instance."""
-
-    class Base:
-        __slots__ = ("base_attr",)
-
-        def __init__(self) -> None:
-            self.base_attr = 1
-
-    class Derived(Base):
-        __slots__ = ("derived_attr",)
-
-        @override
-        def __init__(self) -> None:
-            super().__init__()
-            self.derived_attr = 2
-
-    obj = Derived()
-    assert set(_get_object_attribute_names(obj)) == {"base_attr", "derived_attr"}
-
-
-def test_get_object_attribute_names_slots_and_dict_combined():
-    """An object with both __slots__ and __dict__ yields the union, deduped."""
-
-    class Both:
-        __slots__ = ("__dict__", "slotted")  # __dict__ in slots enables both.
-
-        def __init__(self):
-            self.slotted = 1
-            self.dynamic = 2  # Lands in __dict__.
-
-    obj = Both()
-    names = list(_get_object_attribute_names(obj))
-    assert set(names) == {"slotted", "dynamic"}
-    assert len(names) == len(set(names))  # No duplicates.
-
-
-def test_get_object_attribute_names_yields_unset_slot():
-    """A declared-but-unset slot is still yielded (the caller guards getattr).
-
-    ``_get_object_attribute_names`` reports declared field names; whether each is
-    currently set is the caller's concern (it wraps ``getattr`` in try/except).
-    """
-
-    class HasUnset:
-        # ``unset_attr`` is declared but never assigned -- exactly what this test
-        # exercises (the name is yielded though the slot is empty).
-        __slots__ = ("set_attr", "unset_attr")  # pyright: ignore[reportUninitializedInstanceVariable] -- The unset slot is the test subject and is read only through the guarded walker.
-
-        def __init__(self):
-            self.set_attr = 1
-
-    obj = HasUnset()
-    assert set(_get_object_attribute_names(obj)) == {"set_attr", "unset_attr"}
-
-
-def test_get_object_attribute_names_skips_internal_attrs():
-    """``_finalized`` is never yielded, even when a real attribute.
-
-    A ``__dict__`` entry or a slot) by that name exists.
-    """
-
-    class Internal:
-        def __init__(self):
-            self.real = 1
-            self._finalized = True  # Bookkeeping, must not be yielded.
-
-    obj = Internal()
-    names = set(_get_object_attribute_names(obj))
-    assert "real" in names
-    assert "_finalized" not in names
-
-
-def test_get_object_attribute_names_deduplicates_slot_and_dict_names():
-    class Base:
-        __slots__ = ("shared",)
-
-        def __init__(self) -> None:
-            self.shared = 1
-
-    class Derived(Base):
-        __slots__ = ("__dict__",)
-
-    obj = Derived()
-    vars(obj)["shared"] = 2
-    names = list(_get_object_attribute_names(obj))
-    assert names.count("shared") == 1
-
-
-def test_get_object_attribute_names_empty_slots():
-    """A class with empty ``__slots__`` and no ``__dict__`` yields nothing."""
-
-    class Empty:
-        __slots__ = ()
-
-    assert list(_get_object_attribute_names(Empty())) == []
 
 
 class _Leaf:
@@ -366,26 +234,159 @@ def test_copy_tree_skips_an_unset_slot():
     assert not hasattr(copied, "unset_attr")
 
 
+def _nested(leaf: object) -> tuple[object, int]:
+    """Return ``leaf`` in lists 200 deep, and that depth."""
+    depth = 200
+    value = leaf
+    for _ in range(depth):
+        value = [value]
+    return value, depth
+
+
+def _innermost(value: object, depth: int) -> object:
+    for _ in range(depth):
+        assert isinstance(value, list)
+        value = cast(list[object], value)[0]
+    return value
+
+
+class _Custom:
+    class Config(Fig["_Custom"]):
+        x: int = 0
+        item: object = None
+        calls: ClassVar[list[str]] = []
+
+        @override
+        def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
+            self.calls.append("called")
+            return super().copy_tree(visited)
+
+    def __init__(self, config: Config) -> None:
+        del config
+
+
 def test_copy_tree_delegates_to_custom_method():
     """A config overriding ``copy_tree`` controls its own copy semantics."""
-    sentinel: list[str] = []
+    cfg = _Custom.Config()
+    _Custom.Config.calls.clear()
 
-    class Custom:
-        class Config(Fig["Custom"]):
-            x: int = 0
-
-            @override
-            def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
-                sentinel.append("called")
-                return super().copy_tree(visited)
-
-        def __init__(self, config: Config) -> None:
-            del config
-
-    cfg = Custom.Config()
     copied = copy_tree(cfg)
-    assert sentinel == ["called"]  # The override ran.
+
+    assert _Custom.Config.calls == ["called"]
     assert copied is not cfg
+
+
+def test_copy_tree_delegates_to_a_nested_custom_method_once_per_node():
+    """A nested override runs once even when two fields share its config."""
+    shared = _Custom.Config()
+    root = [shared, {"again": shared}]
+    _Custom.Config.calls.clear()
+
+    copied = copy_tree(root)
+
+    assert _Custom.Config.calls == ["called"]
+    first = copied[0]
+    second = copied[1]
+    assert isinstance(second, dict)
+    second = second["again"]
+    assert first is second
+    assert first is not shared
+
+
+class Maker:
+    """Shares only its name with ``fig.Maker``."""
+
+    __slots__ = ("calls",)
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
+        del visited
+        self.calls += 1
+        return self
+
+
+def test_copy_tree_runs_the_override_of_a_class_merely_named_maker() -> None:
+    named = Maker()
+
+    copy_tree([named])
+
+    assert named.calls == 1
+
+
+def test_copy_tree_threads_visited_into_a_nested_custom_method() -> None:
+    shared: list[int] = [1]
+
+    copied = copy_tree([shared, _Custom.Config(item=shared)])
+
+    custom = copied[1]
+    assert isinstance(custom, _Custom.Config)
+    assert custom.item is copied[0]
+
+
+class _Link(Fig):
+    after: object = None
+
+
+class TestDeepTrees:
+    def test_copy_tree_copies_a_config_chain_deeper_than_the_recursion_limit(
+        self,
+    ) -> None:
+        value = _Link()
+        for _ in range(200):
+            value = _Link(after=value)
+
+        with recursion_headroom(100):
+            copied = copy_tree(value)
+
+        source: object = value
+        while isinstance(source, _Link):
+            assert isinstance(copied, _Link)
+            assert copied is not source
+            source, copied = source.after, copied.after
+
+    def test_copy_tree_copies_a_tree_deeper_than_the_recursion_limit(self) -> None:
+        leaf = _Child.Config(v=3)
+        value, depth = _nested(leaf)
+
+        with recursion_headroom(100):
+            copied = _innermost(copy_tree(value), depth)
+
+        assert isinstance(copied, _Child.Config)
+        assert copied is not leaf
+        assert copied.v == 3
+
+    def test_traverse_finds_a_config_deeper_than_the_recursion_limit(self) -> None:
+        leaf = _Child.Config()
+        value, depth = _nested(leaf)
+
+        with recursion_headroom(100):
+            matches = list(traverse(value, _Child.Config))
+
+        assert [m.config for m in matches] == [leaf]
+        assert matches[0].fqn == "[0]" * depth
+
+    def test_finalize_value_reaches_a_config_deeper_than_the_recursion_limit(
+        self,
+    ) -> None:
+        leaf = _Child.Config()
+        value, depth = _nested(leaf)
+
+        with recursion_headroom(100):
+            finalized = _innermost(finalize_value(value), depth)
+
+        assert finalized is leaf
+        assert leaf._finalized
+
+    def test_make_value_makes_a_config_deeper_than_the_recursion_limit(self) -> None:
+        value, depth = _nested(_Child.Config(v=4))
+
+        with recursion_headroom(100):
+            made = _innermost(make_value(value), depth)
+
+        assert isinstance(made, _Child)
+        assert made.v == 4
 
 
 def test_copy_tree_preserves_dag_identity():
@@ -689,10 +690,10 @@ def _stack() -> _TStack.Config:
 def test_traverse_yields_fqn_for_fields_lists_dicts_and_tuples() -> None:
     fqns = [m.fqn for m in traverse(_stack(), _TLeaf.Config)]
     assert fqns == [
-        "head",
         "blocks[0].proj",
         "blocks[1].proj",
         "extras['aux']",
+        "head",
         "pair[0]",
         "pair[1]",
     ]
@@ -713,10 +714,10 @@ def test_traverse_stops_at_a_match_unless_recurse() -> None:
     cfg = _stack()
     shallow = [m.fqn for m in traverse(cfg, (_TBlock.Config, _TLeaf.Config))]
     assert shallow == [
-        "head",
         "blocks[0]",
         "blocks[1]",
         "extras['aux']",
+        "head",
         "pair[0]",
         "pair[1]",
     ]
@@ -813,6 +814,38 @@ def test_traverse_walks_into_a_set() -> None:
     assert match.config is leaf
 
 
+def test_traverse_replaces_a_match_under_a_none_key() -> None:
+    holder: dict[object, object] = {None: _TLeaf.Config()}
+
+    (match,) = traverse(holder, _TLeaf.Config)
+    match.replace(_TNorm.Config())
+
+    assert match.fqn == "[None]"
+    assert isinstance(holder[None], _TNorm.Config)
+
+
+def test_copy_tree_closes_a_cycle_through_a_tuple() -> None:
+    class Node(Fig):
+        back: object = None
+
+    node = Node()
+    node.back = (node,)
+
+    copied = copy_tree([node.back])
+
+    copied_node = copied[0][0]
+    assert copied_node is not node
+    assert cast(tuple[object, ...], copied_node.back)[0] is copied_node
+
+
+def test_copy_tree_never_mistakes_a_freed_node_for_a_shared_one() -> None:
+    visited: dict[int, object] = {}
+
+    copies = [copy_tree([_Child.Config()], visited) for _ in range(50)]
+
+    assert len({id(copied) for copied in copies}) == len(copies)
+
+
 def test_traverse_skips_an_unset_slot_on_a_data_object() -> None:
     """A declared-but-unset slot on a walked node does not raise; it's skipped."""
 
@@ -871,7 +904,7 @@ def test_traverse_skips_leaves_that_are_not_data() -> None:
 
 def test_make_value_defaults_and_preserves_an_unchanged_tuple() -> None:
     """The top-level call supplies no ``made``/``making``; both default fresh."""
-    result = _make_value((1, 2, 3))
+    result = make_value((1, 2, 3))
     assert result == (1, 2, 3)
     assert type(result) is tuple
 
@@ -882,7 +915,7 @@ def test_make_value_rebuilds_a_namedtuple_of_makeables() -> None:
         b: object
 
     pair = Pair(_Child.Config(v=3), _Child.Config(v=5))
-    result = _make_value(pair)
+    result = make_value(pair)
     assert type(result) is Pair
     made_a = cast(_Child, result.a)
     made_b = cast(_Child, result.b)
@@ -902,7 +935,7 @@ class _Replacing:
 
 def test_finalize_value_rebuilds_a_tuple_when_an_element_changes() -> None:
     original = (_Replacing("a"), 1)
-    finalized = _finalize_value(original)
+    finalized = finalize_value(original)
     assert finalized is not original
     assert finalized[0].tag == "a!"
 
@@ -913,7 +946,7 @@ def test_finalize_value_rebuilds_a_namedtuple_when_an_element_changes() -> None:
         b: int
 
     pair = Pair(_Replacing("a"), 1)
-    finalized = _finalize_value(pair)
+    finalized = finalize_value(pair)
     assert type(finalized) is Pair
     assert cast(_Replacing, finalized.a).tag == "a!"
 
@@ -926,7 +959,7 @@ def test_finalize_value_reassigns_a_changed_attribute_in_place() -> None:
             self.child = child
 
     holder = Holder(_Replacing("a"))
-    result = _finalize_value(holder)
+    result = finalize_value(holder)
     assert result is holder  # The object itself is finalized in place.
     assert holder.child.tag == "a!"
 
@@ -990,7 +1023,7 @@ def test_finalize_value_skips_an_already_finalized_value() -> None:
             raise AssertionError("already finalized")
 
     value = Finalized()
-    assert _finalize_value(value) is value
+    assert finalize_value(value) is value
 
 
 def test_finalize_value_preserves_an_in_place_tuple() -> None:
@@ -999,7 +1032,7 @@ def test_finalize_value_preserves_an_in_place_tuple() -> None:
             return self
 
     value = (InPlace(), 1)
-    assert _finalize_value(value) is value
+    assert finalize_value(value) is value
 
 
 def test_finalize_value_rebuilds_a_list_when_an_element_changes() -> None:
@@ -1008,7 +1041,7 @@ def test_finalize_value_rebuilds_a_list_when_an_element_changes() -> None:
             return type(self)()
 
     value = [Replacing()]
-    finalized = _finalize_value(value)
+    finalized = finalize_value(value)
     assert finalized is not value
     assert isinstance(finalized[0], Replacing)
     assert finalized[0] is not value[0]
@@ -1027,17 +1060,17 @@ def test_finalize_value_handles_mapping_set_and_dataclass() -> None:
         child: Replacing
 
     source = {"item": Replacing("a")}
-    finalized_mapping = _finalize_value(source)
+    finalized_mapping = finalize_value(source)
     assert finalized_mapping["item"].tag == "a!"
     assert finalized_mapping is not source
 
     source_set = {Replacing("b")}
-    finalized_set = _finalize_value(source_set)
+    finalized_set = finalize_value(source_set)
     assert {item.tag for item in finalized_set} == {"b!"}
     assert finalized_set is not source_set
 
     holder = Holder(child=Replacing("c"))
-    assert _finalize_value(holder) is holder
+    assert finalize_value(holder) is holder
     assert holder.child.tag == "c!"
 
     class PlainHolder:
@@ -1047,7 +1080,7 @@ def test_finalize_value_handles_mapping_set_and_dataclass() -> None:
             self.child = child
 
     plain_holder = PlainHolder(Replacing("d"))
-    finalized_plain = _finalize_value(plain_holder)
+    finalized_plain = finalize_value(plain_holder)
     assert finalized_plain is plain_holder
     assert finalized_plain.child.tag == "d!"
 
@@ -1074,17 +1107,17 @@ def test_finalize_value_continues_after_unset_slot() -> None:
             del self.a_unset
 
     holder = Holder(ReplacingForSlot())
-    _finalize_value(holder)
+    finalize_value(holder)
     assert holder.child.finalized
 
 
 def test_make_value_materializes_lists_mappings_and_shared_nodes() -> None:
     config = _Child.Config(v=8)
-    result = _make_value([config, config])
+    result = make_value([config, config])
     assert result[0] is result[1]
     assert result[0].v == 8
 
-    mapped = _make_value({"first": config, "second": config})
+    mapped = make_value({"first": config, "second": config})
     assert list(mapped) == ["first", "second"]
     assert mapped["first"] is mapped["second"]
     assert mapped["first"] is not config
@@ -1092,7 +1125,7 @@ def test_make_value_materializes_lists_mappings_and_shared_nodes() -> None:
 
 def test_make_value_rebuilds_a_plain_tuple_of_makeables() -> None:
     config = _Child.Config(v=4)
-    result = _make_value((config,))
+    result = make_value((config,))
     assert type(result) is tuple
     assert result[0].v == 4
     assert result[0] is not config
@@ -1101,7 +1134,7 @@ def test_make_value_rebuilds_a_plain_tuple_of_makeables() -> None:
 def test_make_value_reuses_an_existing_tuple_cache_entry() -> None:
     config = _Child.Config(v=5)
     cached = object()
-    result = _make_value((config,), made={id(config): cached})
+    result = make_value((config,), made={id(config): cached})
     assert result == (cached,)
 
 
@@ -1114,7 +1147,7 @@ def test_make_value_reuses_a_made_mapping_key_and_value() -> None:
             self.value = config.value
 
     original = Hashable.Config()
-    result = _make_value({original: original})
+    result = make_value({original: original})
     made_key = next(iter(result))
     assert made_key is result[made_key]
     assert made_key is not original
@@ -1136,7 +1169,7 @@ def test_make_value_propagates_cycle_detection_through_containers() -> None:
             ValueError,
             match=r"^cannot materialize a cyclic Makeable graph$",
         ):
-            _make_value(container, making={id(config), id(key)})
+            make_value(container, making={id(config), id(key)})
 
 
 def test_make_value_reports_makeable_cycles_exactly() -> None:
@@ -1145,7 +1178,7 @@ def test_make_value_reports_makeable_cycles_exactly() -> None:
         ValueError,
         match=r"^cannot materialize a cyclic Makeable graph$",
     ):
-        _make_value(config, making={id(config)})
+        make_value(config, making={id(config)})
 
 
 def test_bind_late_continues_after_unset_slot() -> None:
@@ -1326,6 +1359,6 @@ def test_traverse_walks_a_dataclass_with_builtins_module_name() -> None:
 
 
 if __name__ == "__main__":
-    from configgle.lib.testing.main import test_main
+    from configgle.lib.testing.runner import test_main
 
     test_main(__file__)

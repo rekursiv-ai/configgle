@@ -1,27 +1,34 @@
-"""Tests for the shared pytest resource-marker rollups."""
+"""Tests for ``configgle.lib.testing.resources``."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from importlib import machinery, util
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import TYPE_CHECKING, Final, cast
+from unittest.mock import patch
 
+import inspect
+import os
 import subprocess
 import sys
 import textwrap
 
 import pytest
 
-from configgle.lib.testing import resource_markers
-from configgle.lib.testing.resource_markers import (
+from configgle.lib.testing import resources
+from configgle.lib.testing.resources import (
     apply_golden_marker,
     apply_resource_markers,
+    cap_math_threads,
     module_path,
     pytest_collection_modifyitems,
+    recursion_headroom,
     resource_marker_aliases,
     resource_marker_timeout,
 )
+from configgle.lib.userdirs import cache_dir, config_dir, data_dir, state_dir
 
 
 if TYPE_CHECKING:
@@ -35,11 +42,11 @@ _CWD: Final = Path(__file__).resolve().parent
 def fresh_call_graph() -> Iterator[None]:
     """Forget cached sources: each test writes its own modules under tmp_path."""
     caches = (
-        resource_markers.module_path,
-        resource_markers._module_source,
-        resource_markers._function_facts,
-        resource_markers._imports_golden_support,
-        resource_markers._test_reaches_golden,
+        resources.module_path,
+        resources._module_source,
+        resources._function_facts,
+        resources._imports_golden_support,
+        resources._test_reaches_golden,
     )
     for cached in caches:
         cached.cache_clear()
@@ -56,7 +63,7 @@ def _run_pytest(tmp_path: Path, *, bindings: int) -> subprocess.CompletedProcess
 
         sys.path.insert(0, {root!r})
 
-        from configgle.lib.testing.resource_markers import pytest_collection_modifyitems
+        from configgle.lib.testing.resources import pytest_collection_modifyitems
 
         __all__ = ["pytest_collection_modifyitems"]
         """,
@@ -280,7 +287,7 @@ def test_call_through_a_from_imported_submodule_is_marked(
     )
     monkeypatch.setattr(sys, "path", [str(tmp_path), *sys.path])
     monkeypatch.setattr(
-        "configgle.lib.testing.resource_markers._CWD",
+        "configgle.lib.testing.resources._CWD",
         tmp_path / "a" / "b",
     )
     item = _Item(test_name="test_submodule")
@@ -357,14 +364,14 @@ def test_e2b_auth_keeps_integration_selection_and_network_deadline() -> None:
 
 def test_resource_marker_family_rejects_malformed_names() -> None:
     with pytest.raises(ValueError, match="separator"):
-        resource_markers.resource_marker_family("network")
+        resources.resource_marker_family("network")
     with pytest.raises(ValueError, match="family"):
-        resource_markers.resource_marker_family("unknown_probe")
+        resources.resource_marker_family("unknown_probe")
 
 
 def test_unknown_resource_marker_is_rejected() -> None:
     with pytest.raises(pytest.UsageError, match="network_missing"):
-        resource_markers._fail_on_unknown_resource_markers(
+        resources._fail_on_unknown_resource_markers(
             {"network_missing"},
             resource_markers=set(),
         )
@@ -376,14 +383,14 @@ def test_golden_call_graph_import_edges_are_resolved(tmp_path: Path) -> None:
         "import numerics.testing.bfb as bfb\n",
         encoding="utf-8",
     )
-    assert resource_markers._function_facts(direct, "assert_anything") == (True, ())
+    assert resources._function_facts(direct, "assert_anything") == (True, ())
 
     imported = tmp_path / "imported.py"
     imported.write_text(
         "from numerics.testing.bfb import assert_bfb_against_golden\n",
         encoding="utf-8",
     )
-    assert resource_markers._function_facts(
+    assert resources._function_facts(
         imported,
         "assert_bfb_against_golden",
     ) == (True, ())
@@ -392,13 +399,13 @@ def test_golden_call_graph_import_edges_are_resolved(tmp_path: Path) -> None:
         "from numerics.testing.bfb import assert_bfb_against_golden as check\n",
         encoding="utf-8",
     )
-    assert resource_markers._function_facts(aliased, "check") == (True, ())
+    assert resources._function_facts(aliased, "check") == (True, ())
 
 
 def test_import_graph_without_golden_support_is_false(tmp_path: Path) -> None:
     module = tmp_path / "plain.py"
     module.write_text("import pathlib\n", encoding="utf-8")
-    assert resource_markers._imports_golden_support(module) is False
+    assert resources._imports_golden_support(module) is False
 
 
 def test_import_graph_skips_a_seen_module(
@@ -413,8 +420,8 @@ def test_import_graph_skips_a_seen_module(
     def find_bridge(name: str) -> Path | None:
         return bridge if name == "bridge" else None
 
-    monkeypatch.setattr(resource_markers, "module_path", find_bridge)
-    assert resource_markers._imports_golden_support(root) is False
+    monkeypatch.setattr(resources, "module_path", find_bridge)
+    assert resources._imports_golden_support(root) is False
 
 
 def test_import_graph_follows_local_modules_to_golden_support(
@@ -429,8 +436,8 @@ def test_import_graph_follows_local_modules_to_golden_support(
     def find_bridge(name: str) -> Path | None:
         return bridge if name == "bridge" else None
 
-    monkeypatch.setattr(resource_markers, "module_path", find_bridge)
-    assert resource_markers._imports_golden_support(root) is True
+    monkeypatch.setattr(resources, "module_path", find_bridge)
+    assert resources._imports_golden_support(root) is True
 
 
 class _Config:
@@ -539,7 +546,266 @@ def test_applying_markers_twice_leaves_one_ci_skip(
     assert names.count("skip") == 1
 
 
+_HELPERS = (
+    (config_dir, "XDG_CONFIG_HOME"),
+    (data_dir, "XDG_DATA_HOME"),
+    (cache_dir, "XDG_CACHE_HOME"),
+    (state_dir, "XDG_STATE_HOME"),
+)
+
+
+def test_every_helper_resolves_under_the_isolated_root() -> None:
+    """Default: all four helpers land in this test's tmp root, not the user's."""
+    for helper, variable in _HELPERS:
+        assert str(helper() / "rekursiv-ai").startswith(os.environ[variable])
+
+
+def test_isolated_base_directories_exist() -> None:
+    for helper, _ in _HELPERS:
+        assert helper().is_dir()
+        assert helper().stat().st_mode & 0o777 == 0o700
+
+
+def test_configure_declares_the_exported_opt_out_marker(
+    pytestconfig: pytest.Config,
+) -> None:
+    resources.pytest_configure(pytestconfig)
+    assert pytestconfig.getini("markers")[-1] == (
+        "real_user_dirs: opt out of XDG isolation; the test drives a live"
+        " service with the operator's real credentials, which a tmp XDG root"
+        " would replace with an empty directory"
+    )
+
+
+@pytest.mark.parametrize(
+    ("markexpr", "hidden"),
+    [
+        ("not ci_smoke and not cuda and not integration", True),
+        # A ``cuda`` test that is also ``ci_smoke`` is selected, so it keeps the GPU.
+        ("(not cluster and not cuda) or ci_smoke", False),
+        ("", False),
+        ("cuda", False),
+        ("cuda and slow", False),
+        ("gpu_cuda_runtime", False),
+        ("slow and not cuda", True),
+        ("not integration", False),
+    ],
+)
+def test_a_run_that_deselects_cuda_sees_no_gpu(
+    monkeypatch: pytest.MonkeyPatch,
+    markexpr: str,
+    *,
+    hidden: bool,
+) -> None:
+    """An unmarked test cannot reach a GPU, so it must run on the CPU."""
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+
+    resources.pytest_configure(
+        cast(pytest.Config, cast(object, _Config([], markexpr=markexpr))),
+    )
+
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == ("" if hidden else "0,1")
+
+
+def test_isolation_does_not_scan_prior_test_directories(
+    request: pytest.FixtureRequest,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with patch("os.scandir", wraps=os.scandir) as scandir:
+        root = _allocate(request, tmp_path_factory, monkeypatch)
+
+    assert isinstance(root, Path)
+    assert root.is_dir()
+    scandir.assert_not_called()
+
+
+def test_isolation_does_not_grow_pytests_numbered_directory_parent(
+    request: pytest.FixtureRequest,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = tmp_path_factory.getbasetemp()
+    before = set(base.iterdir())
+    for _ in range(3):
+        _allocate(request, tmp_path_factory, monkeypatch)
+
+    assert len(set(base.iterdir()) - before) <= 1
+
+
+def test_isolated_roots_are_unique_and_outside_tmp_path(
+    request: pytest.FixtureRequest,
+    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = _allocate(request, tmp_path_factory, monkeypatch)
+    assert isinstance(first, Path)
+    (config_dir() / "rekursiv-ai").touch()
+    second = _allocate(request, tmp_path_factory, monkeypatch)
+
+    assert isinstance(second, Path)
+    assert first != second
+    assert first.is_dir()
+    assert second.is_dir()
+    assert first.is_relative_to(tmp_path_factory.getbasetemp())
+    assert second.is_relative_to(tmp_path_factory.getbasetemp())
+    assert not (config_dir() / "rekursiv-ai").exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.real_user_dirs
+def test_real_user_dirs_marker_restores_the_operators_directories(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """``real_user_dirs`` reaches the operator's own dirs.
+
+    A live-service test needs its real credentials; without this marker the
+    only way to reach them is to hand-build ``Path.home() / ".local/state"``
+    at the call site, which reintroduces the per-platform layout ``userdirs``
+    exists to delete. Asserting through the helper keeps that unnecessary.
+    """
+    for helper, _ in _HELPERS:
+        resolved = helper() / "rekursiv-ai"
+        assert not resolved.is_relative_to(tmp_path_factory.getbasetemp()), (
+            f"{helper.__name__} still resolved into a pytest tmp root"
+        )
+
+
+def _allocate(
+    request: pytest.FixtureRequest,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path | None:
+    """Call the fixture body directly, outside pytest's fixture machinery."""
+    # ``inspect.unwrap`` returns ``Any``; the wrapped function IS the fixture,
+    # so its signature is the one declared on ``isolate_user_dirs``.
+    body = cast(
+        Callable[
+            [pytest.FixtureRequest, pytest.TempPathFactory, pytest.MonkeyPatch],
+            Path | None,
+        ],
+        inspect.unwrap(resources.isolate_user_dirs),
+    )
+    return body(request, tmp_path_factory, monkeypatch)
+
+
+@pytest.fixture(autouse=True)
+def numba_config(monkeypatch: pytest.MonkeyPatch) -> _NumbaConfig:
+    """Stand in for a loaded ``numba.core.config`` that counts its reloads.
+
+    The real one would re-read the environment these tests rewrite and keep the
+    rewritten width for every later test in the process.
+    """
+    config = _NumbaConfig()
+    monkeypatch.setitem(sys.modules, "numba.core.config", config)
+    return config
+
+
+def test_unset_variables_get_one_thread_and_the_pinned_kernel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    names = (
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+        "BLIS_NUM_THREADS",
+    )
+    _unset(monkeypatch, *names, "MKL_CBWR", "OMP_WAIT_POLICY")
+
+    cap_math_threads()
+
+    assert [os.environ[name] for name in names] == ["1"] * len(names)
+    assert os.environ["MKL_CBWR"] == "COMPATIBLE"
+    assert os.environ["OMP_WAIT_POLICY"] == "PASSIVE"
+
+
+def test_an_operator_setting_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OMP_NUM_THREADS", "8")
+    monkeypatch.setenv("MKL_CBWR", "AUTO")
+
+    cap_math_threads()
+
+    assert os.environ["OMP_NUM_THREADS"] == "8"
+    assert os.environ["MKL_CBWR"] == "AUTO"
+
+
+@pytest.mark.parametrize(("worker", "expected"), [("gw0", "2"), (None, None)])
+def test_numba_keeps_two_threads_only_in_an_xdist_worker(
+    monkeypatch: pytest.MonkeyPatch,
+    worker: str | None,
+    expected: str | None,
+) -> None:
+    _unset(monkeypatch, "NUMBA_NUM_THREADS", "PYTEST_XDIST_WORKER")
+    if worker is not None:
+        monkeypatch.setenv("PYTEST_XDIST_WORKER", worker)
+
+    cap_math_threads()
+
+    assert os.environ.get("NUMBA_NUM_THREADS") == expected
+
+
+def test_a_loaded_numba_rereads_its_environment(numba_config: _NumbaConfig) -> None:
+    cap_math_threads()
+
+    assert numba_config.reloads == 1
+
+
+def test_an_absent_numba_is_not_imported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delitem(sys.modules, "numba.core.config")
+
+    cap_math_threads()
+
+    assert "numba.core.config" not in sys.modules
+
+
+class _NumbaConfig(ModuleType):
+    """Counts reloads in place of ``numba.core.config``."""
+
+    def __init__(self) -> None:
+        super().__init__("numba.core.config")
+        self.reloads = 0
+
+    def reload_config(self) -> None:
+        self.reloads += 1
+
+
+def _unset(monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
+    """Remove ``names`` for this test; teardown restores each, absent ones too."""
+    for name in names:
+        # ``delenv`` of an absent name records nothing to undo, so a value the
+        # code under test then sets would outlive the test. Setting first
+        # records the original, absence included.
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
+
+
+def _depth(levels: int) -> int:
+    return 0 if levels == 0 else 1 + _depth(levels - 1)
+
+
+def test_recursing_past_the_headroom_raises() -> None:
+    with recursion_headroom(50), pytest.raises(RecursionError):
+        _depth(100)
+
+
+def test_recursing_within_the_headroom_runs() -> None:
+    with recursion_headroom(50):
+        assert _depth(20) == 20
+
+
+def test_the_recursion_limit_is_restored_on_exit() -> None:
+    before = sys.getrecursionlimit()
+
+    with pytest.raises(RecursionError), recursion_headroom(50):
+        _depth(100)
+
+    assert sys.getrecursionlimit() == before
+
+
 if __name__ == "__main__":
-    from configgle.lib.testing.main import test_main
+    from configgle.lib.testing.runner import test_main
 
     test_main(__file__)
