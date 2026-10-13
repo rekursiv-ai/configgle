@@ -181,6 +181,6 @@ def test_apply_overrides_reports_exact_invalid_intermediate_path() -> None:
 
 
 if __name__ == "__main__":
-    from configgle.lib.testing.main import test_main
+    from configgle.lib.testing.runner import test_main
 
     test_main(__file__)

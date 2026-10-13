@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 __all__ = [
     "Configurable",
     "DataclassLike",
+    "DefersCall",
     "Finalizeable",
     "HasConfig",
     "HasRelaxedConfig",
@@ -55,7 +56,7 @@ class PformatOptions(TypedDict, total=False):
 
 @runtime_checkable
 class Finalizeable(Protocol):
-    """Non-generic protocol for isinstance checks in _finalize_value.
+    """Non-generic protocol for isinstance checks in finalize_value.
 
     Using the generic Makeable protocol in isinstance causes basedpyright to
     leak Unknown into the negative branch. This simple non-generic protocol
@@ -64,6 +65,15 @@ class Finalizeable(Protocol):
 
     def finalize(self) -> Self:
         """Finalize."""
+        ...
+
+
+@runtime_checkable
+class DefersCall(Protocol):
+    """A config that stands for a call, rendered as that call."""
+
+    def deferred_call(self) -> tuple[object, list[object], dict[str, object]]:
+        """Return the callable, its positional arguments, and its keyword arguments."""
         ...
 
 

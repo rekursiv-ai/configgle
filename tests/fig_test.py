@@ -559,6 +559,28 @@ def test_fig_update_skip_missing():
     assert not hasattr(cfg, "z")  # Z was skipped.
 
 
+@pytest.mark.parametrize("skip_missing", [True, False])
+def test_update_leaves_the_finalized_flag_alone(skip_missing: bool) -> None:
+    cfg = _MutableConfig()
+
+    cfg.update(skip_missing=skip_missing, _finalized=True)
+
+    assert getattr(cfg, "_finalized", None) is False
+
+
+def test_finalized_keeps_a_list_two_fields_share() -> None:
+    class Pair(Fig):
+        a: object = None
+        b: object = None
+
+    shared: list[int] = [1]
+
+    finalized = Pair(a=shared, b=shared).finalized()
+
+    assert finalized.a is finalized.b
+    assert finalized.a is not shared
+
+
 class Animal:
     class Config(Fig["Animal"]):
         name: str = "animal"
@@ -951,7 +973,7 @@ def test_dataclass_params_create_missing_from_both():
 
 
 def test_finalize_value_recurses_into_slotted_object_with_nested_config():
-    """Test _finalize_value recurses into objects with own __slots__ containing configs."""
+    """Test finalize_value recurses into objects with own __slots__ containing configs."""
 
     class Inner(Fig):
         v: int = 0
@@ -971,7 +993,7 @@ def test_finalize_value_recurses_into_slotted_object_with_nested_config():
 
 
 def test_finalize_value_slotted_object_with_uninitialized_slot():
-    """Test _finalize_value skips uninitialized slots on non-dataclass objects."""
+    """Test finalize_value skips uninitialized slots on non-dataclass objects."""
 
     class Wrapper:
         __slots__ = ("initialized", "uninitialized")  # pyright: ignore[reportUninitializedInstanceVariable] -- The test exercises graceful handling of an unset slot.
@@ -1234,6 +1256,19 @@ def test_pprint_method_with_stream():
     assert "x=42" in buf.getvalue()
 
 
+def test_pprint_method_colors_a_stream_when_asked() -> None:
+    class MyClass:
+        class Config(Fig):
+            x: int = 0
+
+        def __init__(self, config: Config):
+            pass
+
+    buf = io.StringIO()
+    MyClass.Config(x=42).pprint(stream=buf, color=True)
+    assert "\x1b[" in buf.getvalue()
+
+
 def test_dataclass_params_create_missing_attr():
     """Test _DataclassParams.create skips keys missing from both kwargs and existing."""
     # Create an uninitialized _DataclassParams (no __init__ call, so slots are unset)
@@ -1327,7 +1362,7 @@ def test_finalize_finalizes_hashable_fig_in_frozenset():
     """A hashable (eq=False) Fig held in a frozenset is finalized.
 
     Set members must be hashable; an ``eq=False`` Fig is, so a frozenset can
-    legally hold one. ``_finalize_value`` must finalize it rather than skip the
+    legally hold one. ``finalize_value`` must finalize it rather than skip the
     whole set.
     """
 
@@ -1374,7 +1409,7 @@ def test_finalize_finalizes_hashable_fig_in_set():
 def test_finalize_finalizes_hashable_fig_dict_key():
     """A hashable (eq=False) Fig used as a dict key is finalized and isolated.
 
-    ``copy_tree`` copies the key and ``_finalize_value`` finalizes it, so a
+    ``copy_tree`` copies the key and ``finalize_value`` finalizes it, so a
     Fig-keyed dict is handled like its values -- and the source is untouched.
     """
 
@@ -1805,38 +1840,19 @@ def test_update_defaults_to_rejecting_unknown_source_fields() -> None:
         fig.update(Parent.Config(), Source())
 
 
-def test_update_continues_after_a_source_attribute_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A failed source read does not hide later source fields."""
+def test_update_continues_after_a_source_attribute_error() -> None:
+    """An unset source slot does not hide later source fields."""
 
     class Source:
+        __slots__ = ("aaa_unset", "value")  # pyright: ignore[reportUninitializedInstanceVariable] -- The unset slot is the test subject.
+
         def __init__(self) -> None:
             self.value = 9
-
-        @override
-        def __dir__(self) -> list[str]:
-            return ["aaa_broken", "value"]
-
-        @override
-        def __getattribute__(self, name: str) -> object:
-            if name == "aaa_broken":
-                raise AttributeError(name)
-            assert name == "value"
-            return 9
 
     class Config(Fig):
         value: int = 0
 
-    source = Source()
-    with pytest.raises(AttributeError):
-        object.__getattribute__(source, "aaa_broken")
-
-    def attribute_names(_: object) -> list[str]:
-        return ["aaa_broken", "value"]
-
-    monkeypatch.setattr(fig, "_get_object_attribute_names", attribute_names)
-    assert Config().update(source).value == 9  # pyright: ignore[reportArgumentType] -- The malformed source exercises attribute filtering.  # ty: ignore[invalid-argument-type] -- The malformed source exercises attribute filtering.
+    assert Config().update(Source()).value == 9  # pyright: ignore[reportArgumentType] -- A plain slotted source exercises attribute filtering.  # ty: ignore[invalid-argument-type] -- A plain slotted source exercises attribute filtering.
 
 
 def test_finalize_replaces_a_child_when_finalize_returns_a_new_object() -> None:
@@ -1971,6 +1987,6 @@ def test_pprint_default_options_are_forwarded(
 
 
 if __name__ == "__main__":
-    from configgle.lib.testing.main import test_main
+    from configgle.lib.testing.runner import test_main
 
     test_main(__file__)

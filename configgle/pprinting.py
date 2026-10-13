@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher, unified_diff
 from itertools import zip_longest
-from pprint import PrettyPrinter
 from typing import (
     IO,
     TYPE_CHECKING,
     Final,
     Literal,
-    Protocol,
     TypeVar,
     assert_never,
     cast,
@@ -32,13 +30,20 @@ import types
 import warnings
 
 from configgle.coloring import color_change, color_config, color_diff
-from configgle.custom_types import DataclassLike, Finalizeable, PformatOptions
-from configgle.inline import InlineConfig, PartialConfig
+from configgle.custom_types import (
+    DataclassLike,
+    DefersCall,
+    Finalizeable,
+    PformatOptions,
+)
+from configgle.stackprint import StackPrinter, plain_repr
 from configgle.walk import copy_tree
 
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Sequence
+
+    from configgle.tree import Work
 
 
 __all__ = [
@@ -48,13 +53,6 @@ __all__ = [
 ]
 
 _T = TypeVar("_T")
-_T_contra = TypeVar("_T_contra", contravariant=True)
-
-
-class SupportsWrite(Protocol[_T_contra]):
-    """Protocol for objects that support write method."""
-
-    def write(self, s: _T_contra, /) -> object: ...
 
 
 _DEFAULT_CONTINUATION_PIPE_THRESHOLD: Final = 50
@@ -182,8 +180,8 @@ def pprint(
         printer.pprint(obj)
 
 
-class FigPrinter(PrettyPrinter):
-    """PrettyPrinter subclass with Fig-specific formatting enhancements."""
+class FigPrinter(StackPrinter):
+    """``StackPrinter`` with Fig-specific formatting enhancements."""
 
     def __init__(
         self,
@@ -212,10 +210,6 @@ class FigPrinter(PrettyPrinter):
             sort_dicts=sort_dicts,
             underscore_numbers=underscore_numbers,
         )
-        # re-set inherited private attrs; type checkers don't see parent's writes.
-        self._indent_per_level: int = indent
-        self._width: int = width
-        self._depth: int | None = depth
         self._finalize = finalize
         self._mask_memory_addresses = (
             _mask_memory_addresses if mask_memory_addresses else None
@@ -252,13 +246,7 @@ class FigPrinter(PrettyPrinter):
         """
         values: dict[str, str] = {}
         with self._render_scope():
-            self._collect_field_values(
-                obj,
-                path="",
-                values=values,
-                ancestors=set(),
-                levels=depth,
-            )
+            self._collect_field_values(obj, values=values, levels=depth)
         return values
 
     @override
@@ -278,43 +266,41 @@ class FigPrinter(PrettyPrinter):
     # Within one render a node's text depends only on the arguments in these keys,
     # so each is rendered once. The stored node pins its ``id`` against reuse.
     @override
-    def format(
+    def _text(
         self,
-        object: object,
+        obj: object,
         context: dict[int, int],
         maxlevels: int,
         level: int,
-    ) -> tuple[str, bool, bool]:
+    ) -> Generator[Work, object, tuple[str, bool, bool]]:
         if self._formats is None:
-            return self._format_text(object, context, maxlevels, level)
-        key = (id(object), maxlevels, level, tuple(context))
+            return (yield from self._format_text(obj, context, maxlevels, level))
+        key = (id(obj), maxlevels, level, tuple(context))
         cached = self._formats.get(key)
-        if cached is None or cached[0] is not object:
-            cached = (object, self._format_text(object, context, maxlevels, level))
+        if cached is None or cached[0] is not obj:
+            rendered = yield from self._format_text(obj, context, maxlevels, level)
+            cached = (obj, rendered)
             self._formats[key] = cached
         return cached[1]
 
     @override
-    def _format(
+    def _block(
         self,
-        object: object,
-        stream: SupportsWrite[str],
+        obj: object,
         indent: int,
         allowance: int,
         context: dict[int, int],
         level: int,
-    ) -> None:
+    ) -> Generator[Work, object, str]:
         if self._layouts is None:
-            self._layout(object, stream, indent, allowance, context, level)
-            return
-        key = (id(object), indent, allowance, level, tuple(context))
+            return (yield from self._layout(obj, indent, allowance, context, level))
+        key = (id(obj), indent, allowance, level, tuple(context))
         cached = self._layouts.get(key)
-        if cached is None or cached[0] is not object:
-            buffer = io.StringIO()
-            self._layout(object, buffer, indent, allowance, context, level)
-            cached = (object, buffer.getvalue())
+        if cached is None or cached[0] is not obj:
+            laid = yield from self._layout(obj, indent, allowance, context, level)
+            cached = (obj, laid)
             self._layouts[key] = cached
-        stream.write(cached[1])
+        return cached[1]
 
     @contextlib.contextmanager
     def _render_scope(self) -> Generator[None]:
@@ -334,53 +320,57 @@ class FigPrinter(PrettyPrinter):
         context: dict[int, int],
         maxlevels: int,
         level: int,
-    ) -> tuple[str, bool, bool]:
+    ) -> Generator[Work, object, tuple[str, bool, bool]]:
         """Render ``obj`` on one line, qualifying functions and masking addresses."""
         obj = self._try_to_finalize(obj)
-        if isinstance(obj, InlineConfig):
-            return self._inline_repr(
-                cast(InlineConfig[object], obj),
-                context=context,
-                maxlevels=maxlevels,
-                level=level,
+        if isinstance(obj, DefersCall):
+            return (
+                yield from self._inline_repr(
+                    obj,
+                    context=context,
+                    maxlevels=maxlevels,
+                    level=level,
+                )
             )
-        text, readable, recursive = super().format(obj, context, maxlevels, level)
+        text, readable, recursive = yield from super()._text(
+            obj,
+            context,
+            maxlevels,
+            level,
+        )
         text = _qualify_function_reprs(obj, text)
         if self._mask_memory_addresses is not None:
             text = self._mask_memory_addresses(text)
         return text, readable, recursive
 
-    def _layout(  # noqa: PLR0917 -- mirrors CPython's positional ``_format`` signature.
+    def _layout(
         self,
         obj: object,
-        stream: SupportsWrite[str],
         indent: int,
         allowance: int,
         context: dict[int, int],
         level: int,
-    ) -> None:
-        """Lay ``obj`` out across lines as ``_format`` would, without the cache."""
+    ) -> Generator[Work, object, str]:
+        """Lay ``obj`` out across lines as ``_block`` would, without the cache."""
         obj = self._try_to_finalize(obj)
-        if not isinstance(obj, InlineConfig):
-            super()._format(obj, stream, indent, allowance, context, level)
-            return
-        inline = cast(InlineConfig[object], obj)
+        if not isinstance(obj, DefersCall):
+            return (yield from super()._block(obj, indent, allowance, context, level))
+        inline = obj
         if id(inline) in context:
-            stream.write("...")
-            return
-        if (self._depth is None or level < self._depth) and len(
-            self._repr(inline, context, level),
-        ) > self._width - indent - allowance:
-            self._pprint_inline(
-                inline,
-                stream=stream,
-                indent=indent,
-                allowance=allowance,
-                context=context,
-                level=level + 1,
-            )
-            return
-        super()._format(inline, stream, indent, allowance, context, level)
+            return "..."
+        if self._depth is None or level < self._depth:
+            rep = yield from self._repr_text(inline, context, level)
+            if len(rep) > self._width - indent - allowance:
+                return (
+                    yield from self._pprint_inline(
+                        inline,
+                        indent=indent,
+                        allowance=allowance,
+                        context=context,
+                        level=level + 1,
+                    )
+                )
+        return (yield from super()._block(inline, indent, allowance, context, level))
 
     def _finalize_pending(self, obj: object) -> bool:
         """Return whether ``_try_to_finalize`` would copy and finalize ``obj``."""
@@ -393,23 +383,26 @@ class FigPrinter(PrettyPrinter):
 
     def _inline_repr(
         self,
-        obj: InlineConfig[object],
+        obj: DefersCall,
         *,
         context: dict[int, int],
         maxlevels: int,
         level: int,
-    ) -> tuple[str, bool, bool]:
+    ) -> Generator[Work, object, tuple[str, bool, bool]]:
         name = type(obj).__qualname__
         if id(obj) in context:
             return "...", False, True
         if maxlevels and level >= maxlevels:
             return f"{name}(...)", False, False
         context[id(obj)] = 1
+        parts: list[tuple[str, tuple[str, bool, bool]]] = []
         try:
-            parts = [
-                (key, self.format(value, context, maxlevels, level + 1))
-                for key, value in _rendered_inline_items(obj)
-            ]
+            for key, value in _rendered_inline_items(obj):
+                part = cast(
+                    "tuple[str, bool, bool]",
+                    (yield self._text(value, context, maxlevels, level + 1)),
+                )
+                parts.append((key, part))
         finally:
             del context[id(obj)]
         text = ", ".join(f"{key}={part[0]}" if key else part[0] for key, part in parts)
@@ -421,66 +414,79 @@ class FigPrinter(PrettyPrinter):
 
     def _pprint_inline(
         self,
-        obj: InlineConfig[object],
+        obj: DefersCall,
         *,
-        stream: SupportsWrite[str],
         indent: int,
         allowance: int,
         context: dict[int, int],
         level: int,
-    ) -> None:
+    ) -> Generator[Work, object, str]:
         name = type(obj).__qualname__
         items = _rendered_inline_items(obj)
         item_indent, closing_indent = _get_level_indents(level, self._indent_per_level)
         if not self._extra_compact:
             item_indent, closing_indent = indent + len(name) + 1, indent
+        parts = [name + "(\n"]
         context[id(obj)] = 1
         try:
-            stream.write(name + "(\n")
             for index, (key, value) in enumerate(items):
                 prefix = f"{key}=" if key else ""
-                stream.write(" " * item_indent + prefix)
-                self._format(
-                    value,
-                    stream,
-                    item_indent + len(prefix),
-                    allowance + 1 if index == len(items) - 1 else 1,
-                    context,
-                    level,
+                parts.append(" " * item_indent + prefix)
+                parts.append(
+                    cast(
+                        str,
+                        (
+                            yield self._block(
+                                value,
+                                item_indent + len(prefix),
+                                allowance + 1 if index == len(items) - 1 else 1,
+                                context,
+                                level,
+                            )
+                        ),
+                    ),
                 )
-                stream.write(",\n" if index < len(items) - 1 else "\n")
-            stream.write(" " * closing_indent + ")")
+                parts.append(",\n" if index < len(items) - 1 else "\n")
+            parts.append(" " * closing_indent + ")")
         finally:
             del context[id(obj)]
+        return "".join(parts)
 
     def _collect_field_values(
         self,
-        value: object,
+        root: object,
         *,
-        path: str,
         values: dict[str, str],
-        ancestors: set[int],
         levels: int | None,
     ) -> None:
-        value = self._try_to_finalize(value)
-        children = _field_children(value)
-        if id(value) in ancestors or not children or levels == 0:
-            values[path] = self.pformat(value)
-            return
-        if dataclasses.is_dataclass(value) and not isinstance(value, type):
-            values[path] = type(value).__qualname__
-        ancestors.add(id(value))
-        for name, child in children:
-            self._collect_field_values(
-                child,
-                path=f"{path}.{name}"
-                if path and not name.startswith("[")
-                else path + name,
-                values=values,
-                ancestors=ancestors,
-                levels=None if levels is None else levels - 1,
+        """Record each field path's rendered leaf, walking the tree on a stack."""
+        ancestors: set[int] = set()
+        stack: list[tuple[str, object, int | None] | int] = [("", root, levels)]
+        while stack:
+            entry = stack.pop()
+            if isinstance(entry, int):
+                ancestors.discard(entry)
+                continue
+            path, value, left = entry
+            value = self._try_to_finalize(value)
+            children = _field_children(value)
+            if id(value) in ancestors or not children or left == 0:
+                values[path] = self.pformat(value)
+                continue
+            if dataclasses.is_dataclass(value) and not isinstance(value, type):
+                values[path] = type(value).__qualname__
+            ancestors.add(id(value))
+            stack.append(id(value))
+            stack.extend(
+                (
+                    f"{path}.{name}"
+                    if path and not name.startswith("[")
+                    else path + name,
+                    child,
+                    None if left is None else left - 1,
+                )
+                for name, child in reversed(children)
             )
-        ancestors.remove(id(value))
 
     # ``finalize`` mutates in place, so the tree is copied first (via ``copy_tree``,
     # which duplicates the config spine but aliases heavy leaves like tensors) to keep
@@ -509,92 +515,81 @@ class FigPrinter(PrettyPrinter):
             warnings.warn(f"{type(e).__name__}: {e}", stacklevel=2)
         return obj
 
-    # CPython's PrettyPrinter dispatches to ``_pprint_dataclass`` for dataclass
-    # instances. We override it to hide default-valued fields and use our extra-compact
-    # layout.
-    def _pprint_dataclass(  # noqa: PLR0917 -- pprint override; CPython dispatches positionally, keyword-only params break it.
+    # ``StackPrinter`` lays a dataclass out through ``_dataclass_block``. This hides
+    # default-valued fields and uses the extra-compact layout.
+    @override
+    def _dataclass_block(
         self,
         obj: object,
-        stream: SupportsWrite[str],
         indent: int,
         allowance: int,
         context: dict[int, int],
         level: int,
-    ) -> None:
-        """Format a dataclass instance."""
+    ) -> Generator[Work, object, str]:
         cls_name = obj.__class__.__qualname__
         indent += len(cls_name) + 1
         items = [
-            (f.name, getattr(obj, f.name))
+            (f.name, cast(object, getattr(obj, f.name)))
             for f in dataclasses.fields(cast(DataclassLike, obj))
             if f.repr
         ]
-
         if self._hide_default_values:
             items = _filter_non_default_items(obj, items)
+        body = yield from self._namespace_items_block(
+            items,
+            indent,
+            allowance,
+            context,
+            level,
+        )
+        return f"{cls_name}({body})"
 
-        stream.write(cls_name + "(")
-        self._format_namespace_items(items, stream, indent, allowance, context, level)
-        stream.write(")")
-
-    def _format_namespace_items(  # noqa: PLR0917 -- pprint override; CPython dispatches positionally, keyword-only params break it.
+    @override
+    def _namespace_items_block(
         self,
         items: list[tuple[str, object]],
-        stream: SupportsWrite[str],
         indent: int,
         allowance: int,
         context: dict[int, int],
         level: int,
-    ) -> None:
-        """Override to use fixed indent and put each parameter on its own line."""
+    ) -> Generator[Work, object, str]:
+        """Put each parameter on its own line at a fixed, level-based indent."""
         if not self._extra_compact:
-            super()._format_namespace_items(  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType] -- Private PrettyPrinter method is absent from typeshed.  # ty: ignore[unresolved-attribute] -- Private PrettyPrinter method is absent from typeshed.
-                items,
-                stream,
-                indent,
-                allowance,
-                context,
-                level,
-            )
-            return
-
-        if not items:
-            return
-
-        write = stream.write
-        write("\n")
-
-        item_indent, base_indent_val = _get_level_indents(
-            level,
-            self._indent_per_level,
-        )
-        base_indent = " " * base_indent_val
-
-        for i, (key, ent) in enumerate(items):
-            last = i == len(items) - 1
-
-            write(" " * item_indent)
-            write(key)
-            write("=")
-
-            if id(ent) in context:
-                write("...")
-            else:
-                formatted_value = self._format_namespace_value(
-                    ent,
-                    context=context,
-                    level=level,
-                    item_indent=item_indent,
-                    allowance=allowance if last else 1,
-                    num_items=len(items),
+            return (
+                yield from super()._namespace_items_block(
+                    items,
+                    indent,
+                    allowance,
+                    context,
+                    level,
                 )
-                write(formatted_value)
-
+            )
+        if not items:
+            return ""
+        item_indent, base_indent = _get_level_indents(level, self._indent_per_level)
+        parts = ["\n"]
+        for i, (key, value) in enumerate(items):
+            last = i == len(items) - 1
+            parts.append(f"{' ' * item_indent}{key}=")
+            if id(value) in context:
+                parts.append("...")
+            else:
+                parts.append(
+                    (
+                        yield from self._format_namespace_value(
+                            value,
+                            context=context,
+                            level=level,
+                            item_indent=item_indent,
+                            allowance=allowance if last else 1,
+                            num_items=len(items),
+                        )
+                    ),
+                )
             if not last:
-                write(",\n")
-
-        write("\n")
-        write(base_indent)
+                parts.append(",\n")
+        parts.append("\n" + " " * base_indent)
+        return "".join(parts)
 
     def _format_namespace_value(
         self,
@@ -605,17 +600,16 @@ class FigPrinter(PrettyPrinter):
         item_indent: int,
         allowance: int,
         num_items: int,
-    ) -> str:
+    ) -> Generator[Work, object, str]:
         """Format a namespace value with collapsing and continuation pipes."""
-        temp_stream = io.StringIO()
-        self._format(value, temp_stream, item_indent, allowance, context, level)
-        formatted_value = temp_stream.getvalue()
-
+        formatted_value = cast(
+            str,
+            (yield self._block(value, item_indent, allowance, context, level)),
+        )
         formatted_value = _collapse_multiline_value(
             formatted_value,
             self._short_sequence_max_width,
         )
-
         if _should_add_continuation_pipes(
             formatted_value,
             num_items,
@@ -624,54 +618,53 @@ class FigPrinter(PrettyPrinter):
             formatted_value = "\n".join(
                 _add_pipes_to_lines(formatted_value.split("\n"), item_indent),
             )
-
         return formatted_value
 
     @override
-    def _format_items(
+    def _items_block(
         self,
-        items: list[object],
-        stream: SupportsWrite[str],
+        items: Sequence[object],
         indent: int,
         allowance: int,
         context: dict[int, int],
         level: int,
-    ) -> None:
-        """Override to use level-based indent instead of accumulated indent."""
+    ) -> Generator[Work, object, str]:
+        """Use a level-based indent instead of an accumulated one."""
         if not self._extra_compact:
-            super()._format_items(items, stream, indent, allowance, context, level)
-            return
-
-        one_line_str = self._try_format_items_on_one_line(
+            return (
+                yield from super()._items_block(
+                    items,
+                    indent,
+                    allowance,
+                    context,
+                    level,
+                )
+            )
+        one_line = yield from self._one_line_items(
             items,
             context,
             level,
             indent=indent,
             allowance=allowance,
         )
-        content_width = len(one_line_str) + 2
+        if self._should_format_on_one_line(len(one_line) + 2, indent, allowance):
+            return one_line
+        return (yield from self._multiline_items(items, context, level))
 
-        if self._should_format_on_one_line(content_width, indent, allowance):
-            stream.write(one_line_str)
-        else:
-            self._format_items_multiline(items, stream, context, level)
-
-    def _try_format_items_on_one_line(
+    def _one_line_items(
         self,
-        items: list[object],
+        items: Sequence[object],
         context: dict[int, int],
         level: int,
         *,
         indent: int,
         allowance: int,
-    ) -> str:
+    ) -> Generator[Work, object, str]:
         """Format items on a single line, stopping once the line cannot fit."""
         pieces: list[str] = []
         content_width = 0
         for item in items:
-            piece = io.StringIO()
-            self._format(item, piece, 0, 0, context, level)
-            pieces.append(piece.getvalue())
+            pieces.append(cast(str, (yield self._block(item, 0, 0, context, level))))
             content_width += len(pieces[-1]) + 2
             # The width only grows, so a prefix that cannot fit rules the line
             # out; rendering the rest, as a list of large configs did, is waste.
@@ -693,59 +686,31 @@ class FigPrinter(PrettyPrinter):
             or indent + content_width + allowance <= self._width
         )
 
-    def _format_items_multiline(
+    def _multiline_items(
         self,
-        items: list[object],
-        stream: SupportsWrite[str],
+        items: Sequence[object],
         context: dict[int, int],
         level: int,
-    ) -> None:
+    ) -> Generator[Work, object, str]:
         """Format items across multiple lines with level-based indent."""
-        write = stream.write
-        write("\n")
-
-        item_indent, base_indent_val = _get_level_indents(
-            level,
-            self._indent_per_level,
-        )
-        indent_str = " " * item_indent
-
-        for i, ent in enumerate(items):
-            last = i == len(items) - 1
-            write(indent_str)
-
-            if id(ent) in context:
-                write("...")
+        item_indent, base_indent = _get_level_indents(level, self._indent_per_level)
+        parts = ["\n"]
+        for i, item in enumerate(items):
+            parts.append(" " * item_indent)
+            if id(item) in context:
+                parts.append("...")
             else:
-                formatted_value = self._format_and_collapse_item(
-                    ent,
-                    context,
-                    level,
-                    item_indent,
+                laid = cast(
+                    str,
+                    (yield self._block(item, item_indent, 1, context, level)),
                 )
-                stream.write(formatted_value)
-
-            if not last:
-                write(",\n")
-
-        write("\n")
-        write(" " * base_indent_val)
-
-    def _format_and_collapse_item(
-        self,
-        item: object,
-        context: dict[int, int],
-        level: int,
-        item_indent: int,
-    ) -> str:
-        """Format an item to a string and collapse if short enough."""
-        temp_stream = io.StringIO()
-        self._format(item, temp_stream, item_indent, 1, context, level)
-        formatted_value = temp_stream.getvalue()
-        return _collapse_multiline_value(
-            formatted_value,
-            self._short_sequence_max_width,
-        )
+                parts.append(
+                    _collapse_multiline_value(laid, self._short_sequence_max_width),
+                )
+            if i < len(items) - 1:
+                parts.append(",\n")
+        parts.append("\n" + " " * base_indent)
+        return "".join(parts)
 
 
 def format_diff(
@@ -867,27 +832,16 @@ def _fields_diff(
     return "\n".join(output)
 
 
-def _inline_call(
-    value: InlineConfig[object],
-) -> tuple[object, list[object], dict[str, object]]:
-    """Return the call a config defers, with PartialConfig's wrapper unwrapped."""
-    args = list(value._args)  # noqa: SLF001 -- Rendering must expose the deferred call's positional arguments.
-    kwargs = dict(value._kwargs)  # noqa: SLF001 -- Rendering must expose the deferred call's keyword arguments.
-    if isinstance(value, PartialConfig):
-        return args[0], args[1:], kwargs
-    return value.func, args, kwargs
-
-
-def _rendered_inline_items(value: InlineConfig[object]) -> list[tuple[str, object]]:
+def _rendered_inline_items(value: DefersCall) -> list[tuple[str, object]]:
     """Return a call's arguments in rendered order; positional keys are empty."""
-    func, args, kwargs = _inline_call(value)
+    func, args, kwargs = value.deferred_call()
     return [("", func), *(("", arg) for arg in args), *kwargs.items()]
 
 
 def _field_children(value: object) -> list[tuple[str, object]]:
     """Expose config fields, including inline callable arguments."""
-    if isinstance(value, InlineConfig):
-        func, args, kwargs = _inline_call(cast(InlineConfig[object], value))
+    if isinstance(value, DefersCall):
+        func, args, kwargs = value.deferred_call()
         return [
             ("func", func),
             *((f"[{i}]", arg) for i, arg in enumerate(args)),
@@ -1068,7 +1022,7 @@ def _function_text(function: types.FunctionType, *, active: frozenset[int]) -> s
         return name
     active |= {id(function)}
     bindings = [
-        f"{key}={_qualify_function_reprs(bound, repr(bound), active=active)}"
+        f"{key}={_qualify_function_reprs(bound, plain_repr(bound), active=active)}"
         for key, bound in _function_bindings(function)
     ]
     return f"{name} {{{', '.join(bindings)}}}" if bindings else name
@@ -1142,21 +1096,33 @@ def _lambda_source(code: types.CodeType) -> str:
 
 
 def _collect_functions(
-    current: object,
+    root: object,
     out: list[types.FunctionType],
     ancestors: set[int],
 ) -> None:
     """Append each function in one object tree, in traversal order."""
-    if isinstance(current, types.FunctionType):
-        out.append(current)
-        return
-    identity = id(current)
-    if identity in ancestors:
-        return
-    ancestors.add(identity)
-    for child in _function_repr_children(current):
-        _collect_functions(child, out, ancestors)
-    ancestors.remove(identity)
+    stack: list[object | _Leave] = [root]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, _Leave):
+            ancestors.remove(current.identity)
+            continue
+        if isinstance(current, types.FunctionType):
+            out.append(current)
+            continue
+        identity = id(current)
+        if identity in ancestors:
+            continue
+        ancestors.add(identity)
+        stack.append(_Leave(identity=identity))
+        stack.extend(reversed(_function_repr_children(current)))
+
+
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class _Leave:
+    """Marks where ``_collect_functions`` leaves a node's subtree."""
+
+    identity: int
 
 
 def _replace_unquoted(

@@ -311,7 +311,7 @@ assume it runs once per tree -- but only for an UNMUTATED config. Mutating
 after a finalize and finalizing again is out of contract and unguarded, so a
 non-idempotent body (one that prepends a path prefix, appends to a list)
 applies twice. Overriding `make()` means reproducing that guard; prefer
-overriding `finalize()` or `copy_tree()`, which are the designed hooks.
+overriding `finalize()`, which is the designed hook.
 
 ### Sentinel-propagation pattern
 

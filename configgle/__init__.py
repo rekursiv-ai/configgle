@@ -143,7 +143,7 @@ derived defaults. A ``finalize`` body may therefore assume one run per tree, but
 only for an UNMUTATED config: mutating after a finalize and finalizing again is
 out of contract and unguarded, so a non-idempotent body (prepending a path
 prefix, appending to a list) applies twice. An override of ``make`` builds from
-``self.finalized()``; ``finalize`` and ``copy_tree`` are the designed hooks.
+``self.finalized()``; ``finalize`` is the designed hook.
 
 Positional Fields (kw_only=False)
 ---------------------------------
@@ -284,6 +284,10 @@ whether it is an attribute, a list index, a dict key, or a tuple position::
     for match in traverse(cfg, Linear.Config):
         match.replace(QuantizedLinear.Config(**vars(match.config)))
 
+``DefersCall`` -- Runtime-checkable ``Protocol`` of a config that stands for
+a call: ``deferred_call()`` returns its callable and arguments. Both inline
+configs satisfy it, and ``pprint`` renders any config that does as its call.
+
 ``Makeable`` -- Runtime-checkable ``Protocol`` defining the config
 interface: ``make()``, ``finalize()``, ``update()``, plus the ``_finalized``
 and ``parent_class`` members. All five are required, so ``isinstance``
@@ -322,6 +326,7 @@ from configgle.cli_override import apply_overrides
 from configgle.custom_types import (
     Configurable,
     DataclassLike,
+    DefersCall,
     Finalizeable,
     HasConfig,
     HasRelaxedConfig,
@@ -342,6 +347,7 @@ __all__ = [
     "Configurable",
     "Dataclass",
     "DataclassLike",
+    "DefersCall",
     "Fig",
     "Finalizeable",
     "HasConfig",
