@@ -1121,7 +1121,7 @@ wheels = [
 [[package]]
 name = "treekle"
 version = "0.1.1"
-source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#ca8e8ef0dc4fb03115240751c246a20324455a9f" }
+source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#086b2a734a4cbe95ddd3dc7e89782d8788422c5d" }
 
 [[package]]
 name = "trove-classifiers"
