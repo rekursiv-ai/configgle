@@ -402,6 +402,43 @@ def test_golden_call_graph_import_edges_are_resolved(tmp_path: Path) -> None:
     assert resources._function_facts(aliased, "check") == (True, ())
 
 
+def test_call_graph_edges_keep_only_calls_it_can_follow(tmp_path: Path) -> None:
+    module = tmp_path / "calls_test.py"
+    module.write_text(
+        textwrap.dedent(
+            """
+            from pathlib import Path
+
+            def helper():
+                pass
+
+            def test_calls():
+                helper()
+                print()
+                local = object()
+                local.method()
+                helper.__call__.__call__()
+                Path()
+            """,
+        ),
+        encoding="utf-8",
+    )
+
+    # ``pathlib`` lives outside the repository, so ``Path()`` is no edge.
+    assert resources._function_facts(module, "test_calls") == (
+        False,
+        ((module, "helper"),),
+    )
+    assert resources._function_facts(module, "Path") == (False, ())
+
+
+def test_a_test_calling_itself_does_not_reach_a_golden(tmp_path: Path) -> None:
+    module = tmp_path / "recursive_test.py"
+    module.write_text("def test_self():\n    test_self()\n", encoding="utf-8")
+
+    assert resources._test_reaches_golden(module, "test_self") is False
+
+
 def test_import_graph_without_golden_support_is_false(tmp_path: Path) -> None:
     module = tmp_path / "plain.py"
     module.write_text("import pathlib\n", encoding="utf-8")
