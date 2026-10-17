@@ -7,6 +7,7 @@ Size a worker pool: parse a ``--workers`` argument, or compute the machine's def
 
 Run (``python -m configgle.lib.worker_count``), it prints the machine's default
 count and nothing else; the pre-commit hooks read their ``$WORKERS`` from it.
+``--units N [--per-worker K]`` caps that count by the job's size.
 
 - :func:`worker_count` coerces a ``--workers`` argument without letting argparse
   exit 2. Every pre-commit gate shares it: ``affected.py`` sizes a thread pool
@@ -22,6 +23,12 @@ The formula::
 
   WORKERS = max(2, min(perf - 1, round(phys * 3/8)))
   WORKERS = max(1, min(WORKERS, available_RAM / 2 GiB))
+  WORKERS = max(1, min(WORKERS, units // per_worker))     # only if units given
+
+The job term is a CEILING too. ``units`` is the job's own count (test files,
+mutants, packages); ``per_worker`` is how many units one worker needs to pay
+its startup. A job too small to share runs serial instead of paying every
+worker's startup for nothing. With no ``units`` the count is the machine's.
 
 ``phys`` counts physical cores (SMT deduped), ``perf`` those at the top clock.
 Deduped on ``(physical_package_id, core_id)``, not ``core_id`` alone: core ids
@@ -51,7 +58,9 @@ memory an app marked disposable.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol, cast
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -91,24 +100,34 @@ def worker_count(value: str) -> int:
 
 def default_workers(
     *,
+    units: int | None = None,
+    per_worker: int = 1,
     cpu: Path = Path("/sys/devices/system/cpu"),
     meminfo: Path = Path("/proc/meminfo"),
 ) -> int:
-    """Return the machine's default worker count, as the pre-commit hooks size theirs.
+    """Return the worker count for a job on this machine, as the pre-commit hooks size theirs.
 
     ``WORKERS_DEFAULT``, when set, wins (parsed by :func:`worker_count`).
     Otherwise the module docstring's formula: 3/8 of the physical cores,
     leaving a performance core free, capped at one worker per 2 GiB of
-    available memory.
+    available memory, then at one worker per ``per_worker`` units of work.
 
     Args:
+      units: The job's size, in whatever it parallelizes over; None is unknown,
+        and leaves the machine's count.
+      per_worker: Units one worker needs to pay for its startup.
       cpu: Linux's CPU topology directory; absent, macOS ``sysctl`` is read.
       meminfo: Linux's memory report; absent, macOS ``vm_stat`` is read.
 
     Returns:
-      workers: The count.
+      workers: The count, at least 1.
+
+    Raises:
+      ValueError: ``per_worker`` is below 1.
 
     """
+    if per_worker < 1:
+        raise ValueError(f"per_worker={per_worker} must be at least 1.")
     override = os.environ.get("WORKERS_DEFAULT", "")
     if override:
         return worker_count(override)
@@ -117,7 +136,72 @@ def default_workers(
     available = _available_mib(meminfo)
     if available is not None:
         workers = min(workers, max(1, available // 2048))
-    return workers
+    if units is None:
+        return workers
+    return capped_workers(workers, units=units, per_worker=per_worker)
+
+
+def capped_workers(workers: int, *, units: int, per_worker: int = 1) -> int:
+    """Return ``workers`` capped at one per ``per_worker`` units of work, never below 1.
+
+    The job-size term of the module docstring's formula, for a caller whose
+    budget is already resolved (a ``--workers`` flag) and whose job size is
+    known only once its inputs are read.
+
+    Args:
+      workers: The budget, from :func:`default_workers` or a ``--workers`` flag.
+      units: The job's size, in whatever it parallelizes over.
+      per_worker: Units one worker needs to pay for its startup.
+
+    Returns:
+      workers: The count, at least 1.
+
+    Raises:
+      ValueError: ``per_worker`` is below 1.
+
+    """
+    if per_worker < 1:
+        raise ValueError(f"per_worker={per_worker} must be at least 1.")
+    return max(1, min(workers, units // per_worker))
+
+
+def main() -> int:
+    """Print the worker count.
+
+    Returns:
+      exit_code: Always 0; argparse exits 2 on its own for a bad flag.
+
+    """
+    parser = argparse.ArgumentParser(
+        description=__doc__.split("\n", 2)[2] if __doc__ else None,
+    )
+    _add_arguments(parser)
+    flags = cast(Flags, parser.parse_args())
+    print(default_workers(units=flags.units, per_worker=flags.per_worker))  # noqa: T201 -- The count is the whole output; the hook reads it.
+    return 0
+
+
+class Flags(Protocol):
+    """Parsed command-line flags."""
+
+    units: int | None
+    per_worker: int
+
+
+def _add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register flags on ``parser``."""
+    parser.add_argument(
+        "--units",
+        type=int,
+        default=None,
+        help="Job size; caps the count at one worker per --per-worker units.",
+    )
+    parser.add_argument(
+        "--per-worker",
+        type=int,
+        default=1,
+        help="Units one worker needs to pay for its startup (default: 1).",
+    )
 
 
 def _cores(cpu: Path) -> tuple[int, int]:
@@ -212,5 +296,5 @@ def _sysctl(name: str) -> int | None:
 
 
 if __name__ == "__main__":
-    print(default_workers())  # noqa: T201 -- The count is the whole output; the hook reads it.
+    raise SystemExit(main())
 # vim: ft=python

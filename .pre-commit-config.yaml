@@ -340,6 +340,8 @@ repos:
         # into argv chunks; this twin collects them into a spool file.
       - id: basedpyright-pre
         name: basedpyright-pre
+        # `run basedpyright` selects this twin too, so its spool exists.
+        alias: basedpyright
         language: system
         stages: [pre-commit]
         require_serial: true
@@ -447,6 +449,8 @@ repos:
         # into argv chunks; this twin collects them into a spool file.
       - id: pytest-pre
         name: pytest-pre
+        # `run pytest` selects this twin too, so its spool exists.
+        alias: pytest
         language: system
         stages: [pre-commit]
         require_serial: true
@@ -551,6 +555,8 @@ repos:
         # into argv chunks; this twin collects them into a spool file.
       - id: coverage-summary-pre
         name: coverage-summary-pre
+        # `run coverage-summary` selects this twin too, so its spool exists.
+        alias: coverage-summary
         language: system
         stages: [pre-commit]
         require_serial: true
