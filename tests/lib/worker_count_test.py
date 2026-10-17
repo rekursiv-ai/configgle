@@ -13,7 +13,7 @@ import sys
 import pytest
 
 from configgle.lib import worker_count as worker_count_module
-from configgle.lib.worker_count import default_workers, worker_count
+from configgle.lib.worker_count import capped_workers, default_workers, worker_count
 
 
 _THIS: Final = Path(__file__).resolve()
@@ -138,6 +138,72 @@ def test_workers_default_overrides_the_formula(
     assert default_workers(cpu=cpu, meminfo=meminfo) == 3
     monkeypatch.setenv("WORKERS_DEFAULT", "junk")
     assert default_workers(cpu=cpu, meminfo=meminfo) == 1
+
+
+@pytest.mark.parametrize(
+    ("units", "per_worker", "expected"),
+    [
+        (None, 1, 12),
+        (100, 1, 12),
+        (12, 1, 12),
+        (3, 1, 3),
+        (1, 1, 1),
+        (0, 1, 1),
+        (15, 16, 1),
+        (32, 16, 2),
+        (1_000, 16, 12),
+    ],
+)
+def test_a_job_size_caps_the_machine_count(
+    tmp_path: Path,
+    units: int | None,
+    per_worker: int,
+    expected: int,
+) -> None:
+    # 32 uniform cores: the machine alone gives 12.
+    cpu = _topology(tmp_path / "cpu", [(0, c, 1) for c in range(32)])
+    meminfo = _meminfo(tmp_path / "m", 1_000_000)
+    got = default_workers(units=units, per_worker=per_worker, cpu=cpu, meminfo=meminfo)
+    assert got == expected
+
+
+def test_workers_default_overrides_a_job_size(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cpu = _topology(tmp_path / "cpu", [(0, c, 1) for c in range(32)])
+    meminfo = _meminfo(tmp_path / "m", 1_000_000)
+    monkeypatch.setenv("WORKERS_DEFAULT", "5")
+    assert default_workers(units=1, cpu=cpu, meminfo=meminfo) == 5
+
+
+def test_a_per_worker_below_one_is_refused(tmp_path: Path) -> None:
+    cpu = _topology(tmp_path / "cpu", [(0, c, 1) for c in range(32)])
+    with pytest.raises(ValueError, match="per_worker"):
+        default_workers(units=4, per_worker=0, cpu=cpu)
+    with pytest.raises(ValueError, match="per_worker"):
+        capped_workers(8, units=4, per_worker=0)
+
+
+@pytest.mark.parametrize(
+    ("workers", "units", "per_worker", "expected"),
+    [
+        (8, 100, 1, 8),
+        (8, 3, 1, 3),
+        (8, 0, 1, 1),
+        (8, 9, 10, 1),
+        (8, 50, 10, 5),
+        (8, 1_000, 16, 8),
+        (0, 5, 1, 1),
+    ],
+)
+def test_capped_workers_is_one_per_per_worker_units_within_the_budget(
+    workers: int,
+    units: int,
+    per_worker: int,
+    expected: int,
+) -> None:
+    assert capped_workers(workers, units=units, per_worker=per_worker) == expected
 
 
 def _fake_tool(bin_dir: Path, name: str, body: str) -> None:
@@ -283,6 +349,49 @@ def test_running_the_module_prints_only_the_count() -> None:
         cwd=_REPO,
     )
     assert run.stdout == "4\n"
+
+
+def test_main_prints_the_job_capped_count(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["worker_count", "--units", "15", "--per-worker", "16"],
+    )
+    assert worker_count_module.main() == 0
+    assert capsys.readouterr().out == "1\n"
+
+
+def test_running_the_module_with_a_job_size_prints_the_capped_count() -> None:
+    env = {k: v for k, v in os.environ.items() if k != "WORKERS_DEFAULT"}
+    run = subprocess.run(  # noqa: S603 -- No shell; the module's own executable.
+        [sys.executable, "-m", worker_count_module.__name__, "--units", "1"],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+        cwd=_REPO,
+    )
+    assert run.stdout == "1\n"
+    run = subprocess.run(  # noqa: S603 -- No shell; the module's own executable.
+        [
+            sys.executable,
+            "-m",
+            worker_count_module.__name__,
+            "--units",
+            "15",
+            "--per-worker",
+            "16",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+        cwd=_REPO,
+    )
+    assert run.stdout == "1\n"
 
 
 if __name__ == "__main__":
