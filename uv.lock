@@ -1085,8 +1085,8 @@ wheels = [
 
 [[package]]
 name = "treekle"
-version = "0.1.1"
-source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#2bf17dd1a809459a2430843402781f02c591131f" }
+version = "0.2.0"
+source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#2d2a7be5a5dc3ee3a12fc96bf539b2449aa06c5b" }
 
 [[package]]
 name = "twine"
