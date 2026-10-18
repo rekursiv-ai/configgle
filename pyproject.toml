@@ -22,7 +22,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    # 0.2.0 adds ``treekle.reflect.attribute_names``, which ``fig`` and ``tree`` use.
+    # Prefer https://awesome-python.com deps over alternatives.
     "treekle>=0.2.0",
     "typing_extensions",
 ]
@@ -30,6 +30,10 @@ dependencies = [
 [dependency-groups]
 # NEVER ADD MORE DEPENDENCIES!
 
+debug = [
+    "ipython",
+    "tqdm",
+]
 lint = [
     "codespell>=2.2.4",
     "ruff",
@@ -63,6 +67,7 @@ typecheck = [
 ]
 dev = [
     {include-group = "pre-commit"},
+    {include-group = "debug"},
     {include-group = "publish"},
 ]
 
@@ -220,6 +225,9 @@ omit = [
     "*/.venv/*",
     "*/typings/*",
     "*/tools/*",
+    "*/scripts/*",
+    "*/testdata/*",
+    "*/__main__.py",
 ]
 
 [tool.coverage.report]
@@ -228,6 +236,7 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
+    "^\\s*\\.\\.\\.$",
     # Convention: a ``_triton``-suffixed def is a body ``triton.jit`` compiles
     # from its source text to PTX. The Python bytecode never runs, so the
     # tracer cannot see lines a GPU test executed; the kernel is tested by
@@ -267,12 +276,14 @@ select = ["ALL"]
 
 extend-safe-fixes = [
     "C4",     # Collection and comprehension rewrites.
+    "D301",   # Use `r"""` if any backslashes in a docstring.
     "E711",   # Compare to None with identity.
     "E712",   # Compare booleans by truthiness.
     "E731",   # Do not assign a `lambda` expression, use a `def`.
     "F401",   # Remove unused imports.
     "F601",   # Remove overwritten dictionary entries.
     "F841",   # Remove unused local bindings.
+    "ISC004", # Unparenthesized implicit string concatenation in collection.
     "PT006",  # Use tuple for pytest.mark.parametrize names.
     "PT007",  # Use tuple/list consistently for pytest values.
     "PT018",  # Split composite assertions.
