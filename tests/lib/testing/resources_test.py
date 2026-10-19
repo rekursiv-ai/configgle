@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import traceback
 
 import pytest
 
@@ -831,6 +832,12 @@ def test_recursing_past_the_headroom_raises() -> None:
 def test_recursing_within_the_headroom_runs() -> None:
     with recursion_headroom(50):
         assert _depth(20) == 20
+
+
+def test_the_headroom_counts_from_the_with_statements_own_depth() -> None:
+    depth = sum(1 for _ in traceback.walk_stack(inspect.currentframe()))
+    with recursion_headroom(50):
+        assert sys.getrecursionlimit() == depth + 50
 
 
 def test_the_recursion_limit_is_restored_on_exit() -> None:
