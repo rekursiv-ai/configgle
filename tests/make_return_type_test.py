@@ -16,10 +16,25 @@ An incompatible inferred return type makes the annotated assignments fail.
 
 from __future__ import annotations
 
-from importlib import import_module
-from typing import TypeAliasType, cast
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+from typing import Final, TypeAliasType, cast
 
 from configgle.fig import Fig, Makes
+
+
+_CWD: Final = Path(__file__).resolve().parent
+
+# The source, not the installed copy ``import ty_extensions`` finds first: only the
+# source counts toward this package's coverage. Exported, the tests sit one level
+# below the package root.
+_POLYFILL: Final = next(
+    candidate
+    for root in (_CWD, _CWD.parent)
+    if (
+        candidate := root / "packages/ty-extensions/ty_extensions/__init__.py"
+    ).is_file()
+)
 
 
 class Bare:
@@ -59,7 +74,12 @@ class Dog(Animal):
 
 def test_intersection_polyfill_preserves_the_first_type() -> None:
     """Keep the runtime export used by checkers without intersection support."""
-    polyfill = cast(TypeAliasType, vars(import_module("ty_extensions"))["Intersection"])
+    spec = spec_from_file_location("ty_extensions_source", _POLYFILL)
+    assert spec is not None
+    assert spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    polyfill = cast(TypeAliasType, vars(module)["Intersection"])
     assert len(polyfill.__type_params__) == 2
     assert cast(object, polyfill.__value__) is polyfill.__type_params__[0]
 

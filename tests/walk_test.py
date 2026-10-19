@@ -15,6 +15,7 @@ from configgle.custom_types import LateBound
 from configgle.fig import Fig
 from configgle.lib.testing.resources import recursion_headroom
 from configgle.walk import (
+    _built_parts,
     bind_late,
     copy_tree,
     finalize_value,
@@ -615,6 +616,26 @@ def test_bind_late_reaches_late_bound_objects_in_every_container():
         "set",
         "tuple",
     ]
+
+
+def test_bind_late_treats_a_builtin_object_as_a_leaf() -> None:
+    """A bare builtin object has no parts, so the walk never descends into it."""
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    class Holder:
+        def __init__(self) -> None:
+            self.sentinel = object()
+            self.late = Late()
+
+    root = Holder()
+    bind_late(root)
+    assert seen == [root]
+    assert _built_parts(object(), torch_module_types={}) == ()
 
 
 def test_bind_late_still_binds_through_ordinary_attributes():

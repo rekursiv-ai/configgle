@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, Self, cast, override
@@ -12,6 +13,7 @@ import dataclasses
 import functools
 import glob
 import inspect
+import linecache
 import re
 import types
 import warnings
@@ -44,8 +46,6 @@ from configgle.tree import drive
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from configgle.custom_types import PformatOptions
 
 
@@ -317,6 +317,33 @@ def test_lambda_without_available_source_has_no_address() -> None:
     assert pformat(function) == "<lambda>"
 
 
+def test_lambda_whose_source_changed_since_load_has_no_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    filename = "<edited-lambda>"
+    code = compile("f = lambda: 1\n", filename, "exec")
+    namespace: dict[str, object] = {}
+    exec(code, namespace)  # noqa: S102 -- Builds a lambda whose file is then edited.
+    edited = ["g = lambda:   1\n"]
+    monkeypatch.setitem(
+        linecache.cache,
+        filename,
+        (len(edited[0]), None, edited, filename),
+    )
+    assert pformat(namespace["f"]) == "<lambda>"
+
+
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class _Holds:
+    functions: dict[str, Callable[[str], str]]
+
+
+def test_functions_inside_a_dataclass_dict_are_qualified() -> None:
+    assert pformat(_Holds(functions={"k": glob.escape})) == (
+        "_Holds(functions={'k': glob.escape})"
+    )
+
+
 def test_function_qualification_binds_modules_to_exact_addresses() -> None:
     first = types.FunctionType((lambda: None).__code__, {"__name__": "first_module"})
     second = types.FunctionType((lambda: None).__code__, {"__name__": "second_module"})
@@ -525,6 +552,30 @@ def test_pprint_colors_only_terminals_by_default(
 def test_format_diff_colors_only_a_terminal_stdout_by_default() -> None:
     plain = pprinting.format_diff([1, 2], mode="diff", n=0, color=None, options={})
     assert plain == "--- \n+++ \n@@ -1 +1 @@\n-1\n+2"
+
+
+def test_format_diff_labels_each_changed_variant_and_skips_equal_ones() -> None:
+    result = pprinting.format_diff(
+        [1, 1, 2],
+        mode="diff",
+        n=0,
+        color=False,
+        options={},
+    )
+    assert result == "config[0] → config[2]\n--- \n+++ \n@@ -1 +1 @@\n-1\n+2"
+
+
+def test_format_diff_fields_of_equal_configs_is_empty() -> None:
+    assert (
+        pprinting.format_diff(
+            [{"a": 1}, {"a": 1}],
+            mode="fields",
+            n=0,
+            color=False,
+            options={},
+        )
+        == ""
+    )
 
 
 @pytest.mark.parametrize("mode", ["bogus"])

@@ -310,6 +310,39 @@ def test_basic_decorator():
     assert foo.z == 3.14
 
 
+def test_from_3_14_autofig_reads_the_constructor_with_forward_refs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Run on every interpreter, an older one with ``annotationlib`` stood in.
+    forwardref = object()
+    formats: list[object] = []
+    signature = inspect.signature
+
+    def read(
+        constructor: Callable[..., object],
+        *,
+        annotation_format: object,
+    ) -> inspect.Signature:
+        formats.append(annotation_format)
+        return signature(constructor)
+
+    def import_module(name: str) -> SimpleNamespace:
+        assert name == "annotationlib"
+        return SimpleNamespace(Format=SimpleNamespace(FORWARDREF=forwardref))
+
+    monkeypatch.setattr(sys, "version_info", (3, 14))
+    monkeypatch.setattr(importlib, "import_module", import_module)
+    monkeypatch.setattr(inspect, "signature", read)
+
+    @autofig
+    class Foo:
+        def __init__(self, x: int = 1):
+            self.x = x
+
+    assert formats[0] is forwardref
+    assert Foo.Config(x=2).make().x == 2
+
+
 def test_config_update():
     @autofig
     class Foo:
