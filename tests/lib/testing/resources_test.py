@@ -347,6 +347,10 @@ def test_module_path_ignores_invalid_and_external_specs(
     monkeypatch.setattr(util, "find_spec", external_spec)
     assert module_path("external") is None
 
+    monkeypatch.undo()
+    assert module_path("no_such_module_anywhere") is None
+    assert module_path("sys") is None
+
 
 def test_openml_cold_fetch_keeps_its_hosted_runner_timeout_budget() -> None:
     """A cold OpenML download needs the previously established 120s budget."""
