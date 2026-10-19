@@ -27,6 +27,9 @@ dependencies = [
     "typing_extensions",
 ]
 
+[project.scripts]
+configgle = "configgle.launch:main"
+
 [dependency-groups]
 # NEVER ADD MORE DEPENDENCIES!
 
@@ -37,10 +40,6 @@ debug = [
 lint = [
     "codespell>=2.2.4",
     "ruff",
-]
-publish = [
-    "build",
-    "twine",
 ]
 test = [
     "pytest-timeout>=2.4.0",
@@ -70,11 +69,12 @@ dev = [
     {include-group = "debug"},
     {include-group = "publish"},
 ]
+publish = [
+    "build",
+    "twine",
+]
 
 # NEVER ADD MORE DEPENDENCY GROUPS!
-
-[project.scripts]
-configgle = "configgle.launch:main"
 
 [project.urls]
 Homepage = "https://www.rekursiv.ai"
@@ -101,7 +101,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["configgle"]
-exclude = ["**/*_test.py", "**/conftest.py"]
+exclude = ["**/*_test.py", "**/conftest.py", "configgle/lib/testing/**"]
 artifacts = ["configgle/py.typed"]
 
 [tool.hatch.build.targets.wheel.force-include]
@@ -246,9 +246,9 @@ exclude_lines = [
     # callers' results, not by line coverage.
     "^def \\w+_numba\\(",
 ]
-fail_under = 98
 show_missing = true
 skip_covered = true
+fail_under = 98
 
 [tool.ruff]
 show-fixes = true
@@ -271,28 +271,6 @@ extend-include = ["*.ipynb"]
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 
 select = ["ALL"]
-
-extend-safe-fixes = [
-    "C4",     # Collection and comprehension rewrites.
-    "D301",   # Use `r"""` if any backslashes in a docstring.
-    "E711",   # Compare to None with identity.
-    "E712",   # Compare booleans by truthiness.
-    "E731",   # Do not assign a `lambda` expression, use a `def`.
-    "F401",   # Remove unused imports.
-    "F601",   # Remove overwritten dictionary entries.
-    "F841",   # Remove unused local bindings.
-    "ISC004", # Unparenthesized implicit string concatenation in collection.
-    "PT006",  # Use tuple for pytest.mark.parametrize names.
-    "PT007",  # Use tuple/list consistently for pytest values.
-    "PT018",  # Split composite assertions.
-    "PYI034", # Annotate __enter__/__new__/__iadd__ returns as Self.
-    "RET504", # Remove unnecessary local assignment directly before return.
-    "RUF007", # Prefer `itertools.pairwise()` over `zip()` when iterating over successive pairs.
-    "SIM102", # Collapse nested if statements.
-    "SIM105", # Use contextlib.suppress instead of try-except-pass.
-    "TC",     # Type-checking import and annotation rewrites.
-    "UP",     # Python syntax upgrades.
-]
 
 ignore = [
     # COM812 is deliberately ignored here and re-enabled only by the
@@ -351,6 +329,28 @@ ignore = [
     # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 ]
 
+extend-safe-fixes = [
+    "C4",     # Collection and comprehension rewrites.
+    "D301",   # Use `r"""` if any backslashes in a docstring.
+    "E711",   # Compare to None with identity.
+    "E712",   # Compare booleans by truthiness.
+    "E731",   # Do not assign a `lambda` expression, use a `def`.
+    "F401",   # Remove unused imports.
+    "F601",   # Remove overwritten dictionary entries.
+    "F841",   # Remove unused local bindings.
+    "ISC004", # Unparenthesized implicit string concatenation in collection.
+    "PT006",  # Use tuple for pytest.mark.parametrize names.
+    "PT007",  # Use tuple/list consistently for pytest values.
+    "PT018",  # Split composite assertions.
+    "PYI034", # Annotate __enter__/__new__/__iadd__ returns as Self.
+    "RET504", # Remove unnecessary local assignment directly before return.
+    "RUF007", # Prefer `itertools.pairwise()` over `zip()` when iterating over successive pairs.
+    "SIM102", # Collapse nested if statements.
+    "SIM105", # Use contextlib.suppress instead of try-except-pass.
+    "TC",     # Type-checking import and annotation rewrites.
+    "UP",     # Python syntax upgrades.
+]
+
 [tool.ruff.lint.per-file-ignores]
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 
@@ -372,6 +372,22 @@ ignore = [
     "S101",    # Use of `assert` detected.
     "S301",    # Pickle usage.
     "SLF001",  # Private member access.
+    # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
+]
+
+
+"*.ipynb" = [
+    "ARG001",  # Unused function argument (callbacks).
+    "BLE001",  # Blind exception (sandboxed exec).
+    "E402",    # Module level import not at top of file.
+    "F811",    # Redefinition across cells.
+    "F821",    # Undefined name (e.g., `display` from IPython).
+    "INP001",  # Implicit namespace package.
+    "PLC0415", # Import not at top level.
+    "RUF100",  # Preserve noqa for jupytext-synced .py files.
+    "S102",    # Use of exec.
+    "S301",    # Pickle usage.
+    "T201",    # Print found.
     # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 ]
 
@@ -431,27 +447,12 @@ ignore = [
     "TID251",  # Banned API.
     # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 ]
-
-"*.ipynb" = [
-    "ARG001",  # Unused function argument (callbacks).
-    "BLE001",  # Blind exception (sandboxed exec).
-    "E402",    # Module level import not at top of file.
-    "F811",    # Redefinition across cells.
-    "F821",    # Undefined name (e.g., `display` from IPython).
-    "INP001",  # Implicit namespace package.
-    "PLC0415", # Import not at top level.
-    "RUF100",  # Preserve noqa for jupytext-synced .py files.
-    "S102",    # Use of exec.
-    "S301",    # Pickle usage.
-    "T201",    # Print found.
-    # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
-]
-
 "{**/docs/**,**/scripts/**}" = [
     "INP001",  # Standalone example scripts.
     "T201",    # Print found. (Eval scripts use print for output.)
     # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 ]
+
 
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 
@@ -561,8 +562,8 @@ exclude = [
     "build/",
     "dist/",
     "**/third_party/",
-    "**/typings/",
     # NEVER ADD MORE EXCLUSIONS! SUPPRESS IN FILE!
+    "**/typings/",
 ]
 ignore = [
     "**/.venv/",
@@ -574,8 +575,8 @@ ignore = [
     "build/",
     "dist/",
     "**/third_party/",
-    "**/typings/",
     # NEVER ADD MORE IGNORES! SUPPRESS IN FILE!
+    "**/typings/",
 ]
 pythonPlatform = "Linux"
 pythonVersion = "3.12"  # Intentional; test at 3.12 for exports.
@@ -589,6 +590,7 @@ reportUnsafeMultipleInheritance = false    # Mixin patterns are intentional.
 reportUnusedCallResult = false             # Discarding return values is idiomatic Python.
 reportInvalidCast = false                  # All cast() calls are intentional.
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
+
 
 [tool.ty.environment]
 python-version = "3.12"  # Intentional; test at 3.12 for exports.
@@ -608,9 +610,9 @@ exclude = [
     "build/",
     "dist/",
     "**/third_party/",
+    # NEVER ADD MORE EXCLUSIONS! SUPPRESS IN FILE!
     "**/typings/",
     "packages/ty-extensions/",  # Polyfill for basedpyright/runtime; ty uses its real built-in Intersection.
-    # NEVER ADD MORE EXCLUSIONS! SUPPRESS IN FILE!
 ]
 
 [tool.ty.rules]
@@ -618,6 +620,7 @@ all = "warn"
 
 [[tool.ty.overrides]]
 include = ["*_test.py"]
+
 [tool.ty.overrides.rules]
 invalid-key = "ignore"
 
@@ -663,6 +666,6 @@ rekursiv-ai-typeshed = [
 compile-bytecode = true
 
 [tool.uv.sources]
-treekle = { git = "https://github.com/rekursiv-ai/treekle", branch = "main" }
 rekursiv-ai-typeshed = { git = "https://github.com/rekursiv-ai/typings", subdirectory = "typeshed", branch = "main" }
+treekle = { git = "https://github.com/rekursiv-ai/treekle", branch = "main" }
 rekursiv-ai-typings = { git = "https://github.com/rekursiv-ai/typings", branch = "main" }

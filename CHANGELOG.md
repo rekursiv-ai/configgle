@@ -30,6 +30,8 @@ Releases up to and including 1.4.0 are described in the
 - `InlineConfig` and `PartialConfig` print as their call, with arguments
   wrapped one per line when too wide. `PartialConfig` omits its internal
   `functools.partial`.
+- The wheel no longer ships `configgle.lib.testing`, whose modules import
+  `pytest`, a test-only dependency.
 
 ### Fixed
 
