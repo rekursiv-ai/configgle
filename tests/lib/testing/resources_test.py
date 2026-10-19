@@ -751,23 +751,26 @@ def test_unset_variables_get_one_thread_and_the_pinned_kernel(
         "VECLIB_MAXIMUM_THREADS",
         "BLIS_NUM_THREADS",
     )
-    _unset(monkeypatch, *names, "MKL_CBWR", "OMP_WAIT_POLICY")
+    _unset(monkeypatch, *names, "MKL_CBWR", "OPENBLAS_CORETYPE", "OMP_WAIT_POLICY")
 
     cap_math_threads()
 
     assert [os.environ[name] for name in names] == ["1"] * len(names)
     assert os.environ["MKL_CBWR"] == "COMPATIBLE"
+    assert os.environ["OPENBLAS_CORETYPE"] == "Haswell"
     assert os.environ["OMP_WAIT_POLICY"] == "PASSIVE"
 
 
 def test_an_operator_setting_wins(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OMP_NUM_THREADS", "8")
     monkeypatch.setenv("MKL_CBWR", "AUTO")
+    monkeypatch.setenv("OPENBLAS_CORETYPE", "Zen")
 
     cap_math_threads()
 
     assert os.environ["OMP_NUM_THREADS"] == "8"
     assert os.environ["MKL_CBWR"] == "AUTO"
+    assert os.environ["OPENBLAS_CORETYPE"] == "Zen"
 
 
 @pytest.mark.parametrize(("worker", "expected"), [("gw0", "2"), (None, None)])

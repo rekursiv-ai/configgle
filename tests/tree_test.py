@@ -62,6 +62,10 @@ def _boxed(node: object) -> object:
     return "boxed" if isinstance(node, Box) else ABSENT
 
 
+def _tens(node: object) -> object:
+    return node * 10 if type(node) is int else ABSENT
+
+
 class TestTreeMap:
     def test_the_default_visit_walks_into_every_node(self) -> None:
         assert walk_into(Box()) is ABSENT
@@ -255,6 +259,22 @@ class TestTreeMap:
 
         assert tree_map([value])[0] is value
 
+    def test_a_replaced_root_is_returned_as_is(self) -> None:
+        assert tree_map(Box(), visit=_boxed) == "boxed"
+
+    def test_a_node_mapped_during_its_own_visit_reads_as_that_result(self) -> None:
+        inner = [1]
+        done: dict[int, object] = {}
+
+        def visit(node: object) -> object:
+            if node is inner:
+                tree_map(node, visit=_tens, done=done)
+            return ABSENT
+
+        rebuilt = tree_map([inner], visit=visit, done=done)
+
+        assert rebuilt == [[10]]
+
     def test_a_deque_holding_itself_raises(self) -> None:
         value: deque[object] = deque()
         value.append(value)
@@ -423,6 +443,25 @@ def test_traverse_replace_rewrites_a_doubly_nested_tuple_element() -> None:
         match.replace(_TNorm(eps=0.5))
     assert isinstance(cfg.nested[0][0], _TNorm)
     assert isinstance(cfg.nested[0][1], _TNorm)
+
+
+def test_traverse_replace_rewrites_a_tuple_element_held_in_a_mapping() -> None:
+    holder: dict[str, tuple[object, object]] = {"pair": (_TLeaf(), _TLeaf())}
+
+    for match in list(traverse(holder, _TLeaf)):
+        match.replace(_TNorm())
+
+    assert all(isinstance(item, _TNorm) for item in holder["pair"])
+
+
+def test_traverse_replace_refuses_a_read_only_parent() -> None:
+    (match,) = traverse(MappingProxyType({"k": _TLeaf()}), _TLeaf)
+
+    with pytest.raises(
+        TypeError,
+        match=r"^cannot replace a part of a read-only mappingproxy$",
+    ):
+        match.replace(_TNorm())
 
 
 def test_traverse_walks_into_a_set() -> None:

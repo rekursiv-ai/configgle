@@ -101,6 +101,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["configgle"]
+# The vendored pytest harness imports pytest, a test-group dependency.
 exclude = ["**/*_test.py", "**/conftest.py", "configgle/lib/testing/**"]
 artifacts = ["configgle/py.typed"]
 
@@ -248,7 +249,7 @@ exclude_lines = [
 ]
 show_missing = true
 skip_covered = true
-fail_under = 98
+fail_under = 100
 
 [tool.ruff]
 show-fixes = true
@@ -375,7 +376,6 @@ extend-safe-fixes = [
     # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 ]
 
-
 "*.ipynb" = [
     "ARG001",  # Unused function argument (callbacks).
     "BLE001",  # Blind exception (sandboxed exec).
@@ -452,7 +452,6 @@ extend-safe-fixes = [
     "T201",    # Print found. (Eval scripts use print for output.)
     # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 ]
-
 
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 
@@ -590,7 +589,6 @@ reportUnsafeMultipleInheritance = false    # Mixin patterns are intentional.
 reportUnusedCallResult = false             # Discarding return values is idiomatic Python.
 reportInvalidCast = false                  # All cast() calls are intentional.
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
-
 
 [tool.ty.environment]
 python-version = "3.12"  # Intentional; test at 3.12 for exports.
