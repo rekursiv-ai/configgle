@@ -105,12 +105,14 @@ class StackPrinter(PrettyPrinter):
             sort_dicts=sort_dicts,
             underscore_numbers=underscore_numbers,
         )
-        # The base class sets these as well; typeshed does not declare them.
-        self._indent_per_level = int(indent)
-        self._width = int(width)
+        # The base class sets these as well; typeshed does not declare them. Read
+        # them back off the base rather than restating its ``int``/``bool``
+        # coercion, so ``indent=2.0`` lays out exactly as ``PrettyPrinter``.
+        self._indent_per_level: int = vars(self)["_indent_per_level"]
+        self._width: int = vars(self)["_width"]
         self._depth = depth
         self._stream: IO[str] = sys.stdout if stream is None else stream
-        self._compact = bool(compact)
+        self._compact: bool = vars(self)["_compact"]
         self._sort_dicts = sort_dicts
         self._underscore_numbers = underscore_numbers
 

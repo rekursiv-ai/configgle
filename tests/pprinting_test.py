@@ -261,7 +261,8 @@ def test_functions_render_their_captured_values() -> None:
 def _nested(levels: int, leaf: object) -> object:
     node: object = [leaf]
     for _ in range(levels):
-        node = [leaf, node, "x" * 30]
+        # A bare list literal here never converges in pyrefly's inference.
+        node = list[object]([leaf, node, "x" * 30])
     return node
 
 
@@ -2132,7 +2133,8 @@ def test_a_config_deeper_than_the_recursion_limit_formats() -> None:
     depth = 200
     nested: object = 0
     for _ in range(depth):
-        nested = [nested]
+        # A bare list literal here never converges in pyrefly's inference.
+        nested = list[object]([nested])
 
     with recursion_headroom(100):
         text = pformat(Holder(value=nested))

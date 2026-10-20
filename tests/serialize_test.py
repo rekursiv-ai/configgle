@@ -828,10 +828,10 @@ def test_cycle_through_tuple_target_roundtrips():
     mutable anchor (cfg) stays id-shared, so decode terminates without KeyError.
     """
     cfg = Cyclic.Config(v=1)
-    holder: tuple[object, ...] = (cfg,)
+    holder = (cfg,)
     cfg.peer = holder  # `cfg` -> (cfg,) -> cfg.
-    back = cast(tuple[object, ...], _roundtrip(holder))
-    inner = cast(Cyclic.Config, back[0])
+    back = _roundtrip(holder)
+    inner = back[0]
     assert cast(tuple[object, ...], inner.peer)[0] is inner
 
 

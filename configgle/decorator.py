@@ -199,7 +199,7 @@ def _autofig[T](
     Config.__set_name__(cls_, "Config")
     cls_.Config = Config  # pyright: ignore[reportAttributeAccessIssue] -- The decorator installs the generated Config attribute dynamically on the decorated class.  # ty: ignore[unresolved-attribute] -- The decorator installs the generated Config attribute dynamically on the decorated class.
 
-    return cls_  # pyright: ignore[reportReturnType] -- The decorator adds Config at runtime, so the returned class satisfies HasRelaxedConfig beyond its source declaration.  # ty: ignore[invalid-return-type] -- The decorator adds Config at runtime, so the returned class satisfies HasRelaxedConfig beyond its source declaration.
+    return cls_  # pyright: ignore[reportReturnType] -- The decorator adds Config at runtime, so the returned class satisfies HasRelaxedConfig beyond its source declaration.  # ty: ignore[invalid-return-type] -- The decorator adds Config at runtime, so the returned class satisfies HasRelaxedConfig beyond its source declaration.  # pyrefly: ignore[bad-return] -- The decorator adds Config at runtime, so the returned class satisfies HasRelaxedConfig beyond its source declaration.
 
 
 def _resolve_annotation(

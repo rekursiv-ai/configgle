@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, Any, Self, cast, override
+from typing import Any, ClassVar, Self, cast, override
 
 import dataclasses
 import functools
@@ -11,10 +11,6 @@ import reprlib
 
 from configgle.fig import Fig
 from configgle.walk import finalize_value, make_value
-
-
-if TYPE_CHECKING:
-    from configgle.custom_types import DataclassLike, Makeable
 
 
 __all__ = ["InlineConfig", "PartialConfig"]
@@ -101,7 +97,7 @@ class InlineConfig[T](Fig, init=False, eq=False, repr=False, require_defaults=Fa
     @override
     def update(
         self,
-        source: DataclassLike | Makeable[object] | None = None,
+        source: object = None,
         /,
         *,
         skip_missing: bool = False,
@@ -158,7 +154,7 @@ class InlineConfig[T](Fig, init=False, eq=False, repr=False, require_defaults=Fa
             and dict(self._kwargs) == dict(other._kwargs)
         )
 
-    __hash__ = None  # pyright: ignore[reportAssignmentType] -- Mutable config: equal-by-value objects must not be hashable.
+    __hash__: ClassVar[None] = None  # pyright: ignore[reportIncompatibleMethodOverride] -- Mutable config: equal-by-value objects must not be hashable.
 
     @override
     def __delattr__(self, key: str) -> None:

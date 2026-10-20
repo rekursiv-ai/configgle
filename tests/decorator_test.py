@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import ModuleType, SimpleNamespace
 from typing import (
     TYPE_CHECKING,
+    ClassVar,
     Protocol,
     TypeVar,
     cast,
@@ -22,13 +23,13 @@ import pytest
 from configgle import decorator
 from configgle.cli_override import apply_overrides
 from configgle.decorator import autofig
+from configgle.fig import Fig
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from configgle.custom_types import HasRelaxedConfig
-from configgle.fig import Fig
+    from configgle.custom_types import RelaxedMakeable
 
 
 # ``ty`` regression canary: as of ty 0.0.49 (astral-sh/ty#143) class decorator
@@ -40,7 +41,7 @@ class _Canary:
         self.x = x
 
 
-_canary_config = _Canary.Config(x=1)
+_canary_config = _Canary.Config(x=1)  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 @pytest.mark.parametrize("child_name", ["Node", "Later"])
@@ -77,18 +78,24 @@ class Later:
         compile(source, "<autofig-forward-test>", "exec", dont_inherit=True),
         vars(module),
     )
-    node = cast("type[HasRelaxedConfig[object]]", module.Node)
-    config = node.Config()
+    node = cast("type[_Decorated]", module.Node)
+    config = node.Config()  # 1180: autofig Config.
     apply_overrides(config, ['count="7"'])
     assert _field(config, "count") == 7
     assert type(_field(config, "count")) is int
-    child_hint = get_type_hints(node.Config)["child"]
+    child_hint = get_type_hints(node.Config)["child"]  # 1180: autofig Config.
     child_type = cast(object, getattr(module, child_name))
     assert isinstance(child_type, type)
     assert child_hint == _union(child_type, type(None))
     assert _field(config.make(), "child") is None
     with pytest.raises(ValueError, match="count"):
         apply_overrides(config, ["count=invalid"])
+
+
+class _Decorated(Protocol):
+    """An ``@autofig`` class seen through a dynamic module, by shape."""
+
+    Config: ClassVar[type[RelaxedMakeable[object]]]
 
 
 def _field(obj: object, name: str) -> object:
@@ -114,10 +121,10 @@ def test_class_local_annotation_preserves_scalar_override_type() -> None:
         def __init__(self, count: Count = 1):
             self.count = count
 
-    config = Scoped.Config()
+    config = Scoped.Config()  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
     apply_overrides(config, ['count="7"'])
     assert _field(config, "count") == 7
-    assert get_type_hints(Scoped.Config)["count"] is int
+    assert get_type_hints(Scoped.Config)["count"] is int  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 def test_inherited_class_local_annotation() -> None:
@@ -133,10 +140,10 @@ def test_inherited_class_local_annotation() -> None:
     class Derived(Base):
         pass
 
-    config = Derived.Config()
+    config = Derived.Config()  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
     apply_overrides(config, ['count="7"'])
     assert _field(config, "count") == 7
-    assert get_type_hints(Derived.Config)["count"] is int
+    assert get_type_hints(Derived.Config)["count"] is int  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 @pytest.mark.parametrize("future_annotations", [True, False])
@@ -174,13 +181,15 @@ class Derived(Shadow, Base):
         compile(source, "<autofig-shadow-test>", "exec", dont_inherit=True),
         vars(module),
     )
-    derived = cast("type[HasRelaxedConfig[object]]", module.Derived)
-    config = derived.Config()
+    derived = cast("type[_Decorated]", module.Derived)
+    config = derived.Config()  # 1180: autofig Config.
     apply_overrides(config, ['count="7"'])
     assert type(_field(config, "count")) is int
     assert _field(config.make(), "count") == 7
     base = cast(type, module.Base)
-    assert get_type_hints(derived.Config)["peer"] == base | None
+    assert (
+        get_type_hints(derived.Config)["peer"] == base | None
+    )  # 1180: autofig Config.
 
 
 @pytest.mark.parametrize(
@@ -217,13 +226,13 @@ class Broken:
         compile(source, "<autofig-invalid-test>", "exec", dont_inherit=True),
         vars(module),
     )
-    broken = cast("type[HasRelaxedConfig[object]]", module.Broken)
-    config = broken.Config()
+    broken = cast("type[_Decorated]", module.Broken)
+    config = broken.Config()  # 1180: autofig Config.
     apply_overrides(config, ['count="7"', 'broken="kept"'])
     assert type(_field(config, "count")) is int
     assert _field(config.make(), "count") == 7
     assert _field(config.make(), "broken") == "kept"
-    assert get_type_hints(broken.Config)["broken"] is object
+    assert get_type_hints(broken.Config)["broken"] is object  # 1180: autofig Config.
     with pytest.raises(ValueError, match="count"):
         apply_overrides(config, ["count=invalid"])
 
@@ -233,13 +242,16 @@ def test_constructor_type_parameter_is_preserved() -> None:
 
     @autofig
     class Generic:
+        value: object
+        fallback: object
+
         def __init__[T](self, value: T | None = None, fallback: T | None = None):
             self.value = value
             self.fallback = fallback
 
-    annotation = get_type_hints(Generic.Config)["value"]
+    annotation = get_type_hints(Generic.Config)["value"]  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
     assert isinstance(get_args(annotation)[0], TypeVar)
-    assert Generic.Config().make().value is None
+    assert Generic.Config().make().value is None  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 def test_constructor_type_parameter_shadows_class_attribute() -> None:
@@ -248,12 +260,14 @@ def test_constructor_type_parameter_shadows_class_attribute() -> None:
     @autofig
     class Shadowed:
         T = int
+        value: object
+        fallback: object
 
         def __init__[T](self, value: T | None = None, fallback: T | None = None):
             self.value = value
             self.fallback = fallback
 
-    annotation = get_type_hints(Shadowed.Config)["value"]
+    annotation = get_type_hints(Shadowed.Config)["value"]  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
     assert isinstance(get_args(annotation)[0], TypeVar)
 
 
@@ -266,7 +280,7 @@ def test_constructor_type_check_opt_out_is_preserved() -> None:
         def __init__(self, count: int = 1):
             self.count = count
 
-    assert get_type_hints(Untyped.Config)["count"] is object
+    assert get_type_hints(Untyped.Config)["count"] is object  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 def test_unannotated_parameter_resolves_to_object(
@@ -282,9 +296,9 @@ def test_unannotated_parameter_resolves_to_object(
         "        self.count = count\n",
         monkeypatch=monkeypatch,
     )
-    loose = cast("type[HasRelaxedConfig[object]]", module.Loose)
-    assert get_type_hints(loose.Config)["count"] is object
-    assert _field(loose.Config().make(), "count") == 1
+    loose = cast("type[_Decorated]", module.Loose)
+    assert get_type_hints(loose.Config)["count"] is object  # 1180: autofig Config.
+    assert _field(loose.Config().make(), "count") == 1  # 1180: autofig Config.
 
 
 def test_basic_decorator():
@@ -295,11 +309,11 @@ def test_basic_decorator():
             self.y = y
             self.z = z
 
-    assert Foo.Config.__bases__ == (Fig,)
-    assert issubclass(Foo.Config, Fig)
-    assert Foo.Config.parent_class == Foo
+    assert Foo.Config.__bases__ == (Fig,)  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
+    assert issubclass(Foo.Config, Fig)  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
+    assert Foo.Config.parent_class == Foo  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
-    config = Foo.Config(x=42, y="hello", z=3.14)
+    config = Foo.Config(x=42, y="hello", z=3.14)  # pyrefly: ignore[not-callable] -- pyrefly#1180: autofig Config.
     assert _field(config, "x") == 42
     assert _field(config, "y") == "hello"
     assert _field(config, "z") == 3.14
@@ -340,7 +354,7 @@ def test_from_3_14_autofig_reads_the_constructor_with_forward_refs(
             self.x = x
 
     assert formats[0] is forwardref
-    assert Foo.Config(x=2).make().x == 2
+    assert Foo.Config(x=2).make().x == 2  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 def test_config_update():
@@ -350,7 +364,7 @@ def test_config_update():
             self.x = x
             self.y = y
 
-    config = Foo.Config(x=1, y="a")
+    config = Foo.Config(x=1, y="a")  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
     config.update(x=99)
     assert _field(config, "x") == 99
     assert _field(config, "y") == "a"
@@ -369,10 +383,10 @@ def test_with_defaults():
             self.name = name
             self.count = count
 
-    assert issubclass(Bar.Config, Fig)
-    assert Bar.Config.parent_class == Bar
+    assert issubclass(Bar.Config, Fig)  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
+    assert Bar.Config.parent_class == Bar  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
-    config = Bar.Config(items=[1, 2, 3], name="test")
+    config = Bar.Config(items=[1, 2, 3], name="test")  # pyrefly: ignore[not-callable] -- pyrefly#1180: autofig Config.
     assert _field(config, "items") == [1, 2, 3]
     assert _field(config, "name") == "test"
     assert _field(config, "count") == 5
@@ -404,7 +418,7 @@ def test_require_defaults():
             self.x = x
 
     # Should work - require_defaults=False allows parameters without defaults.
-    config = NoDefaults.Config(x=42)
+    config = NoDefaults.Config(x=42)  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
     instance = config.make()
     assert instance.x == 42
 
@@ -418,10 +432,9 @@ def test_autofig_with_broken_type_hints():
         "class B:\n    def __init__(self, x: 'Nonexistent' = 0):\n        self.x = x\n",
         ns,
     )
-    Cls = ns["B"]
-    decorated = autofig(Cls)  # pyright: ignore[reportCallIssue, reportArgumentType, reportUnknownVariableType] -- The decorator test uses a dynamic callable fixture outside the stub's overloads.  # ty: ignore[no-matching-overload] -- exec erases the generated class type.
-    config = decorated.Config(x=42)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType] -- The dynamic decorator fixture has no static member metadata.
-    assert config.make().x == 42  # pyright: ignore[reportUnknownMemberType] -- The dynamic decorator fixture has no static member metadata.
+    decorated: type[_Decorated] = autofig(cast("type[object]", ns["B"]))
+    config = decorated.Config(x=42)
+    assert _field(config.make(), "x") == 42
 
 
 @pytest.mark.parametrize("future_annotations", [True, False])
@@ -451,12 +464,12 @@ class Later:
 """,
         monkeypatch=monkeypatch,
     )
-    node = cast("type[HasRelaxedConfig[object]]", module.Node)
+    node = cast("type[_Decorated]", module.Node)
     child_name = "Child"
     child = cast(type, getattr(node, child_name))
     later_name = "Later"
     later = cast(type, getattr(module, later_name))
-    hint = get_type_hints(node.Config)["child"]
+    hint = get_type_hints(node.Config)["child"]  # 1180: autofig Config.
     outer_args = get_args(hint)
     assert outer_args[1] is type(None)
     assert get_args(outer_args[0]) == (_union(child, later),)
@@ -483,9 +496,11 @@ class Node[T]:
 """,
         monkeypatch=monkeypatch,
     )
-    node = cast("type[HasRelaxedConfig[object]]", module.Node)
+    node = cast("type[_Decorated]", module.Node)
     type_params = cast(tuple[object, ...], node.__type_params__)
-    assert get_args(get_type_hints(node.Config)["value"])[0] is type_params[0]
+    assert (
+        get_args(get_type_hints(node.Config)["value"])[0] is type_params[0]
+    )  # 1180: autofig Config.
 
 
 @pytest.mark.parametrize("signature", ["value: int = 1, /", "*args", "**kwargs"])
@@ -520,7 +535,7 @@ def test_autofig_config_is_keyword_only() -> None:
             self.value = value
 
     with pytest.raises(TypeError, match="positional"):
-        KeywordOnly.Config(2)
+        KeywordOnly.Config(2)  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 def test_autofig_can_generate_positional_config() -> None:
@@ -531,7 +546,7 @@ def test_autofig_can_generate_positional_config() -> None:
         def __init__(self, value: int = 1):
             self.value = value
 
-    assert Positional.Config(2).make().value == 2
+    assert Positional.Config(2).make().value == 2  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 def test_autofig_generated_config_has_qualified_name() -> None:
@@ -542,8 +557,8 @@ def test_autofig_generated_config_has_qualified_name() -> None:
         def __init__(self, value: int = 1):
             self.value = value
 
-    assert Named.Config.__name__ == "Named.Config"
-    assert Named.Config.__qualname__.endswith("Named.Config")
+    assert Named.Config.__name__ == "Named.Config"  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
+    assert Named.Config.__qualname__.endswith("Named.Config")  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 def test_autofig_require_defaults_is_enforced() -> None:
@@ -606,7 +621,7 @@ def test_autofig_uses_keyword_only_generated_config() -> None:
         def __init__(self, value: int = 1):
             self.value = value
 
-    assert inspect.signature(KeywordOnly.Config).parameters["value"].kind is (
+    assert inspect.signature(KeywordOnly.Config).parameters["value"].kind is (  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
         inspect.Parameter.KEYWORD_ONLY
     )
 
@@ -646,7 +661,7 @@ def test_autofig_supports_pre_314_annotation_inspection(
         def __init__(self, value: int = 1):
             self.value = value
 
-    assert get_type_hints(Node.Config)["value"] is int
+    assert get_type_hints(Node.Config)["value"] is int  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
 
 
 def test_inherited_forward_annotation_uses_defining_module(
@@ -677,9 +692,11 @@ class Later:
         monkeypatch=monkeypatch,
     )
     exec("class Later: pass", vars(base))  # noqa: S102 -- The referenced type becomes available after decoration.
-    derived_cls = cast("type[HasRelaxedConfig[object]]", derived.Derived)
+    derived_cls = cast("type[_Decorated]", derived.Derived)
     later = cast(object, base.Later)
-    assert get_type_hints(derived_cls.Config)["value"] == _union(
+    assert get_type_hints(derived_cls.Config)[
+        "value"
+    ] == _union(  # 1180: autofig Config.
         _union(int, later),
         type(None),
     )
@@ -697,22 +714,22 @@ class Node:
 """,
         monkeypatch=monkeypatch,
     )
-    node = cast("type[HasRelaxedConfig[object]]", module.Node)
-    config = node.Config()
+    node = cast("type[_Decorated]", module.Node)
+    config = node.Config()  # 1180: autofig Config.
     count_name = "count"
     setattr(config, count_name, 7)
     restored = cast(object, pickle.loads(pickle.dumps(config)))
-    assert type(restored) is node.Config
+    assert type(restored) is node.Config  # 1180: autofig Config.
     make_restored = cast("Callable[[], object]", _field(restored, "make"))
     assert _field(make_restored(), "count") == 7
     serialize = cast("Callable[[], object]", config.serialize)
     deserialize_name = "deserialize"
     deserialize = cast(
         "Callable[[object], object]",
-        getattr(node.Config, deserialize_name),
+        getattr(node.Config, deserialize_name),  # 1180: autofig Config.
     )
     decoded = deserialize(serialize())
-    assert type(decoded) is node.Config
+    assert type(decoded) is node.Config  # 1180: autofig Config.
     make_decoded = cast("Callable[[], object]", _field(decoded, "make"))
     assert _field(make_decoded(), "count") == 7
 
@@ -731,8 +748,8 @@ class Node:
 """,
         monkeypatch=monkeypatch,
     )
-    node = cast("type[HasRelaxedConfig[object]]", module.Node)
-    first, second = node.Config(), node.Config()
+    node = cast("type[_Decorated]", module.Node)
+    first, second = node.Config(), node.Config()  # 1180: autofig Config.
     direct = node()
     assert _field(first, "values") is _field(second, "values")
     assert _field(first, "values") is _field(direct, "values")
@@ -758,16 +775,16 @@ class Node:
 """,
         monkeypatch=monkeypatch,
     )
-    node = cast("type[HasRelaxedConfig[object]]", module.Node)
+    node = cast("type[_Decorated]", module.Node)
     direct = node()
     assert _field(direct, "left") is _field(direct, "right")
-    config = node.Config()
+    config = node.Config()  # 1180: autofig Config.
     assert _field(config, "left") is _field(config, "right")
     assert _field(config, "left") is _field(direct, "left")
     cast(tuple[list[int]], _field(config, "left"))[0].append(2)
     assert _field(config, "right") == ([1, 2],)
     explicit = ([7],)
-    overridden = node.Config(left=explicit)
+    overridden = node.Config(left=explicit)  # 1180: autofig Config.
     assert _field(overridden, "left") is explicit
     shared_name = "shared"
     assert _field(overridden, "right") is getattr(module, shared_name)
@@ -814,8 +831,7 @@ class Node:
 """,
             monkeypatch=monkeypatch,
         )
-        node = cast("type[HasRelaxedConfig[object]]", module.Node)
-        decorated = autofig(node)
+        decorated: type[_Decorated] = autofig(cast(type, module.Node))
         built = decorated.Config(**{name: 3}).make()
         assert isinstance(built, _HasValue)
         assert built.value == 3
@@ -827,7 +843,7 @@ def test_empty_constructor() -> None:
     class Empty:
         pass
 
-    decorated = autofig(Empty)
+    decorated: type[_Decorated] = autofig(cast(type, Empty))
     assert isinstance(decorated.Config().make(), Empty)
 
 

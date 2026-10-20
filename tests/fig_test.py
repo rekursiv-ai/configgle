@@ -83,6 +83,14 @@ def test_standalone():
     assert BaseConfig.parent_class is None
 
 
+def test_an_unnested_subclass_inherits_its_bases_parent_class() -> None:
+    class Unnested(Parent.Config):
+        pass
+
+    assert Unnested.parent_class is Parent
+    assert isinstance(Unnested().make(), Parent)
+
+
 def test_cant_set_unknown_field():
     cfg = Parent.Config()
     name = "nonexistent_field"
@@ -98,8 +106,9 @@ def test_cloudpickle():
     assert cfg.a == cfg_.a
     assert cfg.b == cfg_.b
     assert cfg.c == cfg_.c
+    name = "nonexistent_field"
     with pytest.raises(AttributeError):
-        cfg.nonexistent_field = 1  # pyright: ignore[reportAttributeAccessIssue] -- The test deliberately assigns an invalid field.  # ty: ignore[invalid-assignment] -- The test deliberately assigns an invalid field.
+        setattr(cfg, name, 1)
 
 
 def test_pickle_parent_class_restored():
@@ -690,6 +699,7 @@ def test_makeable_covariance():
     """Makeable[Base] should accept Derived.Config (Derived <: Base)."""
     cfg: Makeable[Base] = Derived.Config()
     result = cfg.make()
+    assert type(result) is Derived
     assert result.y == 2.0
 
 
@@ -722,7 +732,7 @@ def test_makeable_requires_more_than_the_three_methods():
 
     class EveryMember(ThreeMethods):
         _finalized = False
-        parent_class = None
+        parent_class: type | None = None
 
         def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
             del visited
@@ -860,7 +870,7 @@ def test_update_source_with_attribute_error():
     cfg = Config()
     source = BadSource()
     # Should skip y since it raises AttributeError.
-    cfg.update(source, skip_missing=True)  # pyright: ignore[reportArgumentType] -- The malformed source exercises skip_missing.  # ty: ignore[invalid-argument-type] -- The malformed source exercises skip_missing.
+    cfg.update(source, skip_missing=True)
     assert cfg.x == 1
 
 
@@ -923,6 +933,7 @@ def test_dataclass_params_iter_with_string_slots():
 
     class StringSlotParams(_DataclassParams):
         __slots__ = "extra"  # noqa: PLC0205 -- The string form is the branch-test fixture.
+        extra: bool
 
     params = StringSlotParams()
     params.extra = True
@@ -1661,7 +1672,7 @@ def test_make_with_kwargs_passes_every_dataclass_field() -> None:
         def __init__(self, alpha: int = 2, beta: str = "b"):
             self.values = (alpha, beta)
 
-    obj = KwargsParent.Config(alpha=7, beta="chosen").make()
+    obj = KwargsParent.Config(alpha=7, beta="chosen").make()  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
     assert obj.values == (7, "chosen")
 
 
@@ -1852,7 +1863,7 @@ def test_update_continues_after_a_source_attribute_error() -> None:
     class Config(Fig):
         value: int = 0
 
-    assert Config().update(Source()).value == 9  # pyright: ignore[reportArgumentType] -- A plain slotted source exercises attribute filtering.  # ty: ignore[invalid-argument-type] -- A plain slotted source exercises attribute filtering.
+    assert Config().update(Source()).value == 9
 
 
 def test_finalize_replaces_a_child_when_finalize_returns_a_new_object() -> None:
