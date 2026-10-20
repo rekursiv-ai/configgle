@@ -19,8 +19,9 @@ from __future__ import annotations
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Final, TypeAliasType, cast
+from typing_extensions import TypeVar
 
-from configgle.fig import Fig, Makes
+from configgle.fig import Fig, Makes, Makes2
 
 
 _CWD: Final = Path(__file__).resolve().parent
@@ -57,19 +58,47 @@ class Explicit:
         del config
 
 
+# A subclassable Config leaves its parent slot open with a covariant TypeVar
+# defaulting to its own owner; each subclass then fills it with
+# ``Base.Config["Sub"]``. Only a TypeVar keeps a class generic for checkers.
+_AnimalT_co = TypeVar("_AnimalT_co", bound="Animal", default="Animal", covariant=True)
+_DogT_co = TypeVar("_DogT_co", bound="Dog", default="Dog", covariant=True)
+
+
 class Animal:
-    class Config(Fig["Animal"]):
+    class Config(Fig[_AnimalT_co]):
         name: str = "animal"
 
     def __init__(self, config: Config) -> None:
         del config
 
 
-class Dog(Animal):
-    """Inherited Config re-narrowed with ``Makes["Dog"]``."""
+class Cat(Animal):
+    """Inherited Config re-narrowed with ``Makes["Cat"]``."""
 
-    class Config(Makes["Dog"], Animal.Config):
+    class Config(Makes["Cat"], Animal.Config):
+        indoor: bool = True
+
+
+class Kitten(Cat):
+    """Grandchild re-narrowed with ``Makes2`` over a ``Makes`` parent."""
+
+    class Config(Makes2["Kitten"], Cat.Config):
+        weeks: int = 8
+
+
+class Dog(Animal):
+    """Inherited Config narrowed by filling the open slot, kept open for ``Puppy``."""
+
+    class Config(Animal.Config[_DogT_co]):
         breed: str = "mutt"
+
+
+class Puppy(Dog):
+    """Grandchild narrowed by filling ``Dog.Config``'s open slot."""
+
+    class Config(Dog.Config["Puppy"]):
+        age: int = 0
 
 
 def test_intersection_polyfill_preserves_the_first_type() -> None:
@@ -85,8 +114,8 @@ def test_intersection_polyfill_preserves_the_first_type() -> None:
 
 
 def test_bare_fig_make_returns_parent() -> None:
-    bare = Bare.Config().make()  # pyright: ignore[reportAny] -- A bare `Fig` builds `Any`; the assertion is what pins the class.
-    assert isinstance(bare, Bare)
+    bare: Bare = Bare.Config().make()  # pyright: ignore[reportAny] -- A bare `Fig` builds `Any`; the assertion is what pins the class.
+    assert type(bare) is Bare
 
 
 def test_bare_fig_fields_resolve() -> None:
@@ -95,11 +124,35 @@ def test_bare_fig_fields_resolve() -> None:
 
 
 def test_explicit_fig_make_returns_parent() -> None:
-    Explicit.Config().make()
+    explicit: Explicit = Explicit.Config().make()
+    assert type(explicit) is Explicit
 
 
 def test_makes_reparameterizes_to_child() -> None:
-    Dog.Config().make()
+    cat: Cat = Cat.Config().make()
+    assert type(cat) is Cat
+
+
+def test_makes2_reparameterizes_to_grandchild() -> None:
+    kitten: Kitten = Kitten.Config().make()
+    assert type(kitten) is Kitten
+    assert (kitten_config := Kitten.Config()).indoor
+    assert kitten_config.weeks == 8
+
+
+def test_open_slot_defaults_to_owner() -> None:
+    animal: Animal = Animal.Config().make()
+    assert type(animal) is Animal
+
+
+def test_filled_slot_narrows_to_child() -> None:
+    dog: Dog = Dog.Config().make()
+    assert type(dog) is Dog
+
+
+def test_grandchild_inherits_parent_type() -> None:
+    puppy: Puppy = Puppy.Config().make()
+    assert type(puppy) is Puppy
 
 
 if __name__ == "__main__":

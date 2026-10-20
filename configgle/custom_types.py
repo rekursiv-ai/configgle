@@ -17,6 +17,8 @@ from typing_extensions import TypedDict, TypeVar
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import dataclasses
 
 
@@ -188,8 +190,11 @@ class Makeable(Protocol[_T_co]):
     #   - Final: can't combine with ClassVar or use in protocols.
     # The tradeoff is that type[Makeable[X]].parent_class doesn't work
     # through protocol-typed variables. Use a cast for that rare case.
+    # `type[_T_co]` alone fails a config whose `make()` returns a builder
+    # (`_T_co = Callable[..., X]`): `type[Callable[...]]` is not a type. Without
+    # it, basedpyright cannot solve `_T_co` from a constructor such as `tuple`.
     @property
-    def parent_class(self) -> type[_T_co] | None:
+    def parent_class(self) -> type[_T_co] | Callable[..., _T_co] | None:
         """Parent class."""
         ...
 
@@ -224,7 +229,7 @@ Configurable = Makeable
 
 
 @runtime_checkable
-class HasConfig(Protocol[_T]):
+class HasConfig(Protocol[_T]):  # pyrefly: ignore[variance-mismatch] -- ty and basedpyright require ClassVar-held _T to stay invariant.
     """Protocol for classes with a typed Config nested class."""
 
     # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.
@@ -252,7 +257,7 @@ RelaxedConfigurable = RelaxedMakeable
 
 
 @runtime_checkable
-class HasRelaxedConfig(Protocol[_T]):
+class HasRelaxedConfig(Protocol[_T]):  # pyrefly: ignore[variance-mismatch] -- ty and basedpyright require ClassVar-held _T to stay invariant.
     """Protocol for classes decorated with @autofig."""
 
     # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.

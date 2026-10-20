@@ -1138,7 +1138,7 @@ wheels = [
 [[package]]
 name = "rekursiv-ai-typeshed"
 version = "0.1.5"
-source = { git = "https://github.com/rekursiv-ai/typings?subdirectory=typeshed&branch=main#8552606cf998b2a9669b4cf311209ab565d2e89f" }
+source = { git = "https://github.com/rekursiv-ai/typings?subdirectory=typeshed&branch=main#786d01e6a6599c7a3960c217c70906c90c1a4d56" }
 dependencies = [
     { name = "basedpyright" },
     { name = "ty" },
@@ -1147,7 +1147,7 @@ dependencies = [
 [[package]]
 name = "rekursiv-ai-typings"
 version = "0.1.5"
-source = { git = "https://github.com/rekursiv-ai/typings?branch=main#8552606cf998b2a9669b4cf311209ab565d2e89f" }
+source = { git = "https://github.com/rekursiv-ai/typings?branch=main#786d01e6a6599c7a3960c217c70906c90c1a4d56" }
 
 [[package]]
 name = "requests"
@@ -1277,7 +1277,7 @@ wheels = [
 [[package]]
 name = "treekle"
 version = "0.2.0"
-source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#3ea3ccbcad09d17e7a3f9b3edc66adb48c22b298" }
+source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#8d8845e09844ef72124f51626e1314fa7c1518e5" }
 
 [[package]]
 name = "twine"

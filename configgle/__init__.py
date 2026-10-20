@@ -337,7 +337,7 @@ from configgle.custom_types import (
     RelaxedMakeable,
 )
 from configgle.decorator import autofig
-from configgle.fig import Dataclass, Fig, Maker, Makes
+from configgle.fig import Dataclass, Fig, Maker, Makes, Makes2
 from configgle.inline import InlineConfig, PartialConfig
 from configgle.pprinting import pformat, pprint
 from configgle.walk import Match, traverse
@@ -357,6 +357,7 @@ __all__ = [
     "Makeable",
     "Maker",
     "Makes",
+    "Makes2",
     "Match",
     "MutableNamespace",
     "PartialConfig",
