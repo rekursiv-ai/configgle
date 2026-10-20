@@ -167,14 +167,19 @@ def test_inline_config_finalize():
             new._finalized = True
             return new
 
-    cfg = InlineConfig(lambda c: c.x * 2, SimpleConfig(1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType, reportUnknownMemberType] -- The test exercises intentionally dynamic config construction.
+    def double(c: SimpleConfig) -> int:
+        return c.x * 2
+
+    cfg = InlineConfig(double, SimpleConfig(1))
     assert cfg._finalized is False
 
-    finalized = cfg.finalize()  # pyright: ignore[reportUnknownVariableType] -- InlineConfig's callable type is erased by the dynamic test fixture.
+    finalized = cfg.finalize()
 
     assert finalized._finalized is True
     # Should finalize nested configs.
-    assert finalized._args[0]._finalized is True  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType] -- The dynamic test fixture stores erased config arguments.  # ty: ignore[unresolved-attribute] -- The dynamic test fixture stores erased config arguments.
+    child = finalized._args[0]
+    assert isinstance(child, SimpleConfig)
+    assert child._finalized is True
 
 
 def test_make_does_not_refinalize_an_already_finalized_inline_tree() -> None:
@@ -240,19 +245,19 @@ def test_inline_config_finalizes_a_shared_child_once() -> None:
             del config
 
     shared = Value.Config()
-    config = InlineConfig(lambda left, right: (left, right), shared, shared)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
+    config = InlineConfig(_positional_pair, shared, shared)
 
-    finalized = config.copy_tree().finalize()  # pyright: ignore[reportUnknownVariableType] -- InlineConfig's callable type is erased by the shared-child fixture.
+    finalized = config.copy_tree().finalize()
 
     assert len(finalize_calls) == 1
     assert finalized._args[0] is finalized._args[1]
 
 
 def test_inline_config_finalize_terminates_a_self_cycle() -> None:
-    config = InlineConfig(lambda value: value)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
+    config = InlineConfig(_identity)
     config.value = config
 
-    finalized = config.copy_tree().finalize()  # pyright: ignore[reportUnknownVariableType] -- InlineConfig's callable type is erased by the self-cycle fixture.
+    finalized = config.copy_tree().finalize()
 
     assert finalized._finalized is True
     assert finalized.value is finalized  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
@@ -402,7 +407,7 @@ def test_inline_config_update_from_dataclass():
         a: int = 10
         b: str = "hello"
 
-    cfg = InlineConfig(lambda a, b: f"{a}-{b}")  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
+    cfg = InlineConfig(_dash)
     cfg.update(Source())
     assert cfg.a == 10  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
     assert cfg.b == "hello"  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
@@ -420,8 +425,8 @@ def test_inline_config_update_from_non_dataclass():
         def method(self) -> None:
             pass
 
-    cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
-    cfg.update(Source())  # pyright: ignore[reportArgumentType] -- The test source intentionally lacks the update Protocol.  # ty: ignore[invalid-argument-type] -- The test source intentionally lacks the update Protocol.
+    cfg = InlineConfig(_collect)
+    cfg.update(Source())
     assert cfg.x == 42  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
     assert cfg.y == "data"  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
     # Methods should NOT be copied.
@@ -430,7 +435,7 @@ def test_inline_config_update_from_non_dataclass():
 
 def test_inline_config_update_with_kwargs():
     """Test InlineConfig.update with kwargs."""
-    cfg = InlineConfig(lambda a, b: a + b)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
+    cfg = InlineConfig(_add)
     cfg.update(a=5, b=10)
     assert cfg.make() == 15
 
@@ -441,7 +446,7 @@ def test_inline_config_update_skip_missing_filters_source_and_kwargs() -> None:
         existing: int = 20
         source_only: int = 30
 
-    cfg = InlineConfig(lambda **kwargs: kwargs, existing=10)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
+    cfg = InlineConfig(_collect, existing=10)
 
     cfg.update(Source(), skip_missing=True, existing=40, kwargs_only=50)
 
@@ -461,10 +466,7 @@ def test_inline_config_update_skip_missing_filters_a_non_dataclass_source() -> N
 
     cfg = InlineConfig(build, existing=10)
 
-    # `Source` isn't a `Makeable` -- `update()` only cares that it's not None
-    # and not a dataclass, which `cast` proves to the checker without giving
-    # `Source` a real (unused) make/finalize/copy_tree/update implementation.
-    cfg.update(cast("Makeable[object]", Source()), skip_missing=True)
+    cfg.update(Source(), skip_missing=True)
 
     assert cfg._kwargs == {"existing": 40}
 
@@ -481,8 +483,8 @@ def test_inline_config_update_non_dataclass_with_property():
         def data(self) -> int:
             return 42
 
-    cfg = InlineConfig(lambda **kwargs: kwargs)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
-    cfg.update(TrickySource())  # pyright: ignore[reportArgumentType] -- The malformed test source exercises attribute filtering.  # ty: ignore[invalid-argument-type] -- The malformed test source exercises attribute filtering.
+    cfg = InlineConfig(_collect)
+    cfg.update(TrickySource())
     # Broken should be skipped (AttributeError), data should be skipped (callable check)
     # Actually properties return their values, not the property object itself.
     assert cfg.data == 42  # pyright: ignore[reportAny] -- Dynamic field read through PartialConfig/InlineConfig.__getattr__, which is Any by construction.
@@ -491,10 +493,10 @@ def test_inline_config_update_non_dataclass_with_property():
 
 def test_inline_config_recursive_repr():
     """Test InlineConfig.__repr__ with self-referencing kwargs."""
-    cfg = InlineConfig(lambda x: x)  # pyright: ignore[reportUnknownLambdaType, reportUnknownVariableType, reportUnknownArgumentType] -- The test intentionally exercises an untyped callback boundary.
+    cfg = InlineConfig(_identity)
     cfg.self_ref = cfg  # Create self-reference.
     # Should not infinitely recurse -- @reprlib.recursive_repr handles it.
-    repr_str = repr(cfg)  # pyright: ignore[reportUnknownArgumentType] -- Recursive dynamic config state erases the argument type.
+    repr_str = repr(cfg)
     assert "..." in repr_str or "InlineConfig" in repr_str
 
 
@@ -678,7 +680,7 @@ def test_inline_config_update_non_dataclass_skips_private_then_continues() -> No
         return kwargs
 
     config = InlineConfig(collect, existing=0)
-    config.update(cast("Makeable[object]", Source()))
+    config.update(Source())
     assert config._kwargs["existing"] == 2
     assert "_private" not in config._kwargs
 
@@ -698,7 +700,7 @@ def test_inline_config_update_non_dataclass_skips_unknown_then_continues() -> No
         return kwargs
 
     config = InlineConfig(collect, existing=0)
-    config.update(cast("Makeable[object]", Source()), skip_missing=True)
+    config.update(Source(), skip_missing=True)
     assert config._kwargs == {"existing": 2}
 
 
@@ -711,6 +713,26 @@ def test_inline_config_update_kwargs_skips_then_continues() -> None:
     config = InlineConfig(collect, existing=0)
     config.update(skip_missing=True, unknown=1, existing=2)
     assert config._kwargs == {"existing": 2}
+
+
+def _positional_pair(left: object, right: object) -> tuple[object, object]:
+    return left, right
+
+
+def _identity(value: object) -> object:
+    return value
+
+
+def _dash(a: object, b: object) -> str:
+    return f"{a}-{b}"
+
+
+def _add(a: int, b: int) -> int:
+    return a + b
+
+
+def _collect(**kwargs: object) -> dict[str, object]:
+    return kwargs
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # ty Missing Features / Limitations
 
-Type-checker limitations found while making configgle work under both `ty` and
-`basedpyright`, plus the upstream fixes that closed them.
+Type-checker limitations found while making configgle work under `ty`,
+`basedpyright`, and `pyrefly`, plus the upstream fixes that closed them.
 
 `Intersection`-based `make()` typing (see `MakerMeta.__get__` in `fig.py`)
 reaches corners of the type system most libraries never touch, so several
@@ -95,8 +95,11 @@ On 0.0.65: `warning[not-subscriptable]`.
 
 PEP 526 forbids type variables inside `ClassVar`, but a Protocol needs a
 class-level attribute whose type varies per parameterization -- something the
-type system cannot express. Both checkers reject it; both suppressions are
-intentional. See `HasConfig`, `RelaxedMakeable`, and `HasRelaxedConfig` in
+type system cannot express. `ty`, `basedpyright`, and `pyrefly` all reject it;
+all three suppressions are intentional. `pyrefly` additionally refuses to read
+`Config` off such a Protocol at all ("Generic attribute ... is not visible on
+the class"), so code that only needs the class's shape casts to a non-generic
+Protocol with `Config: ClassVar[type[RelaxedMakeable[object]]]` instead. See `HasConfig`, `RelaxedMakeable`, and `HasRelaxedConfig` in
 `custom_types.py`, where the alternatives (drop `ClassVar`, use `@property`)
 are documented inline.
 
@@ -108,6 +111,19 @@ are documented inline.
 
 A `T | None` return/default annotation leaks `None` into the solution for a
 `TypeVar` bound by a callable parameter.
+
+### 7. `pyrefly` ignores class decorator return types
+
+**Status:** Open --
+[pyrefly#1180](https://github.com/facebook/pyrefly/issues/1180), fix pending in
+[pyrefly#2294](https://github.com/facebook/pyrefly/pull/2294).
+
+The `pyrefly` counterpart of the closed `ty#143`: `@autofig class Foo` stays
+`type[Foo]`, so `Foo.Config` is unresolved. Calling `autofig(Foo)` as a function
+is typed correctly.
+
+**Workaround:** `# pyrefly: ignore[missing-attribute]` where `.Config` is read
+straight off a decorated class.
 
 ---
 
@@ -159,5 +175,6 @@ that dependency.
 | `hasattr` narrowing | Medium | `isinstance` + runtime_checkable Protocol |
 | Generic proxy subscript | Medium | Suppress `not-subscriptable` |
 | Protocol + `@dataclass` | Low | Declare `__dataclass_fields__` explicitly |
-| TypeVar in `ClassVar` | Low | Deliberate suppression, both checkers |
+| TypeVar in `ClassVar` | Low | Deliberate suppression, all three checkers |
 | TypeVar pollution (#4016) | Medium | None yet |
+| `pyrefly` class decorators (#1180) | Low | Suppress `missing-attribute` at direct `.Config` reads |

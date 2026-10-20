@@ -15,7 +15,8 @@ from collections import (
 from dataclasses import dataclass, field
 from pprint import PrettyPrinter
 from types import MappingProxyType, SimpleNamespace
-from typing import TypedDict
+from typing import Protocol, cast
+from typing_extensions import TypedDict
 
 import io
 
@@ -122,7 +123,7 @@ _VALUES: list[object] = [
 ]
 
 
-class _Options(TypedDict, total=False):
+class _Options(TypedDict, total=False, closed=True):
     width: int
     indent: int
     depth: int
@@ -156,6 +157,24 @@ def test_it_lays_out_what_pretty_printer_lays_out(
     expected = PrettyPrinter(**options).pformat(value)
 
     assert StackPrinter(**options).pformat(value) == expected
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{"indent": 2.0}, {"width": 40.0}, {"compact": 1}],
+    ids=repr,
+)
+def test_it_coerces_options_as_pretty_printer_does(
+    options: dict[str, object],
+) -> None:
+    value = {"alpha": list(range(30)), "beta": {"gamma": "x" * 50}}
+    expected = cast(_Printer, PrettyPrinter)(**options).pformat(value)
+
+    assert cast(_Printer, StackPrinter)(**options).pformat(value) == expected
+
+
+class _Printer(Protocol):
+    def __call__(self, **options: object) -> PrettyPrinter: ...
 
 
 @pytest.mark.parametrize("width", range(4, 24))
@@ -221,7 +240,8 @@ def test_pprint_writes_the_layout_and_a_newline_to_its_stream() -> None:
 def test_a_tree_deeper_than_the_headroom_lays_out() -> None:
     value: object = 0
     for _ in range(200):
-        value = [value, "x" * 30]
+        # A bare list literal here never converges in pyrefly's inference.
+        value = list[object]([value, "x" * 30])
 
     with recursion_headroom(100):
         text = StackPrinter(width=40).pformat(value)

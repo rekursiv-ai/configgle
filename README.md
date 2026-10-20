@@ -93,17 +93,17 @@ print(model.channels_in)  # 512
 
 ### Type-safe `make()`
 
-**tl;dr:** Both `ty` and `basedpyright` are first-class supported.
-Unfortunately neither is perfect:
+**tl;dr:** `ty`, `basedpyright`, and `pyrefly` are first-class supported.
+`ty` infers everything; the others need explicit annotations in places:
 
-| | `ty` | `basedpyright` |
-|---|:---:|:---:|
-| Bare `Fig` infers parent type | ✅ | ❌ (`Any` fallback) |
-| Explicit `Fig["Parent"]` specifies parent type | ✅ | ✅ |
-| Inheritance infers parent type | ✅ | ❌ |
-| Explicit `Makes["Child"]` narrows inferred inherited parent type | ✅ | ✅ |
-| Inherited Config child fields | ✅ (workaround for [#3282](https://github.com/astral-sh/ty/issues/3282)) | ✅ |
-| `@autofig` `.Config` access | ✅ (fixed [#143](https://github.com/astral-sh/ty/issues/143)) | ✅ |
+| | `ty` | `basedpyright` | `pyrefly` |
+|---|:---:|:---:|:---:|
+| Bare `Fig` infers parent type | ✅ | ❌ (`Any` fallback) | ❌ (`Any` fallback) |
+| Explicit `Fig["Parent"]` specifies parent type | ✅ | ✅ | ✅ |
+| Inheritance infers parent type | ✅ | ❌ | ❌ |
+| Explicit `Makes["Child"]` narrows inferred inherited parent type | ✅ | ✅ | ✅ |
+| Inherited Config child fields | ✅ (workaround for [#3282](https://github.com/astral-sh/ty/issues/3282)) | ✅ | ✅ |
+| `@autofig` `.Config` access | ✅ (fixed [#143](https://github.com/astral-sh/ty/issues/143)) | ✅ | ❌ (pending [#2294](https://github.com/facebook/pyrefly/pull/2294)) |
 
 **Details:**
 
@@ -149,9 +149,15 @@ configs just work. `basedpyright` doesn't support `Intersection` yet, so it
 needs explicit `Fig["Parent"]` and `Makes["Child"]` annotations. `ty`
 honors class decorator return types ([#143](https://github.com/astral-sh/ty/issues/143),
 fixed in 0.0.49), so `@autofig`-decorated classes resolve `.Config` with no
-suppression on both checkers. When `Intersection` lands in the
+suppression on both checkers. `pyrefly` behaves like `basedpyright`, except it
+ignores class decorator return types
+([#1180](https://github.com/facebook/pyrefly/issues/1180), fix pending in
+[#2294](https://github.com/facebook/pyrefly/pull/2294)), so reading `.Config`
+straight off an `@autofig` class needs a
+`# pyrefly: ignore[missing-attribute]` until then; `autofig(cls)` called as a
+function needs none. When `Intersection` lands in the
 [type spec](https://github.com/python/typing/issues/213), `Makes` becomes
-unnecessary and both checkers will infer everything from bare `Fig`.
+unnecessary and every checker will infer everything from bare `Fig`.
 
 Requires `ty>=0.0.60`. Several behaviors configgle relies on
 were fixed upstream rather than worked around here -- see

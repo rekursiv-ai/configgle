@@ -240,7 +240,8 @@ def _nested(leaf: object) -> tuple[object, int]:
     depth = 200
     value = leaf
     for _ in range(depth):
-        value = [value]
+        # A bare list literal here never converges in pyrefly's inference.
+        value = list[object]([value])
     return value, depth
 
 

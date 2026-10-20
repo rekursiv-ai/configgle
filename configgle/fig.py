@@ -59,7 +59,7 @@ from a child AFTER it (read its finalized value). Pushdown dominates, so
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextvars import ContextVar
 from types import CellType, MethodType
 from typing import (
@@ -77,7 +77,7 @@ from typing import (
     overload,
     override,
 )
-from typing_extensions import TypeVar
+from typing_extensions import TypedDict, TypeVar
 
 import dataclasses
 
@@ -147,9 +147,9 @@ class _MakerParentClassDescriptor:
     def __get__(
         self,
         obj: Makeable[_ParentT_co] | None,
-        owner: type[Makeable[_ParentT_co]],
+        owner: MakerMeta,
     ) -> type[_ParentT_co]:
-        return cast(type[_ParentT_co], owner._parent_class())  # noqa: SLF001 -- The descriptor must call the metaclass's private binding created by __set_name__.  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType] -- The metaclass installs this bound method dynamically, beyond the checker-visible class declaration.  # ty: ignore[unresolved-attribute] -- The metaclass installs this bound method dynamically, beyond the checker-visible class declaration.
+        return cast(type[_ParentT_co], owner._parent_class())  # noqa: SLF001 -- The descriptor must call the metaclass's private binding created by __set_name__.
 
 
 # `parent_class` is typed `type[ParentT]`, and the typing spec only guarantees a
@@ -167,6 +167,11 @@ class _MakesFromKwargs(Protocol[_ParentT_co]):
     """Parent class whose ``__init__`` takes its Config's fields as kwargs."""
 
     def __call__(self, **kwargs: object) -> _ParentT_co: ...
+
+
+def _no_parent_class(_: MakerMeta) -> type | None:
+    """Report no parent for a Maker never nested in a class."""
+    return None
 
 
 class MakerMeta(type):
@@ -187,7 +192,23 @@ class MakerMeta(type):
 
     """
 
-    def _parent_class(cls) -> type | None: ...
+    # An attribute, not a ``def``: ``__set_name__`` rebinds it, and every checker
+    # rejects assigning over a method. The None default is bound once, on the
+    # first class in a hierarchy, so a Config subclassed outside any class body
+    # inherits its base's owner instead of shadowing it with None.
+    _parent_class: Callable[[], type | None]
+
+    def __init__(
+        cls,
+        name: str,
+        bases: tuple[type, ...],
+        attrs: dict[str, object],
+        **kwargs: object,
+    ) -> None:
+        """Bind the None default unless a base already carries a binding."""
+        super().__init__(name, bases, attrs, **kwargs)
+        if not any("_parent_class" in vars(base) for base in cls.__mro__):
+            cls._parent_class = MethodType(_no_parent_class, cls)
 
     def __set_name__(cls, owner: type[_ParentT_co], name: str) -> None:
         """Bind the parent class reference when Config is defined as a nested class.
@@ -206,7 +227,7 @@ class MakerMeta(type):
         def _returns_owner(_: MakerMeta) -> type[_ParentT_co]:
             return owner
 
-        cls._parent_class = MethodType(_returns_owner, cls)  # ty: ignore[invalid-assignment] -- assigning a bound MethodType over the declared classmethod stub; intentional dynamic binding.
+        cls._parent_class = MethodType(_returns_owner, cls)
         # __set_name__ is only called when nested inside a class, so owner
         # is always a real class with __name__.
         cls.__name__ = f"{owner.__name__}.{name}"
@@ -397,7 +418,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
 
     def update(
         self,
-        source: DataclassLike | Makeable[object] | None = None,
+        source: object = None,
         /,
         *,
         skip_missing: bool = False,
@@ -702,6 +723,21 @@ class _Default:
         return f"{self.value!r}"
 
 
+class _DataclassKwargs(TypedDict, closed=True):
+    """The keywords ``dataclasses.dataclass`` takes, exactly and no others."""
+
+    init: bool
+    repr: bool
+    eq: bool
+    order: bool
+    unsafe_hash: bool
+    frozen: bool
+    match_args: bool
+    kw_only: bool
+    slots: bool
+    weakref_slot: bool
+
+
 class _DataclassParams:
     __mro__: ClassVar[list[type]]
     __name__: ClassVar[str]
@@ -777,6 +813,26 @@ class _DataclassParams:
 
     keys = __iter__
 
+    def as_kwargs(self) -> _DataclassKwargs:
+        """Return the declared parameters as ``dataclasses.dataclass`` keywords.
+
+        Returns:
+          kwargs: Every parameter, typed so it unpacks into ``dataclass``.
+
+        """
+        return _DataclassKwargs(
+            init=self["init"],
+            repr=self["repr"],
+            eq=self["eq"],
+            order=self["order"],
+            unsafe_hash=self["unsafe_hash"],
+            frozen=self["frozen"],
+            match_args=self["match_args"],
+            kw_only=self["kw_only"],
+            slots=self["slots"],
+            weakref_slot=self["weakref_slot"],
+        )
+
     @classmethod
     def create(
         cls,
@@ -819,7 +875,7 @@ class _DataclassMeta(type):
 
     __classcell__: CellType | None = None
     __dataclass_params__: _DataclassParams = _DataclassParams()
-    make_with_kwargs: ClassVar[bool] = False
+    make_with_kwargs: bool = False
 
     def __new__(
         mcls: type[_DataclassMeta],
@@ -861,7 +917,10 @@ class _DataclassMeta(type):
             weakref_slot=slots if weakref_slot is None else weakref_slot,
         )
         inherited = _inherited_state_methods(cls)
-        cls = dataclasses.dataclass(cls, **kwargs)
+        # ``type[object]``: a metaclass instance does not solve ``type[_T]`` for
+        # pyrefly, and ``dataclass`` returns the same class it was given.
+        cls = dataclasses.dataclass(cast(type[object], cls), **kwargs.as_kwargs())
+        assert isinstance(cls, _DataclassMeta)
         # A frozen slotted dataclass gets a generated state pair that carries
         # declared fields only; restoring an inherited pair keeps base state such
         # as ``Maker._finalized`` through ``copy`` and pickle.
@@ -873,7 +932,8 @@ class _DataclassMeta(type):
                 dict[str, object],
                 attrs.get("__annotations__", {}),
             )
-            for field in dataclasses.fields(cls):  # pyright: ignore[reportArgumentType] -- cls is a dataclass at this point (just decorated above), but the checker sees the pre-decoration type.
+            assert isinstance(cls, DataclassLike)
+            for field in dataclasses.fields(cls):
                 if field.name not in current_annotations:
                     continue
                 if (
@@ -889,7 +949,7 @@ class _DataclassMeta(type):
             cls.make_with_kwargs = make_with_kwargs
 
         cls.__dataclass_params__ = kwargs
-        return cast(_DataclassMeta, cls)
+        return cls
 
 
 def _inherited_state_methods(cls: type) -> dict[str, object]:
@@ -1068,7 +1128,7 @@ _building = ContextVar[bool]("configgle_building", default=False)
 
 def update[MakerT: Maker[Any]](
     config: MakerT,
-    source: DataclassLike | Makeable[object] | None = None,
+    source: object = None,
     /,
     *,
     skip_missing: bool = False,

@@ -308,7 +308,9 @@ class FigPrinter(StackPrinter):
         if self._finalized_copies is not None:
             yield
             return
-        self._finalized_copies, self._formats, self._layouts = {}, {}, {}
+        self._finalized_copies = {}
+        self._formats = {}
+        self._layouts = {}
         try:
             yield
         finally:

@@ -511,7 +511,9 @@ class _TupleSlot:
         rebuilt = list(items)
         rebuilt[index] = new
         as_tuple = (
-            tuple(rebuilt) if type(items) is tuple else type(items)(*rebuilt)  # ty: ignore[invalid-argument-type] -- Namedtuple field types are erased at runtime.  # pyright: ignore[reportArgumentType] -- Namedtuple field types are erased at runtime.
+            tuple(rebuilt)
+            if type(items) is tuple
+            else cast(Callable[..., tuple[object, ...]], type(items))(*rebuilt)
         )
         _replace_at(self.tuple_parent, self.tuple_attr, as_tuple)
 

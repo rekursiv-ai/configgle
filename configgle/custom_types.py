@@ -10,11 +10,10 @@ from typing import (
     ClassVar,
     Protocol,
     Self,
-    TypedDict,
     override,
     runtime_checkable,
 )
-from typing_extensions import TypeVar
+from typing_extensions import TypedDict, TypeVar
 
 
 if TYPE_CHECKING:
@@ -37,7 +36,7 @@ __all__ = [
 ]
 
 
-class PformatOptions(TypedDict, total=False):
+class PformatOptions(TypedDict, total=False, closed=True):
     """Optional keyword arguments accepted by config pretty formatting."""
 
     indent: int
@@ -206,6 +205,9 @@ class Makeable(Protocol[_T_co]):
         """Copy tree."""
         ...
 
+    # Narrower than the implementations, which accept any object: widening the
+    # parameter here makes ty stop treating `InlineConfig[T]` as a subtype of
+    # `Makeable[T]`, while implementations may always accept more than this.
     def update(
         self,
         source: DataclassLike | Makeable[object] | None = None,
@@ -214,7 +216,7 @@ class Makeable(Protocol[_T_co]):
         skip_missing: bool = False,
         **kwargs: object,
     ) -> Self:
-        """Accumulate one batch."""
+        """Overlay another config's or dataclass's attributes and keywords."""
         ...
 
 
@@ -226,7 +228,7 @@ class HasConfig(Protocol[_T]):
     """Protocol for classes with a typed Config nested class."""
 
     # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.
-    Config: ClassVar[type[Makeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each Configurable subtype.  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each Configurable subtype.
+    Config: ClassVar[type[Makeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each Configurable subtype.  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each Configurable subtype.  # pyrefly: ignore[invalid-annotation] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each Configurable subtype.
 
 
 @runtime_checkable
@@ -254,4 +256,4 @@ class HasRelaxedConfig(Protocol[_T]):
     """Protocol for classes decorated with @autofig."""
 
     # Spec-illegal (PEP 526: no TypeVars in ClassVar) but semantically correct.
-    Config: ClassVar[type[RelaxedMakeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each relaxed Configurable subtype.  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each relaxed Configurable subtype.
+    Config: ClassVar[type[RelaxedMakeable[_T]]]  # pyright: ignore[reportGeneralTypeIssues] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each relaxed Configurable subtype.  # ty: ignore[invalid-type-form] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each relaxed Configurable subtype.  # pyrefly: ignore[invalid-annotation] -- PEP 526 forbids TypeVars inside ClassVar, but this class-level type is required to model each relaxed Configurable subtype.
