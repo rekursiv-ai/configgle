@@ -122,6 +122,7 @@ __all__ = [
     "Fig",
     "Maker",
     "Makes",
+    "Makes2",
     "make",
     "update",
 ]
@@ -1024,7 +1025,24 @@ class Fig(Maker[_ParentT_co], metaclass=FigMeta):
     __slots__: ClassVar[tuple[str, ...]] = ()
 
 
-class Makes(Generic[_ParentT_co]):
+class _NoMroMarker:
+    """Runtime half of ``Makes``/``Makes2``: a subscript that leaves no MRO entry."""
+
+    def __class_getitem__(cls, params: object) -> object:
+        """Support subscript notation for parametrized generic types."""
+
+        class _NoMroAlias:
+            __origin__ = cls
+            __args__ = (params,)
+
+            @classmethod
+            def __mro_entries__(cls, bases: object) -> tuple[()]:
+                return ()
+
+        return _NoMroAlias()
+
+
+class Makes(_NoMroMarker, Generic[_ParentT_co]):
     """Type-only base for inherited Configs that fixes the make() return type.
 
     When a Config inherits from a parent Config, the make() return type is
@@ -1044,7 +1062,8 @@ class Makes(Generic[_ParentT_co]):
         dog: Dog = Dog.Config(breed="mutt").make()  # returns Dog, not Animal
 
     At runtime, Makes["X"] contributes nothing to the MRO -- it exists
-    purely for static type checking.
+    purely for static type checking. A Config inheriting one that already
+    uses ``Makes`` re-narrows with :class:`Makes2`.
 
     Workaround for Python's lack of Intersection types. If Intersection
     types are adopted, MakerMeta.__get__ could potentially narrow the
@@ -1063,18 +1082,30 @@ class Makes(Generic[_ParentT_co]):
             """Make."""
             ...
 
-    def __class_getitem__(cls, params: object) -> object:
-        """Support subscript notation for parametrized generic types."""
 
-        class _NoMroAlias:
-            __origin__ = cls
-            __args__ = (params,)
+# A separate class, not a subclass of ``Makes``: checkers reject one generic base
+# reached twice with two type arguments, so a grandchild needs its own marker.
+class Makes2(_NoMroMarker, Generic[_ParentT_co]):
+    """:class:`Makes` for a Config whose parent Config already uses ``Makes``.
 
-            @classmethod
-            def __mro_entries__(cls, bases: object) -> tuple[()]:
-                return ()
+    class Puppy(Dog):
+        class Config(Makes2["Puppy"], Dog.Config):
+            age: int = 0
 
-        return _NoMroAlias()
+    puppy: Puppy = Puppy.Config().make()  # returns Puppy, not Dog
+
+    """
+
+    if TYPE_CHECKING:
+
+        @property
+        def parent_class(self) -> type[_ParentT_co]:
+            """Parent class."""
+            ...
+
+        def make(self) -> _ParentT_co:
+            """Make."""
+            ...
 
 
 def make[ParentT](config: Maker[ParentT]) -> ParentT:
