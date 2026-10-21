@@ -1154,7 +1154,7 @@ wheels = [
 [[package]]
 name = "rekursiv-ai-typings"
 version = "0.1.7"
-source = { git = "https://github.com/rekursiv-ai/typings?branch=main#3e4c18b6bfef29962136221a579c4ad3ef319658" }
+source = { git = "https://github.com/rekursiv-ai/typings?branch=main#cdd34b9e6cbae993fd237abd1ae843afdab82b24" }
 
 [[package]]
 name = "requests"
@@ -1284,7 +1284,7 @@ wheels = [
 [[package]]
 name = "treekle"
 version = "0.3.1"
-source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#20a03c1a5c099c214d0a694b9ccbab21ffa541e2" }
+source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#561506e76fe7ca15390dc2b16af559f3334f2c43" }
 
 [[package]]
 name = "twine"
