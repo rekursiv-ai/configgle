@@ -57,8 +57,8 @@ typecheck = [
     "ty>=0.0.84",
     # Extra.
     "basedtyping>=0.1.10",
-    "rekursiv-ai-typeshed",
-    "rekursiv-ai-typings",
+    "rekursiv-ai-typeshed>=0.1.6",
+    "rekursiv-ai-typings>=0.1.6",
     "typing_extensions",
 ]
 "pre-commit" = [
