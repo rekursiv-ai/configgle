@@ -252,7 +252,8 @@ slot -- see house rule 9.
 Rules:
 - Use `Fig["ClassName"]` for the standard case; `Makes["ClassName"]`
   when a sub-class inherits a parent's Config but should still build
-  itself (see `help(...)` for the mixin example).
+  itself (see `help(...)` for the mixin example); `Makes2["ClassName"]`
+  when that parent Config already uses `Makes`.
 - All Configs must be default-constructable. **Every field needs a
   default and a one-line docstring** -- no exceptions. The docstring
   goes on the line directly below the field. A missing default raises

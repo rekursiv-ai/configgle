@@ -46,8 +46,8 @@ At runtime ``Fig["Dog"]`` and bare ``Fig`` behave identically --
 ``Config`` is nested. The type parameter is only needed for static type
 narrowing.
 
-Makes["X"] -- Inherited Configs
--------------------------------
+Makes["X"] / Makes2["X"] -- Inherited Configs
+---------------------------------------------
 
 When a child's ``Config`` inherits from a parent's ``Config``, ``.make()``
 would return the parent type. ``Makes["X"]`` re-narrows it. Put it first
@@ -66,10 +66,19 @@ in the bases::
 
     dog: Dog = Dog.Config().make()  # Dog, not Animal
 
-At runtime ``Makes["X"]`` contributes nothing to the MRO -- it exists
-purely for static type checking (needed for all type checkers except
-``ty``, which infers the correct return type without it). Workaround
-for Python's lack of Intersection types.
+A grandchild whose parent ``Config`` already uses ``Makes`` re-narrows
+with ``Makes2`` (checkers reject one generic base reached twice)::
+
+    class Puppy(Dog):
+        class Config(Makes2["Puppy"], Dog.Config):
+            age: int = 0
+
+    puppy: Puppy = Puppy.Config().make()  # Puppy, not Dog
+
+At runtime ``Makes["X"]`` and ``Makes2["X"]`` contribute nothing to the
+MRO -- they exist purely for static type checking (needed for all type
+checkers except ``ty``, which infers the correct return type without
+them). Workaround for Python's lack of Intersection types.
 
 Maker -- Core Methods
 ---------------------

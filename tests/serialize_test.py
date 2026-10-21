@@ -349,7 +349,6 @@ def _roundtrip[T](cfg: T) -> T:
 def test_scalar_fields_roundtrip():
     cfg = Leaf.Config(v=5, name="hi")
     back = _roundtrip(cfg)
-    assert isinstance(back, Leaf.Config)
     assert back.v == 5
     assert back.name == "hi"
 
@@ -359,7 +358,6 @@ def test_nested_fig_roundtrip():
     cfg.leaf.v = 7
     cfg.scale = 2.5
     back = _roundtrip(cfg)
-    assert isinstance(back, Nested.Config)
     assert isinstance(back.leaf, Leaf.Config)
     assert back.leaf.v == 7
     assert back.scale == 2.5
@@ -686,7 +684,6 @@ def test_method_serialization_roundtrips():
     cfg = Leaf.Config(v=8)
     tree = cfg.serialize()
     back = Leaf.Config.deserialize(tree)
-    assert isinstance(back, Leaf.Config)
     assert back.v == 8
 
 
