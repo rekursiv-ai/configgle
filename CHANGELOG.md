@@ -6,6 +6,13 @@ All notable configgle changes are documented here. This project follows
 Releases up to and including 1.4.0 are described in the
 [GitHub release notes](https://github.com/rekursiv-ai/configgle/releases).
 
+## 1.4.4 - 2026-10-21
+
+### Changed
+
+- The `typecheck` group requires `rekursiv-ai-typeshed` and `rekursiv-ai-typings`
+  0.1.6 or later.
+
 ## 1.4.3 - 2026-10-20
 
 ### Added
