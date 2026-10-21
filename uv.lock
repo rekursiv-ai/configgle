@@ -248,7 +248,7 @@ wheels = [
 
 [[package]]
 name = "configgle"
-version = "1.4.2"
+version = "1.4.3"
 source = { editable = "." }
 dependencies = [
     { name = "treekle" },
@@ -1298,8 +1298,8 @@ wheels = [
 
 [[package]]
 name = "treekle"
-version = "0.2.0"
-source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#906a0c66e1e0a502dd8b9ceb14118ce0c0d40681" }
+version = "0.3.0"
+source = { git = "https://github.com/rekursiv-ai/treekle?branch=main#deaaf918896939b3586727a9b8797bf3fc6e130e" }
 
 [[package]]
 name = "twine"

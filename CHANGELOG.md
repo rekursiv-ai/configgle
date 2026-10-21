@@ -6,7 +6,7 @@ All notable configgle changes are documented here. This project follows
 Releases up to and including 1.4.0 are described in the
 [GitHub release notes](https://github.com/rekursiv-ai/configgle/releases).
 
-## Unreleased
+## 1.4.3 - 2026-10-20
 
 ### Added
 

@@ -3,7 +3,7 @@
 
 [project]
 name = "configgle"
-version = "1.4.2"
+version = "1.4.3"
 description = "Type-safe hierarchical experiment configuration using pure Python dataclass factories and dependency injection."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -23,7 +23,7 @@ classifiers = [
 ]
 dependencies = [
     # Prefer https://awesome-python.com deps over alternatives.
-    "treekle>=0.2.0",
+    "treekle>=0.3.0",
     # 4.10 adds PEP 728 `TypedDict(closed=True)`; `PformatOptions` needs it.
     "typing_extensions>=4.10",
 ]
