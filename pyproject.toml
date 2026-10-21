@@ -53,10 +53,12 @@ test = [
 ]
 typecheck = [
     "basedpyright>=1.40.1",
+    "pyrefly>=1.4.0",
     "ty>=0.0.84",
+    # Extra.
+    "basedtyping>=0.1.10",
     "rekursiv-ai-typeshed",
     "rekursiv-ai-typings",
-    "basedtyping>=0.1.10",
     "typing_extensions",
 ]
 "pre-commit" = [
@@ -617,6 +619,11 @@ exclude = [
 
 [tool.ty.rules]
 all = "warn"
+# ty 0.0.86+ rejects nested-class overrides like `class Config(Parent.Config)`:
+# https://github.com/astral-sh/ty/issues/4711 (fix: astral-sh/ruff#29346).
+# Re-enable once a ty release includes the fix; pyrefly's bad-override still
+# checks overrides meanwhile.
+invalid-attribute-override = "ignore"
 
 [[tool.ty.overrides]]
 include = ["*_test.py"]
