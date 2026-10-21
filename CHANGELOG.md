@@ -6,6 +6,14 @@ All notable configgle changes are documented here. This project follows
 Releases up to and including 1.4.0 are described in the
 [GitHub release notes](https://github.com/rekursiv-ai/configgle/releases).
 
+## Unreleased
+
+### Removed
+
+- `configgle.lib.worker_count` is no longer part of the package. It moved, with
+  the pre-commit gates that use it, to `tools/precommit/` at the repository
+  root, which the wheel does not ship.
+
 ## 1.4.4 - 2026-10-21
 
 ### Changed
