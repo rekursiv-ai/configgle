@@ -44,7 +44,7 @@ class Model:
         self.config = config
 
 
-# Create and modify config
+# Create and modify the config
 cfg = Model.Config()
 cfg.channels_in = 512
 
