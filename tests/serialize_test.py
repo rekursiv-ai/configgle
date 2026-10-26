@@ -76,6 +76,7 @@ class Containers:
         pair: tuple[int, str] = (1, "a")
         tags: frozenset[str] = frozenset()
         nums: list[int] = field(default_factory=lambda: [1, 2, 3])
+        more: list[int] = field(default_factory=list[int])
 
     def __init__(self, config: Config) -> None:
         del config
@@ -1046,10 +1047,9 @@ def test_shared_list_keeps_wrapper_for_identity():
     shared: list[int] = [1, 2]
     cfg = Containers.Config()
     cfg.nums = shared
-    # Same list object in a second field (typed loosely; runtime shares identity).
-    object.__setattr__(cfg, "items", shared)
+    cfg.more = shared
     back = _roundtrip(cfg)
-    assert back.nums is back.items
+    assert back.nums is back.more
     assert back.nums == [1, 2]
 
 

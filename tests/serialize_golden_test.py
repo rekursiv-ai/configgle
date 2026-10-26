@@ -32,7 +32,7 @@ import enum
 import json
 import os
 
-from treekle import Hooks, PlainTree, from_plain, to_plain
+from treekle import Hooks, PlainTree, from_plain, json_dumps
 
 import pytest
 
@@ -233,12 +233,12 @@ GOLDEN: Final[Mapping[str, str]] = {
     "fig_leaf": '{"py/object":"{module}.Leaf.Config","_finalized":false,"k":7}',
     "fig_nested": (
         '{"py/object":"{module}.Branch.Config","_finalized":false,'
-        '"leaf":{"py/object":"{module}.Leaf.Config","_finalized":false,"k":3},'
+        '"leaf":{"_finalized":false,"k":3},'
         '"tag":"t"}'
     ),
     "fig_shared_child": (
         '{"py/object":"{module}.Pair.Config","_finalized":false,'
-        '"a":{"py/object":"{module}.Leaf.Config","_finalized":false,"k":1},'
+        '"a":{"_finalized":false,"k":1},'
         '"b":{"py/ref":["a"]}}'
     ),
     "fig_self_cycle": (
@@ -262,8 +262,9 @@ payload written by an older configgle no longer reads back the same way.
 
 @pytest.mark.parametrize("name", sorted(CASES), ids=sorted(CASES))
 def test_a_case_serializes_to_its_frozen_bytes(name: str) -> None:
-    wire = json.dumps(
-        to_plain(CASES[name](), hooks=_hooks()),
+    wire = json_dumps(
+        CASES[name](),
+        hooks=_hooks(),
         separators=(",", ":"),
         sort_keys=False,
     )
@@ -289,7 +290,7 @@ def test_the_frozen_bytes_still_decode_to_the_value(name: str) -> None:
         allow_imports=True,
     )
 
-    assert json.dumps(to_plain(restored, hooks=_hooks()), separators=(",", ":")) == wire
+    assert json_dumps(restored, hooks=_hooks(), separators=(",", ":")) == wire
 
 
 def test_every_case_has_a_golden() -> None:
@@ -354,7 +355,7 @@ def test_a_legacy_index_reference_still_decodes(name: str) -> None:
         allow_imports=True,
     )
 
-    wire = json.dumps(to_plain(restored), separators=(",", ":"))
+    wire = json_dumps(restored, separators=(",", ":"))
     assert wire == GOLDEN[name].replace("{module}", MODULE)
 
 
