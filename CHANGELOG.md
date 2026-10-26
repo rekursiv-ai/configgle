@@ -6,7 +6,12 @@ All notable configgle changes are documented here. This project follows
 Releases up to and including 1.4.0 are described in the
 [GitHub release notes](https://github.com/rekursiv-ai/configgle/releases).
 
-## Unreleased
+## 1.4.5 - 2026-10-26
+
+### Changed
+
+- Requires treekle 0.3.3. A serialized config writes a nested config without the
+  `py/object` tag its field's type implies; configs written by 1.4.4 still load.
 
 ### Removed
 
