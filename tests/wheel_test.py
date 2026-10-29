@@ -67,7 +67,6 @@ packages = ["demo"]
 """
 
 
-@pytest.mark.ci_smoke
 @pytest.mark.cli_uv
 def test_the_package_wheel_imports_and_serves_its_scripts_alone() -> None:
     """Every module the wheel ships imports, and every script's target resolves.
@@ -82,7 +81,6 @@ def test_the_package_wheel_imports_and_serves_its_scripts_alone() -> None:
     wheel.run(_import_everything(wheel))
 
 
-@pytest.mark.ci_smoke
 @pytest.mark.cli_uv
 def test_the_package_wheel_ships_every_artifact_it_declares() -> None:
     """An ``artifacts`` entry ships a file the build makes; missing, it ships nothing.
@@ -279,7 +277,8 @@ def test_built_wheel_builds_once_and_runs_outside_the_checkout(
     assert built_wheel(root) is wheel
     assert wheel.read("demo/__init__.py") == "VALUE = 7\n"
     cwd, *argv = wheel.run("import demo").splitlines()
-    assert cwd == tempfile.gettempdir()
+    # ``pwd`` prints the physical path; macOS's temp dir is under ``/var``, a symlink.
+    assert Path(cwd) == Path(tempfile.gettempdir()).resolve()
     assert argv == wheel.argv("import demo")[1:]
 
 
@@ -318,7 +317,8 @@ def _wheel_with_script(tmp_path: Path, cli: str, *, extras: tuple[str, ...]) -> 
 
 def _exec(tmp_path: Path, code: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Run ``code`` with ``tmp_path``'s ``demo`` package, as the installed wheel's."""
-    monkeypatch.syspath_prepend(str(tmp_path))
+    # Not ``syspath_prepend``: pytest leaves its parameter untyped.
+    monkeypatch.setattr(sys, "path", [str(tmp_path), *sys.path])
     # Another test's ``demo`` must not answer for this one's.
     for name in [name for name in sys.modules if name.split(".")[0] == "demo"]:
         monkeypatch.delitem(sys.modules, name)
