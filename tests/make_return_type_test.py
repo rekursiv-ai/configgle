@@ -110,7 +110,7 @@ def test_intersection_polyfill_preserves_the_first_type() -> None:
     spec.loader.exec_module(module)
     polyfill = cast(TypeAliasType, vars(module)["Intersection"])
     assert len(polyfill.__type_params__) == 2
-    assert polyfill.__value__ is polyfill.__type_params__[0]
+    assert cast(object, polyfill.__value__) is polyfill.__type_params__[0]
 
 
 def test_bare_fig_make_returns_parent() -> None:

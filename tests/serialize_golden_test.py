@@ -233,12 +233,11 @@ GOLDEN: Final[Mapping[str, str]] = {
     "fig_leaf": '{"py/object":"{module}.Leaf.Config","_finalized":false,"k":7}',
     "fig_nested": (
         '{"py/object":"{module}.Branch.Config","_finalized":false,'
-        '"leaf":{"_finalized":false,"k":3},'
-        '"tag":"t"}'
+        '"leaf":{"_finalized":false,"k":3}}'
     ),
     "fig_shared_child": (
         '{"py/object":"{module}.Pair.Config","_finalized":false,'
-        '"a":{"_finalized":false,"k":1},'
+        '"a":{"_finalized":false},'
         '"b":{"py/ref":["a"]}}'
     ),
     "fig_self_cycle": (
@@ -249,7 +248,7 @@ GOLDEN: Final[Mapping[str, str]] = {
     "hooked_leaf": '{"py/hook":["{module}.Weight",[1.5]]}',
     "inline_config": (
         '{"py/object":"configgle.inline.InlineConfig",'
-        '"_args":["/opt/scratch/x"],"_finalized":false,"_kwargs":{},'
+        '"_args":["/opt/scratch/x"],"_finalized":false,'
         '"func":{"py/type":"pathlib.PurePosixPath"}}'
     ),
 }
@@ -356,6 +355,46 @@ def test_a_legacy_index_reference_still_decodes(name: str) -> None:
     )
 
     wire = json_dumps(restored, separators=(",", ":"))
+    assert wire == GOLDEN[name].replace("{module}", MODULE)
+
+
+LEGACY_DEFAULTS_WRITTEN: Final[Mapping[str, str]] = {
+    "fig_nested": (
+        '{"py/object":"{module}.Branch.Config","_finalized":false,'
+        '"leaf":{"_finalized":false,"k":3},'
+        '"tag":"t"}'
+    ),
+    "fig_shared_child": (
+        '{"py/object":"{module}.Pair.Config","_finalized":false,'
+        '"a":{"_finalized":false,"k":1},'
+        '"b":{"py/ref":["a"]}}'
+    ),
+    "inline_config": (
+        '{"py/object":"configgle.inline.InlineConfig",'
+        '"_args":["/opt/scratch/x"],"_finalized":false,"_kwargs":{},'
+        '"func":{"py/type":"pathlib.PurePosixPath"}}'
+    ),
+}
+"""Payloads written before a field at its default was left out, which wrote it."""
+
+
+@pytest.mark.parametrize(
+    "name",
+    sorted(LEGACY_DEFAULTS_WRITTEN),
+    ids=sorted(LEGACY_DEFAULTS_WRITTEN),
+)
+def test_a_payload_that_writes_its_defaults_still_decodes(name: str) -> None:
+    # Such payloads persist, so they must read back to the value today's
+    # writer encodes, each default left out.
+    legacy = LEGACY_DEFAULTS_WRITTEN[name].replace("{module}", MODULE)
+
+    restored = from_plain(
+        cast(PlainTree, json.loads(legacy)),
+        object,
+        allow_imports=True,
+    )
+
+    wire = json_dumps(restored, separators=(",", ":"), sort_keys=False)
     assert wire == GOLDEN[name].replace("{module}", MODULE)
 
 
