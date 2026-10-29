@@ -1,1 +1,0 @@
-"""Configgle package validation scripts."""

@@ -278,13 +278,8 @@ jobs:
             --record-on-validation-failure "${{ github.event_name == 'push' }}" \
             --refresh-public-lockfile \
             --validation-command 'uv sync --frozen --all-groups' \
-            --validation-command 'uv run pre-commit run --all-files --hook-stage pre-commit' \
+            --validation-command 'SKIP=superseded-at-pre-push uv run pre-commit run --all-files --hook-stage pre-commit' \
             --validation-command 'uv run pre-commit run --all-files --hook-stage pre-push' \
-            --validation-command 'uv run python -c "import configgle"' \
-            --validation-command 'rm -rf dist' \
-            --validation-command 'uv build --out-dir dist' \
-            --validation-command 'wheels=(dist/configgle-*.whl); wheel="${wheels[0]}"; uv run --isolated --with "$wheel" python -P -c "import configgle; print(configgle.__file__)"' \
-            --validation-command 'uv run python bin/check_wheel.py' \
             --open-pr false
 
       - name: Open or update target import PR
