@@ -6,6 +6,14 @@ All notable configgle changes are documented here. This project follows
 Releases up to and including 1.4.0 are described in the
 [GitHub release notes](https://github.com/rekursiv-ai/configgle/releases).
 
+## 1.4.6 - 2026-10-28
+
+### Changed
+
+- Requires treekle 0.4.1. A serialized config leaves out dataclass fields still
+  at their defaults.
+- The development dependency floor on `rekursiv-ai-typings` is 0.1.11.
+
 ## 1.4.5 - 2026-10-26
 
 ### Changed

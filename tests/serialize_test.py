@@ -377,12 +377,14 @@ def test_no_finalize_on_encode_graph():
     tree = encode_graph(cfg)
     assert isinstance(tree, dict)
     source = cast(dict[str, object], tree)
-    # Doubled stays at its sentinel -- finalize did not run. jsonpickle py/object
-    # inlines fields flat alongside the py/object type key.
-    assert source["doubled"] == -1
+    # Doubled stays at its sentinel -- finalize did not run -- so, being at its
+    # default, it is left out, and reads back as the sentinel.
+    assert source["base"] == 5
+    assert "doubled" not in source
     path = source["py/object"]
     assert isinstance(path, str)
     assert path.endswith("Derived.Config")
+    assert _roundtrip(cfg).doubled == -1
 
 
 def test_list_and_dict_of_figs_roundtrip():

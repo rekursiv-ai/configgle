@@ -232,7 +232,7 @@ def _resolve_annotation(
             ),
             localns=localns,
         )
-        return hints.get(name, object)
+        return cast(object, hints.get(name, object))
     except NameError:
         raise
     except Exception:  # noqa: BLE001 -- User annotation expressions must fail independently; missing names remain deferred.
