@@ -11,19 +11,10 @@ Type-safe hierarchical experiment configuration using pure Python dataclass fact
 ## Quick Start
 
 ```bash
-# Mac:
-#   # Required for quick install.
-#   brew install uv
-
-# Ubuntu/Debian:
-#   # Required for quick install.
-#   sudo apt-get install -y curl
-#   curl -LsSf https://astral.sh/uv/install.sh | sh
-
 uv add configgle
-
-# Alternatively: python -m pip install configgle
 ```
+
+See [Install](#install) for additional details.
 
 Hierarchical experiment configuration using pure Python dataclasses with typed
 factory methods, covariant protocols, inheritance support, and tooling for
@@ -544,6 +535,28 @@ import cloudpickle, pickle
 cfg = Model.Config(channels_in=512)
 cfg_ = pickle.loads(cloudpickle.dumps(cfg))
 model = cfg_.make()  # parent_class is preserved
+```
+
+## Install
+
+```bash
+uv add configgle
+```
+
+If you're missing `uv`,
+- Mac
+  ```bash
+  brew install uv
+  ```
+- Linux
+  ```bash
+  sudo apt install -y curl
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+
+Or with pip,
+```bash
+python -m pip install configgle
 ```
 
 ## Comparison
