@@ -280,7 +280,7 @@ class StackPrinter(PrettyPrinter):
         rep = yield from self._repr_text(obj, context, level)
         if len(rep) <= self._width - indent - allowance:
             return rep
-        layout = self._layout_for(type(obj))
+        layout = self._kind_layout(type(obj))
         if layout is None and not _has_generated_repr(obj):
             return rep
         context[objid] = 1
@@ -293,7 +293,7 @@ class StackPrinter(PrettyPrinter):
         del context[objid]
         return text
 
-    def _layout_for(self, kind: type) -> Callable[..., str | Work] | None:
+    def _kind_layout(self, kind: type) -> Callable[..., str | Work] | None:
         """Return the layout ``PrettyPrinter`` dispatches ``kind`` to, by its repr."""
         return self._layouts_by_repr.get(cast(object, kind.__repr__))
 
