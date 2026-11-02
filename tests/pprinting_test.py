@@ -35,7 +35,6 @@ from configgle.pprinting import (
     _qualify_function_reprs,
     _render_field_row,
     _replace_char_at_column,
-    _replace_unquoted,
     _should_add_continuation_pipes,
     _side_by_side_diff,
     _string_token_spans,
@@ -385,57 +384,33 @@ def test_function_qualification_handles_aliased_containers() -> None:
     assert qualified == f"[[{expected}], [{expected}]]"
 
 
-def test_unquoted_function_repr_replace_is_a_noop_when_bare_repr_absent() -> None:
-    text = "no functions here"
-    spans = [(0, 2)]
-    result, shifted = _replace_unquoted(
-        text,
-        "<function foo at 0x1>",
-        "<function mod.foo at 0x1>",
-        spans=spans,
-    )
-    assert result is text
-    assert shifted is spans
+def test_qualification_keeps_a_quoted_only_occurrence() -> None:
+    text = repr(repr(_identity_function))  # Its one occurrence is inside a string.
+
+    assert _qualify_function_reprs([_identity_function], text) == text
 
 
-def test_unquoted_function_repr_replace_skips_a_quoted_only_occurrence() -> None:
-    bare = "<function foo at 0x1>"
-    text = repr(bare)  # The only occurrence sits inside a string token.
+def test_qualification_treats_a_string_touching_the_repr_as_outside() -> None:
+    name = f"{_identity_function.__module__}.{_identity_function.__qualname__}"
+    bare = repr(_identity_function)
 
-    result, _ = _replace_unquoted(
-        text,
-        bare,
-        "<function mod.foo at 0x1>",
-        spans=_string_token_spans(text),
+    assert _qualify_function_reprs([_identity_function], f"'s'{bare}'t'") == (
+        f"'s'{name}'t'"
     )
 
-    assert result == text
 
+def test_qualification_names_each_listed_occurrence_once_in_order() -> None:
+    name = f"{_identity_function.__module__}.{_identity_function.__qualname__}"
+    bare = repr(_identity_function)
 
-def test_unquoted_replace_shifts_only_the_spans_after_the_match() -> None:
-    bare = "<f>"
-    text = "'a' <f> 'b'"
-    spans = _string_token_spans(text)
-    assert spans == [(0, 3), (8, 11)]
+    once = _qualify_function_reprs([_identity_function], f"{bare} 'x' {bare}")
+    twice = _qualify_function_reprs(
+        [_identity_function, _identity_function],
+        f"{bare} 'x' {bare}",
+    )
 
-    result, shifted = _replace_unquoted(text, bare, "<m.f>", spans=spans)
-
-    assert result == "'a' <m.f> 'b'"
-    assert shifted == [(0, 3), (10, 13)]
-    assert [result[begin:stop] for begin, stop in shifted] == ["'a'", "'b'"]
-
-
-def test_unquoted_replace_treats_a_span_touching_the_match_as_outside() -> None:
-    # The quoted string ends where the bare repr begins: adjacent, not inside.
-    text = "'s'<f>"
-    result, shifted = _replace_unquoted(text, "<f>", "<m.f>", spans=[(0, 3)])
-    assert result == "'s'<m.f>"
-    assert shifted == [(0, 3)]
-    # A span starting exactly at the match's end follows it, so it shifts.
-    text = "<f>'s'"
-    result, shifted = _replace_unquoted(text, "<f>", "<m.f>", spans=[(3, 6)])
-    assert result == "<m.f>'s'"
-    assert shifted == [(5, 8)]
+    assert once == f"{name} 'x' {bare}"
+    assert twice == f"{name} 'x' {name}"
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
@@ -2109,6 +2084,86 @@ def test_qualification_finds_a_function_after_a_cycle_back_edge() -> None:
     assert _qualify_function_reprs(cyclic, repr(cyclic)) == (
         f"[[...], {module}.{_partial_function.__qualname__}]"
     )
+
+
+def _keyed(text: str, *, key: object) -> str:
+    """Take a positional and a keyword argument, for a partial to bind."""
+    return f"{text}{key}"
+
+
+def test_a_bare_partial_writes_its_parts_as_the_render_does() -> None:
+    bound = functools.partial(_keyed, "a", key=_partial_function)
+    module = _keyed.__module__
+    assert pformat(bound, width=200) == (
+        f"functools.partial({module}.{_keyed.__qualname__}, 'a',"
+        f" key={module}.{_partial_function.__qualname__})"
+    )
+
+
+@dataclasses.dataclass(repr=False, kw_only=True, slots=True)
+class _Wrapped:
+    """A dataclass whose own repr writes its fields' reprs, bare.
+
+    Its text never passes through the render's leaf writer, so a function in it
+    is named only by qualifying the text against the fields.
+    """
+
+    held: object
+    by_name: dict[str, object]
+
+    @override
+    def __repr__(self) -> str:
+        return f"_Wrapped({self.held!r}, {self.by_name!r})"
+
+
+_Memo = dict[int, tuple[object, tuple[types.FunctionType, ...]]]
+
+
+# Only a render with a memo walks subtrees: without one, qualification collects
+# each value's functions afresh. A walk recorded here is a walk through the memo.
+def _recording(
+    walked: list[object],
+    real: Callable[[object, _Memo], tuple[types.FunctionType, ...]],
+    root: object,
+    memo: _Memo,
+) -> tuple[types.FunctionType, ...]:
+    """Note each subtree the render's memo walks."""
+    walked.append(root)
+    return real(root, memo)
+
+
+def _named(function: types.FunctionType) -> str:
+    """Return how a render names ``function``."""
+    return f"{function.__module__}.{function.__qualname__}"
+
+
+@pytest.mark.parametrize("shape", ["shared", "cyclic"])
+def test_a_function_inside_a_custom_repr_is_qualified_through_the_render_memo(
+    monkeypatch: pytest.MonkeyPatch,
+    shape: str,
+) -> None:
+    """Its fields name its functions, a subtree reached twice walked once."""
+    walked: list[object] = []
+    real = pprinting._subtree_functions
+    monkeypatch.setattr(
+        pprinting,
+        "_subtree_functions",
+        functools.partial(_recording, walked, real),
+    )
+    held: list[object] = [_identity_function]
+    by_name: dict[str, object] = {"k": held, "f": _partial_function}
+    if shape == "cyclic":
+        by_name["self"] = by_name
+    wrapped = _Wrapped(held=held, by_name=by_name)
+
+    rendered = pformat(wrapped, width=400)
+
+    identity, partial = _named(_identity_function), _named(_partial_function)
+    tail = ", 'self': {...}}" if shape == "cyclic" else "}"
+    assert rendered == (
+        f"_Wrapped([{identity}], {{'k': [{identity}], 'f': {partial}{tail})"
+    )
+    assert walked == [wrapped]
 
 
 def test_one_line_attempt_stops_at_the_first_item_too_wide() -> None:

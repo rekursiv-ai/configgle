@@ -16,6 +16,7 @@ from typing import (
 )
 
 import ast
+import collections
 import contextlib
 import dataclasses
 import functools
@@ -229,6 +230,7 @@ class FigPrinter(StackPrinter):
         self._layouts: (
             dict[tuple[int, int, int, int, tuple[int, ...]], tuple[object, str]] | None
         ) = None
+        self._functions: _FunctionMemo | None = None
 
     def field_values(self, obj: object, *, depth: int | None) -> dict[str, str]:
         """Map each field path of ``obj`` to its rendered leaf or class name.
@@ -311,10 +313,13 @@ class FigPrinter(StackPrinter):
         self._finalized_copies = {}
         self._formats = {}
         self._layouts = {}
+        self._functions = {}
+        self._reprs = {}
         try:
             yield
         finally:
             self._finalized_copies = self._formats = self._layouts = None
+            self._functions = self._reprs = None
 
     def _format_text(
         self,
@@ -340,10 +345,36 @@ class FigPrinter(StackPrinter):
             maxlevels,
             level,
         )
-        text = _qualify_function_reprs(obj, text)
+        text = _qualify_function_reprs(obj, text, memo=self._functions)
         if self._mask_memory_addresses is not None:
             text = self._mask_memory_addresses(text)
         return text, readable, recursive
+
+    # Named as the repr is written, a function never reaches its ancestors' text
+    # bare; qualified after the fact, every enclosing level tokenized the text
+    # to find it again: a third of a large config's render.
+    @override
+    def _leaf_repr(self, node: object) -> str:
+        if isinstance(node, types.FunctionType):
+            return _function_text(node, active=frozenset())
+        if type(node) is functools.partial:
+            # ``partial.__repr__``'s own layout, with its parts written as here.
+            partial = cast(functools.partial[object], node)
+            parts = [
+                self._nested_repr(partial.func),
+                *map(self._nested_repr, cast(tuple[object, ...], partial.args)),
+                *(
+                    f"{key}={self._nested_repr(value)}"
+                    for key, value in cast(dict[str, object], partial.keywords).items()
+                ),
+            ]
+            kind = type(partial)
+            return f"{kind.__module__}.{kind.__qualname__}({', '.join(parts)})"
+        return repr(node)
+
+    def _nested_repr(self, node: object) -> str:
+        """Text of a value inside a leaf, written as this render writes it."""
+        return plain_repr(node, memo=self._reprs, leaf=self._leaf_repr)
 
     def _layout(
         self,
@@ -983,28 +1014,45 @@ def _qualify_function_reprs(
     rendered: str,
     *,
     active: frozenset[int] = frozenset(),
+    memo: _FunctionMemo | None = None,
 ) -> str:
     """Replace function reprs with qualified names or lambda source, plus bindings."""
     # Every function repr starts so; skipping the walk without one saves a pass
     # over each value's subtree.
     if "<function " not in rendered:
         return rendered
-    functions: list[types.FunctionType] = []
-    _collect_functions(value, functions, set())
-    if not any(repr(function) in rendered for function in functions):
+    if memo is None:
+        found: list[types.FunctionType] = []
+        _collect_functions(value, found, set())
+        functions: Sequence[types.FunctionType] = found
+    else:
+        functions = _subtree_functions(value, memo)
+    # Each listed function names one unquoted occurrence of its repr, first first.
+    pending = collections.Counter(
+        bare for function in functions if (bare := repr(function)) in rendered
+    )
+    if not pending:
         return rendered
+    by_repr = {repr(function): function for function in functions}
     spans = _string_token_spans(rendered)
-    for function in functions:
-        qualified = _function_text(function, active=active)
-        rendered, spans = _replace_unquoted(
-            rendered,
-            repr(function),
-            qualified,
-            spans=spans,
-        )
-        if "'" in qualified or '"' in qualified:
-            spans = _string_token_spans(rendered)
-    return rendered
+    named: dict[str, str] = {}
+    pieces: list[str] = []
+    copied = 0
+    # One pass over the text: replacing each function in turn rescanned all of it,
+    # and a render does this for every enclosing level.
+    for match in re.finditer("|".join(map(re.escape, pending)), rendered):
+        bare, (start, end) = match.group(), match.span()
+        if not pending[bare] or any(
+            start < stop and end > begin for begin, stop in spans
+        ):
+            continue
+        pending[bare] -= 1
+        if bare not in named:
+            named[bare] = _function_text(by_repr[bare], active=active)
+        pieces.extend((rendered[copied:start], named[bare]))
+        copied = end
+    pieces.append(rendered[copied:])
+    return "".join(pieces)
 
 
 def _function_text(function: types.FunctionType, *, active: frozenset[int]) -> str:
@@ -1120,32 +1168,64 @@ def _collect_functions(
         stack.extend(reversed(_function_repr_children(current)))
 
 
+type _FunctionMemo = dict[int, tuple[object, tuple[types.FunctionType, ...]]]
+"""Each node's ``_collect_functions`` list by ``id``, the node pinned against reuse."""
+
+
+# A render qualifies every node's text, and each walk covered the node's whole
+# subtree, so a node was walked once per enclosing level: 40% of a 2.2 s render.
+# Built bottom-up, each node is walked once and a parent joins its children's
+# lists, in the order the full walk would append them.
+def _subtree_functions(
+    root: object,
+    memo: _FunctionMemo,
+) -> tuple[types.FunctionType, ...]:
+    """Return ``_collect_functions``'s list for ``root``, reusing ``memo``'s subtrees."""
+    if isinstance(root, types.FunctionType):
+        return (root,)
+    stack: list[tuple[object, list[object] | None]] = [(root, None)]
+    path: set[int] = set()
+    while stack:
+        node, children = stack[-1]
+        if (hit := memo.get(id(node))) is not None and hit[0] is node:
+            _ = stack.pop()
+            continue
+        if children is None:
+            children = _function_repr_children(node)
+            stack[-1] = (node, children)
+            path.add(id(node))
+            for child in reversed(children):
+                if isinstance(child, types.FunctionType):
+                    continue
+                if id(child) in path:
+                    # A cycle makes a subtree's list depend on the path to it.
+                    functions: list[types.FunctionType] = []
+                    _collect_functions(root, functions, set())
+                    return tuple(functions)
+                stack.append((child, None))
+            continue
+        _ = stack.pop()
+        path.discard(id(node))
+        memo[id(node)] = (
+            node,
+            tuple(
+                function
+                for child in children
+                for function in (
+                    (child,)
+                    if isinstance(child, types.FunctionType)
+                    else memo[id(child)][1]
+                )
+            ),
+        )
+    return memo[id(root)][1]
+
+
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class _Leave:
     """Marks where ``_collect_functions`` leaves a node's subtree."""
 
     identity: int
-
-
-def _replace_unquoted(
-    text: str,
-    bare: str,
-    qualified: str,
-    *,
-    spans: list[tuple[int, int]],
-) -> tuple[str, list[tuple[int, int]]]:
-    """Replace ``bare``'s first unquoted occurrence; return text and shifted spans."""
-    for match in re.finditer(re.escape(bare), text):
-        start, end = match.span()
-        if any(start < stop and end > begin for begin, stop in spans):
-            continue
-        shift = len(qualified) - len(bare)
-        shifted = [
-            (begin + shift, stop + shift) if begin >= end else (begin, stop)
-            for begin, stop in spans
-        ]
-        return text[:start] + qualified + text[end:], shifted
-    return text, spans
 
 
 def _string_token_spans(text: str) -> list[tuple[int, int]]:
