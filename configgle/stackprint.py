@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "ReprMemo",
     "StackPrinter",
     "plain_repr",
 ]
@@ -47,7 +48,12 @@ type _Text = tuple[str, bool, bool]
 """One-line text, whether it reads back with ``eval``, and whether it recursed."""
 
 
-def plain_repr(value: object) -> str:
+def plain_repr(
+    value: object,
+    *,
+    memo: ReprMemo | None = None,
+    leaf: Callable[[object], str] = repr,
+) -> str:
     """Return ``repr(value)``, walking builtin containers and dataclasses on a stack.
 
     Builtin ``repr`` recurses once per level, as a dataclass's generated
@@ -55,20 +61,40 @@ def plain_repr(value: object) -> str:
 
     Args:
       value: The value to represent.
+      memo: Texts already built during one render, by ``id``; each container
+        built here is added. Pass the same dict, and the same ``leaf``, only
+        while no node changes.
+      leaf: Text of a node that is neither a builtin container nor a dataclass.
 
     Returns:
-      text: Exactly ``repr(value)``.
+      text: Exactly ``repr(value)``, each leaf written as ``leaf`` writes it.
 
     """
+    if (
+        memo is not None
+        and (hit := memo.get(id(value))) is not None
+        and hit[0] is value
+    ):
+        return hit[1]
     active: set[int] = set()
-    root = _opened(value, active)
+    root = _opened(value, active, leaf=leaf)
     if isinstance(root, str):
         return root
     stack = [root]
     while True:
         frame = stack[-1]
         if len(frame.parts) < len(frame.children):
-            part = _opened(frame.children[len(frame.parts)], active)
+            child = frame.children[len(frame.parts)]
+            hit = None if memo is None else memo.get(id(child))
+            if hit is not None and hit[0] is child:
+                frame.parts.append(hit[1])
+                continue
+            if id(child) in active:
+                # A recursion marker: every open frame's text now depends on the
+                # path to it, so none is remembered.
+                for open_frame in stack:
+                    open_frame.recursive = True
+            part = _opened(child, active, leaf=leaf)
             if isinstance(part, str):
                 frame.parts.append(part)
             else:
@@ -77,9 +103,15 @@ def plain_repr(value: object) -> str:
         text = frame.joined()
         active.discard(frame.ident)
         stack.pop()
+        if memo is not None and not frame.recursive:
+            memo[frame.ident] = (frame.node, text)
         if not stack:
             return text
         stack[-1].parts.append(text)
+
+
+type ReprMemo = dict[int, tuple[object, str]]
+"""Each container's ``plain_repr`` by ``id``, the container pinned against reuse."""
 
 
 class StackPrinter(PrettyPrinter):
@@ -115,6 +147,8 @@ class StackPrinter(PrettyPrinter):
         self._compact: bool = vars(self)["_compact"]
         self._sort_dicts = sort_dicts
         self._underscore_numbers = underscore_numbers
+        self._reprs: ReprMemo | None = None
+        """Set by a subclass for one render, so a node's repr is built once."""
 
     @override
     def pprint(self, object: object) -> None:
@@ -172,8 +206,12 @@ class StackPrinter(PrettyPrinter):
             issubclass(kind, tuple) and own_repr is cast(object, tuple.__repr__)
         ):
             return (yield from self._sequence_text(obj, context, maxlevels, level))
-        rep = plain_repr(obj)
+        rep = plain_repr(obj, memo=self._reprs, leaf=self._leaf_repr)
         return rep, bool(rep) and not rep.startswith("<"), False
+
+    def _leaf_repr(self, node: object) -> str:
+        """Text of a node ``plain_repr`` does not open; a subclass may rename it."""
+        return repr(node)
 
     def _dict_text(
         self,
@@ -910,6 +948,7 @@ def _wrap_bytes_repr(data: bytes, width: int, allowance: int) -> Iterator[str]:
 class _ReprFrame:
     """A container ``plain_repr`` is part way through."""
 
+    node: object
     ident: int
     opener: str
     closer: str
@@ -917,6 +956,8 @@ class _ReprFrame:
     labels: list[str]
     pairs: bool = False
     parts: list[str] = dataclasses.field(default_factory=list[str])
+    recursive: bool = False
+    """Whether a recursion marker was written inside it."""
 
     def joined(self) -> str:
         """Return the container's text from its parts' text.
@@ -938,7 +979,12 @@ class _ReprFrame:
         return self.opener + ", ".join(items) + self.closer
 
 
-def _opened(node: object, active: set[int]) -> str | _ReprFrame:
+def _opened(
+    node: object,
+    active: set[int],
+    *,
+    leaf: Callable[[object], str],
+) -> str | _ReprFrame:
     """Return ``node``'s repr when it has no parts, else a frame for its parts."""
     kind = type(node)
     if kind in _CONTAINER_TEXT:
@@ -953,6 +999,7 @@ def _opened(node: object, active: set[int]) -> str | _ReprFrame:
             children = [item for pair in mapping.items() for item in pair]
             active.add(id(node))
             return _ReprFrame(
+                node=node,
                 ident=id(node),
                 opener=opener,
                 closer=closer,
@@ -964,6 +1011,7 @@ def _opened(node: object, active: set[int]) -> str | _ReprFrame:
             closer = ",)"
         active.add(id(node))
         return _ReprFrame(
+            node=node,
             ident=id(node),
             opener=opener,
             closer=closer,
@@ -972,7 +1020,7 @@ def _opened(node: object, active: set[int]) -> str | _ReprFrame:
         )
     generated = cast(object, getattr(vars(kind).get("__repr__"), "__wrapped__", None))
     if "__create_fn__" not in cast(str, getattr(generated, "__qualname__", "")):
-        return repr(node)
+        return leaf(node)
     if id(node) in active:
         return "..."
     names = [
@@ -980,6 +1028,7 @@ def _opened(node: object, active: set[int]) -> str | _ReprFrame:
     ]
     active.add(id(node))
     return _ReprFrame(
+        node=node,
         ident=id(node),
         opener=f"{kind.__qualname__}(",
         closer=")",

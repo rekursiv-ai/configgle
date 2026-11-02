@@ -23,7 +23,7 @@ import io
 import pytest
 
 from configgle.lib.testing.resources import recursion_headroom
-from configgle.stackprint import StackPrinter, plain_repr
+from configgle.stackprint import ReprMemo, StackPrinter, plain_repr
 
 
 @dataclass(kw_only=True, slots=True)
@@ -212,6 +212,42 @@ def test_its_one_line_text_matches_pretty_printer(value: object) -> None:
 @pytest.mark.parametrize("value", _VALUES, ids=_kind)
 def test_plain_repr_matches_repr(value: object) -> None:
     assert plain_repr(value) == repr(value)
+
+
+@pytest.mark.parametrize("value", _VALUES, ids=_kind)
+def test_plain_repr_with_a_shared_memo_matches_repr_twice(value: object) -> None:
+    memo: ReprMemo = {}
+
+    assert plain_repr(value, memo=memo) == repr(value)
+    assert plain_repr([value, value], memo=memo) == repr([value, value])
+
+
+def test_a_memo_reuses_a_finished_subtree_without_rewalking_it() -> None:
+    inner = [1, [2]]
+    memo: ReprMemo = {id(inner): (inner, "<remembered>")}
+
+    assert plain_repr([inner, 3], memo=memo) == "[<remembered>, 3]"
+
+
+def test_a_memo_keeps_no_text_written_around_a_recursion_marker() -> None:
+    cyclic: list[object] = [1]
+    cyclic.append(cyclic)
+    memo: ReprMemo = {}
+
+    assert plain_repr(cyclic, memo=memo) == repr(cyclic)
+    assert id(cyclic) not in memo
+    assert plain_repr([cyclic], memo=memo) == repr([cyclic])
+
+
+def test_a_leaf_writes_each_node_it_does_not_open() -> None:
+    @dataclass(kw_only=True, slots=True)
+    class Pair:
+        left: object
+        right: object
+
+    text = plain_repr(Pair(left=[1.5], right={"k": 2}), leaf=lambda node: f"<{node}>")
+
+    assert text == f"{Pair.__qualname__}(left=[<1.5>], right={{<k>: <2>}})"
 
 
 @pytest.mark.parametrize("value", _VALUES, ids=_kind)
