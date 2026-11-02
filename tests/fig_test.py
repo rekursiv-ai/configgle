@@ -11,12 +11,14 @@ from typing import (
     override,
 )
 
+import copy
 import dataclasses
 import io
 import logging
 import operator
 import pickle
 import threading
+import weakref
 
 import cloudpickle
 import pytest
@@ -26,6 +28,7 @@ from configgle.decorator import autofig
 from configgle.fig import (
     Fig,
     Maker,
+    MakerMeta,
     Makes,
     _DataclassParams,
     _Default,
@@ -352,6 +355,18 @@ def test_a_finalized_config_stays_finalized(config_type: type[Fig]) -> None:
     assert copied == unpickled == deserialized == config
 
 
+def test_a_frozen_config_class_built_late_keeps_its_finalized_state_through_copy() -> (
+    None
+):
+    # Built here, not at import, so a mutation run attributes the build to this test.
+    namespace: dict[str, object] = {"__annotations__": {"x": int}, "x": 1}
+    kind = cast(type[Fig], type("Frozen", (Fig,), namespace, frozen=True))
+
+    copied = copy.copy(kind().finalize())
+
+    assert copied._finalized is True
+
+
 def test_finalized_copies_then_finalizes_a_pending_config() -> None:
     class TestConfig(Fig):
         x: int = 1
@@ -545,6 +560,64 @@ def test_dataclass_params_create_keeps_defaults_for_missing_values() -> None:
     assert new.init is False
     assert new.repr is True
     assert new.kw_only is True
+
+
+class _Probe(Protocol):
+    x: int
+
+
+def _fails(build: Callable[[], object], error: type[Exception]) -> bool:
+    try:
+        build()
+    except error:
+        return True
+    return False
+
+
+def _shows(flag: str, kind: type[_Probe]) -> bool:
+    """Return whether ``kind`` shows ``flag`` as set, by what ``dataclass`` built."""
+    generated = {
+        "init": "__init__",
+        "repr": "__repr__",
+        "eq": "__eq__",
+        "order": "__lt__",
+        "match_args": "__match_args__",
+    }
+    if flag in generated:
+        return generated[flag] in vars(kind)
+    if flag == "unsafe_hash":
+        # With ``eq`` and no ``unsafe_hash``, ``dataclass`` sets ``__hash__`` to None.
+        return vars(kind).get("__hash__") is not None
+    if flag == "frozen":
+        return _fails(lambda: setattr(kind(), "x", 2), dataclasses.FrozenInstanceError)
+    if flag == "kw_only":
+        return _fails(lambda: cast("Callable[[int], object]", kind)(1), TypeError)
+    if flag == "slots":
+        return not hasattr(kind(), "__dict__")
+    return not _fails(lambda: weakref.ref(kind()), TypeError)
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "init",
+        "repr",
+        "eq",
+        "order",
+        "unsafe_hash",
+        "frozen",
+        "match_args",
+        "kw_only",
+        "slots",
+        "weakref_slot",
+    ],
+)
+@pytest.mark.parametrize("value", [True, False])
+def test_each_dataclass_flag_reaches_the_built_class(flag: str, value: bool) -> None:
+    namespace: dict[str, object] = {"__annotations__": {"x": int}, "x": 0}
+    kind = cast(type[_Probe], type("Probe", (Fig,), namespace, **{flag: value}))
+
+    assert _shows(flag, kind) is value
 
 
 def test_fig_update_skip_missing():
@@ -1159,13 +1232,117 @@ def test_udiff_fields_paths_missing_and_inline_arguments() -> None:
 
 
 def test_udiff_requires_a_comparison() -> None:
-    with pytest.raises(ValueError, match="at least one"):
+    with pytest.raises(
+        ValueError,
+        match=r"^udiff requires at least one comparison config$",
+    ):
         BaseConfig().udiff()
 
 
 def test_udiff_rejects_negative_context() -> None:
-    with pytest.raises(ValueError, match="nonnegative"):
+    with pytest.raises(ValueError, match=r"^n must be nonnegative$"):
         BaseConfig().udiff(BaseConfig(), n=-1)
+
+
+def test_udiff_shows_three_lines_of_context_by_default() -> None:
+    class Config(Fig):
+        a: int = 1
+        b: int = 1
+        c: int = 1
+        d: int = 1
+        e: int = 1
+
+    after = Config()
+    after.e = 2
+
+    lines = Config().udiff(after, color=False, width=8).splitlines()
+
+    assert lines[2].startswith("@@")
+    hunk = lines[3:]
+    first_change = next(i for i, line in enumerate(hunk) if line[:1] in "-+")
+    assert [line.strip() for line in hunk[:first_change]] == ["b=1,", "c=1,", "d=1,"]
+
+
+def test_serialize_builds_mutable_containers_by_default() -> None:
+    assert isinstance(BaseConfig().serialize(), dict)
+
+
+class _Holding(Fig):
+    child: BaseConfig = field(default_factory=BaseConfig)
+
+
+def test_copy_tree_reuses_a_copy_the_caller_already_made() -> None:
+    holder = _Holding()
+    made = BaseConfig()
+
+    copied = holder.copy_tree({id(holder.child): made})
+
+    assert copied.child is made
+
+
+class _Overriding(Fig):
+    inner: BaseConfig = field(default_factory=BaseConfig)
+
+    @override
+    def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
+        return super().copy_tree(visited)
+
+
+class _Across(Fig):
+    outer: _Overriding = field(default_factory=_Overriding)
+    leaf: BaseConfig = field(default_factory=BaseConfig)
+
+
+def test_a_config_shared_across_an_overriding_copy_is_copied_once() -> None:
+    across = _Across()
+    across.leaf = across.outer.inner
+
+    copied = across.copy_tree()
+
+    assert copied.leaf is copied.outer.inner
+    assert copied.leaf is not across.leaf
+
+
+def test_a_config_built_outside_any_class_has_no_parent() -> None:
+    # Built here, not at import, so a mutation run attributes the build to this test.
+    kind = cast(type[Fig], type("Loose", (Fig,), {}))
+
+    assert kind().parent_class is None
+    with pytest.raises(ValueError, match=r"^Maker must be nested in a parent class$"):
+        kind().make()
+
+
+def test_maker_meta_passes_class_creation_on_to_the_next_metaclass() -> None:
+    seen: list[tuple[str, tuple[type, ...], frozenset[str], dict[str, object]]] = []
+
+    class Recording(type):
+        def __init__(
+            cls,
+            name: str,
+            bases: tuple[type, ...],
+            attrs: dict[str, object],
+            **kwargs: object,
+        ) -> None:
+            seen.append((name, bases, frozenset(attrs), kwargs))
+            super().__init__(name, bases, attrs)
+
+        def __new__(
+            mcls,
+            name: str,
+            bases: tuple[type, ...],
+            attrs: dict[str, object],
+            **kwargs: object,
+        ) -> Recording:
+            del kwargs
+            return super().__new__(mcls, name, bases, attrs)
+
+    class Both(MakerMeta, Recording):
+        pass
+
+    made = Both("Made", (), {"x": 1}, flag=True)
+
+    assert seen == [("Made", (), frozenset({"x"}), {"flag": True})]
+    assert made.__name__ == "Made"
 
 
 def test_udiff_colors_only_on_request_or_a_terminal() -> None:
@@ -1839,6 +2016,17 @@ def test_update_applies_all_source_and_keyword_fields() -> None:
     config.update(Source(), skip_missing=True, unknown=7, b=8)
     assert config.a == 4
     assert config.b == 8
+
+
+@pytest.mark.parametrize("skip_missing", [False, True])
+def test_update_with_no_source_applies_only_the_keywords(skip_missing: bool) -> None:
+    config = Parent.Config()
+
+    updated = config.update(None, skip_missing=skip_missing, b=8)
+
+    assert updated is config
+    assert (config.a, config.b) == (Parent.Config().a, 8)
+    assert config.update(None) == config
 
 
 def test_update_defaults_to_rejecting_unknown_source_fields() -> None:

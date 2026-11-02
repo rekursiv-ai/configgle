@@ -411,7 +411,9 @@ class FigPrinter(StackPrinter):
         # costs microseconds on each of a render's thousands of leaves.
         if type(obj) in (int, float, str, bool, bytes, type(None), list, dict, tuple):
             return False
+        # pragma: no mutate start -- read for truth only, so None is the same default.
         finalized_flag = getattr(obj, "_finalized", False)
+        # pragma: no mutate end
         return self._finalize and not finalized_flag and isinstance(obj, Finalizeable)
 
     def _inline_repr(
@@ -427,7 +429,8 @@ class FigPrinter(StackPrinter):
             return "...", False, True
         if maxlevels and level >= maxlevels:
             return f"{name}(...)", False, False
-        context[id(obj)] = 1
+        # ``PrettyPrinter``'s ``context`` is read for membership only.
+        context[id(obj)] = 1  # pragma: no mutate -- see above.
         parts: list[tuple[str, tuple[str, bool, bool]]] = []
         try:
             for key, value in _rendered_inline_items(obj):
@@ -460,7 +463,8 @@ class FigPrinter(StackPrinter):
         if not self._extra_compact:
             item_indent, closing_indent = indent + len(name) + 1, indent
         parts = [name + "(\n"]
-        context[id(obj)] = 1
+        # ``PrettyPrinter``'s ``context`` is read for membership only.
+        context[id(obj)] = 1  # pragma: no mutate -- see above.
         try:
             for index, (key, value) in enumerate(items):
                 prefix = f"{key}=" if key else ""
@@ -545,7 +549,9 @@ class FigPrinter(StackPrinter):
                 self._finalized_copies[id(obj)] = (obj, finalized)
             obj = finalized
         except Exception as e:  # noqa: BLE001 -- any finalize failure degrades to printing the unfinalized tree.
+            # pragma: no mutate start -- every frame within reach is this module's.
             warnings.warn(f"{type(e).__name__}: {e}", stacklevel=2)
+            # pragma: no mutate end
         return obj
 
     # ``StackPrinter`` lays a dataclass out through ``_dataclass_block``. This hides
@@ -837,8 +843,11 @@ def _fields_diff(
     """Render only changed paths, with blank cells for absent fields."""
     leaf_options = options.copy()
     leaf_options["depth"] = None
+    # pragma: no mutate start -- a float or a floor of 2 lays leaves out the same.
     leaf_options["width"] = max(1, options.get("width", 80) // (len(configs) + 1))
-    leaf_options["continuation_pipe"] = -1
+    # pragma: no mutate end
+    # Any negative threshold turns continuation pipes off.
+    leaf_options["continuation_pipe"] = -1  # pragma: no mutate -- see above.
     printer = FigPrinter(**leaf_options)
     trees = [
         printer.field_values(source, depth=options.get("depth")) for source in configs
@@ -851,15 +860,20 @@ def _fields_diff(
     ]
     if not rows:
         return ""
-    widths = [
-        max(len(line) for row in rows for line in (row[i] or "").splitlines() or [""])
-        for i in range(len(configs) + 1)
-    ]
     header = ("field", *(f"config[{i}]" for i in range(len(configs))))
+    # The header labels every column, so each column has a line to measure.
     widths = [
-        max(width, len(label)) for width, label in zip(widths, header, strict=True)
+        max(
+            len(line)
+            for row in (header, *rows)
+            if (cell := row[i]) is not None
+            for line in cell.splitlines()
+        )
+        for i in range(len(header))
     ]
+    # pragma: no mutate start -- the header is uncolored; None is uncolored too.
     output = _render_field_row(header, widths=widths, color=False)
+    # pragma: no mutate end
     for row in rows:
         output.extend(_render_field_row(row, widths=widths, color=color))
     return "\n".join(output)
@@ -970,7 +984,9 @@ def _side_by_side_diff(
         else range(len(rows))
     )
     header = tuple(f"config[{i}]" for i in range(len(columns)))
+    # pragma: no mutate start -- the header is uncolored; None is uncolored too.
     output = _render_diff_row(header, width=width, color=False)
+    # pragma: no mutate end
     for index in visible:
         output.extend(_render_diff_row(rows[index], width=width, color=color))
     return "\n".join(output)
@@ -1037,7 +1053,7 @@ def _qualify_function_reprs(
     spans = _string_token_spans(rendered)
     named: dict[str, str] = {}
     pieces: list[str] = []
-    copied = 0
+    copied = 0  # pragma: no mutate -- a None slice start reads as 0.
     # One pass over the text: replacing each function in turn rescanned all of it,
     # and a render does this for every enclosing level.
     for match in re.finditer("|".join(map(re.escape, pending)), rendered):
@@ -1081,7 +1097,9 @@ def _function_text(function: types.FunctionType, *, active: frozenset[int]) -> s
 def _function_bindings(function: types.FunctionType) -> list[tuple[str, object]]:
     """Return captured closure values and parameter defaults, by name."""
     code = function.__code__
+    # pragma: no mutate start -- CPython gives one closure cell per free variable.
     cells = zip(code.co_freevars, function.__closure__ or (), strict=True)
+    # pragma: no mutate end
     # Zero-arg ``super()`` captures ``__class__``, which says nothing about behavior.
     bindings: list[tuple[str, object]] = [
         (key, cast(object, cell.cell_contents))
@@ -1091,7 +1109,9 @@ def _function_bindings(function: types.FunctionType) -> list[tuple[str, object]]
     defaults = function.__defaults__ or ()
     positional = code.co_varnames[: code.co_argcount]
     bindings.extend(
+        # pragma: no mutate start -- the slice is cut to the defaults' own length.
         zip(positional[len(positional) - len(defaults) :], defaults, strict=True),
+        # pragma: no mutate end
     )
     bindings.extend((function.__kwdefaults__ or {}).items())
     return bindings
@@ -1388,9 +1408,11 @@ def _mask_memory_addresses(text: str) -> str:
         return text
     string_spans = _string_token_spans(text)
     for match in reversed(matches):
+        # pragma: no mutate start -- `` at `` precedes an address, so no string ends there.
         open_spans = [
             (start, end) for start, end in string_spans if match.start() < end
         ]
+        # pragma: no mutate end
         if any(match.end() > start for start, _ in open_spans):
             continue
         # One literal for every masked address, on every platform. Goldens are
