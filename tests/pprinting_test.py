@@ -128,15 +128,394 @@ def test_an_inline_call_of_partial_renders_its_callable() -> None:
 def test_inline_nested_values_cycles_and_depth() -> None:
     child = PartialConfig(int, base=10)
     parent = PartialConfig(list[object], [child], nested=child)
-    rendered = pformat(parent, width=32, indent=2, finalize=False)
-    assert rendered.count("base=10") == 2
-    assert "nested=PartialConfig(\n" in rendered
-    assert "functools.partial" not in rendered
+    assert pformat(parent, width=32, indent=2, finalize=False) == (
+        "PartialConfig(\n"
+        "    list[object],\n"
+        "    [\n"
+        "      PartialConfig(<class 'int'>, base=10)\n"
+        "    ],\n"
+        "    nested=PartialConfig(\n"
+        "      <class 'int'>,\n"
+        "      base=10\n"
+        "    )\n"
+        "  )"
+    )
     cyclic = PartialConfig(list[object])
     cyclic.loop = cyclic
-    assert "..." in pformat(cyclic, width=32, finalize=False)
-    assert "PartialConfig(...)" in pformat(parent, depth=1, width=32, finalize=False)
-    assert "base=10" in pformat(parent, width=32, extra_compact=False)
+    assert pformat(cyclic, width=32, finalize=False) == (
+        "PartialConfig(\n        list[object],\n        loop=...\n    )"
+    )
+    assert pformat(parent, depth=1, width=32, finalize=False) == (
+        "PartialConfig(\n"
+        "        list[object],\n"
+        "        [...],\n"
+        "        nested=PartialConfig(...)\n"
+        "    )"
+    )
+    # Without the extra-compact layout, items align after the opening paren.
+    assert pformat(parent, width=32, extra_compact=False) == (
+        "PartialConfig(\n"
+        "              list[object],\n"
+        "              [   PartialConfig(\n"
+        "                                <class 'int'>,\n"
+        "                                base=10\n"
+        "                  )],\n"
+        "              nested=PartialConfig(\n"
+        "                                   <class 'int'>,\n"
+        "                                   base=10\n"
+        "                     )\n"
+        ")"
+    )
+
+
+def test_an_inline_call_reports_whether_its_text_is_readable_or_recursive() -> None:
+    # ``PrettyPrinter.isreadable`` and ``isrecursive`` read these flags.
+    child = PartialConfig(int, base=10)
+    parent = PartialConfig(list[object], [child], nested=child)
+    cyclic = PartialConfig(list[object])
+    cyclic.loop = cyclic
+    readable = PartialConfig(functools.partial(int), "1")
+
+    assert FigPrinter().format(readable, {}, 0, 0) == (
+        "PartialConfig(functools.partial(<class 'int'>), '1')",
+        True,
+        False,
+    )
+    assert FigPrinter().format(cyclic, {}, 0, 0) == (
+        "PartialConfig(list[object], loop=...)",
+        False,
+        True,
+    )
+    assert FigPrinter(depth=1).format(parent, {}, 1, 0) == (
+        "PartialConfig(list[object], [...], nested=PartialConfig(...))",
+        False,
+        False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("in_list", "width", "whole"),
+    [
+        # Each item is 8 columns in and 23 wide, then a comma or the closing paren.
+        (False, 31, (False, False)),
+        (False, 32, (True, True)),
+        # In a list, 4 columns deeper: the last item also leaves room for the ``]``.
+        (True, 35, (False, False)),
+        (True, 36, (True, False)),
+        (True, 37, (True, True)),
+    ],
+)
+def test_an_inline_item_keeps_room_for_what_follows_it(
+    in_list: bool,
+    width: int,
+    whole: tuple[bool, bool],
+) -> None:
+    item = {"alpha": 1, "beta": 2}
+    call = PartialConfig(max, dict(item), dict(item))
+
+    lines = FigPrinter(width=width).pformat([call] if in_list else call).splitlines()
+
+    stripped = [line.strip() for line in lines]
+    assert (f"{item!r}," in stripped, repr(item) in stripped) == whole
+
+
+def test_an_inline_call_cut_at_the_depth_is_not_readable() -> None:
+    # Its siblings are readable, so only the cut call decides.
+    call = PartialConfig(functools.partial(int), PartialConfig(int))
+
+    assert FigPrinter(depth=1).format(call, {}, 1, 0) == (
+        "PartialConfig(functools.partial(<class 'int'>), PartialConfig(...))",
+        False,
+        False,
+    )
+
+
+def _module_level(x: int = 1) -> int:
+    return x
+
+
+# The default's lambda is made at import: its qualname holds no ``<locals>``, so
+# only its ``<lambda>`` name marks it as made per call.
+def _import_time_lambda(
+    by: Callable[[int], int] = lambda x, k=2: x * k,
+) -> Callable[[int], int]:
+    return by
+
+
+def _closures() -> tuple[types.FunctionType, ...]:
+    table = [_module_level]
+
+    def reads() -> object:
+        return table
+
+    def ping(n: int) -> int:
+        return pong(n - 1) if n else 0
+
+    def pong(n: int) -> int:
+        return ping(n - 1) if n else 1
+
+    def again(n: int) -> int:
+        return again(n - 1) if n else 0
+
+    class Base:
+        def name(self) -> str:
+            return "base"
+
+    class Child(Base):
+        @override
+        def name(self) -> str:
+            return f"child of {super().name()}"
+
+    return reads, ping, again, cast(types.FunctionType, Child.name)
+
+
+def test_a_function_made_per_call_is_named_with_what_it_captured() -> None:
+    reads, ping, again, uses_super = _closures()
+    local = f"{__name__}._closures.<locals>"
+
+    assert pprinting._function_text(
+        cast(types.FunctionType, _import_time_lambda()),
+        active=frozenset(),
+    ) == ("lambda x, k=2: x * k {k=2}")
+    assert pprinting._function_text(reads, active=frozenset()) == (
+        f"{local}.reads {{table=[{__name__}._module_level]}}"
+    )
+    # Each capture renders by name inside itself, so recursion stops.
+    assert pprinting._function_text(ping, active=frozenset()) == (
+        f"{local}.ping {{pong={local}.pong {{ping={local}.ping}}}}"
+    )
+    assert pprinting._function_text(again, active=frozenset()) == (
+        f"{local}.again {{again={local}.again}}"
+    )
+    # Zero-arg ``super()`` captures ``__class__``, which is no binding.
+    assert pprinting._function_text(uses_super, active=frozenset()) == (
+        f"{local}.Child.name"
+    )
+
+
+def test_bindings_are_joined_in_capture_then_default_order() -> None:
+    offset = 3
+
+    def shifted(x: int, by: int = 2, *, scale: int = 5) -> int:
+        return (x + by + offset) * scale
+
+    assert pprinting._function_text(shifted, active=frozenset()) == (
+        f"{__name__}.test_bindings_are_joined_in_capture_then_default_order"
+        ".<locals>.shifted {offset=3, by=2, scale=5}"
+    )
+
+
+class _Spy:
+    """Record each call's first argument, then call through."""
+
+    def __init__(self, wrapped: Callable[..., object]) -> None:
+        self.wrapped = wrapped
+        self.firsts: list[object] = []
+
+    def __call__(self, *args: object) -> object:
+        self.firsts.append(args[0])
+        return self.wrapped(*args)
+
+
+def test_subtree_functions_walks_each_node_once_and_falls_back_only_on_a_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reads = _Spy(pprinting._function_repr_children)
+    fallbacks = _Spy(pprinting._collect_functions)
+    monkeypatch.setattr(pprinting, "_function_repr_children", reads)
+    monkeypatch.setattr(pprinting, "_collect_functions", fallbacks)
+    shared: list[object] = [_module_level]
+    root: list[object] = [shared, shared, len]
+    memo: pprinting._FunctionMemo = {}
+
+    first = pprinting._subtree_functions(root, memo)
+    walked = list(reads.firsts)
+    again = pprinting._subtree_functions(root, memo)
+
+    assert first == again == (_module_level, _module_level)
+    # The root, the shared list and ``len`` each once; the second walk reads none.
+    assert sorted(map(id, walked)) == sorted(map(id, [root, shared, len]))
+    assert reads.firsts == walked
+    assert fallbacks.firsts == []
+    # Reached again under another parent, a finished node is no ancestor: no cycle.
+    assert pprinting._subtree_functions([[shared], [shared]], {}) == (
+        _module_level,
+        _module_level,
+    )
+    assert fallbacks.firsts == []
+    looped: list[object] = [_module_level]
+    looped.append(looped)
+    assert pprinting._subtree_functions(looped, {}) == (_module_level,)
+    assert fallbacks.firsts == [looped]
+
+
+class _Leaf(Fig):
+    x: int = 0
+
+
+class _Shares(Fig):
+    first: object = None
+    second: object = None
+    leaf: _Leaf | None = None
+    last: int = 0
+
+
+def test_field_values_walks_a_shared_value_under_each_parent() -> None:
+    shared = {"k": 1}
+    root = _Shares()
+    root.first = shared
+    root.second = shared
+    root.leaf = _Leaf()
+    root.last = 5
+
+    assert FigPrinter().field_values(root, depth=None) == {
+        "": "_Shares",
+        "first['k']": "1",
+        "second['k']": "1",
+        "leaf": "_Leaf",
+        "leaf.x": "0",
+        "last": "5",
+    }
+
+
+@pytest.mark.parametrize(
+    ("in_list", "width", "whole"),
+    [
+        # The call's one-line text is 44 wide.
+        (False, 43, False),
+        (False, 44, True),
+        # In a two-item list it starts 8 in and leaves room for its comma.
+        (True, 52, False),
+        (True, 53, True),
+    ],
+)
+def test_an_inline_call_stays_on_one_line_exactly_when_it_fits(
+    in_list: bool,
+    width: int,
+    whole: bool,
+) -> None:
+    call = PartialConfig(max, 1, 2)
+    text = "PartialConfig(<built-in function max>, 1, 2)"
+
+    rendered = FigPrinter(width=width).pformat([call, call] if in_list else call)
+
+    assert (text in rendered.splitlines()[1 if in_list else 0]) is whole
+
+
+def test_a_sequence_whose_prefix_fills_the_line_still_lays_out_whole() -> None:
+    # The first 19 items fill 76 columns exactly; the 20th does not fit.
+    rendered = FigPrinter(width=76).pformat(list(range(10, 30)))
+
+    assert [line.strip() for line in rendered.splitlines()] == [
+        "[",
+        *(f"{n}," for n in range(10, 29)),
+        "29",
+        "]",
+    ]
+
+
+class _CountingPrinter(FigPrinter):
+    def __init__(self, *, width: int) -> None:
+        super().__init__(width=width)
+        self.asked = 0
+
+    @override
+    def _should_format_on_one_line(
+        self,
+        content_width: int,
+        indent: int,
+        allowance: int,
+    ) -> bool:
+        self.asked += 1
+        return super()._should_format_on_one_line(content_width, indent, allowance)
+
+
+def test_one_line_items_stop_rendering_once_the_line_cannot_fit() -> None:
+    printer = _CountingPrinter(width=40)
+
+    rendered = printer.pformat(list(range(100)))
+
+    assert rendered.count("\n") == 101
+    # Items 0..9 take 3 columns and 10.. take 4: the 14th reaches 41, past 40.
+    assert printer.asked == 14
+
+
+@pytest.mark.parametrize("width", [43, 47, 51])
+def test_a_prefix_that_fits_is_never_taken_for_the_whole_line(width: int) -> None:
+    # At these widths the items that fit end the line exactly; the rest still count.
+    rendered = FigPrinter(width=width).pformat(list(range(100)))
+
+    assert rendered.count("\n") == 101
+
+
+def test_collapsing_stops_counting_once_the_value_cannot_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tokenized = _Spy(pprinting._contains_repeated_string_whitespace)
+    monkeypatch.setattr(pprinting, "_contains_repeated_string_whitespace", tokenized)
+
+    assert _collapse_multiline_value("aa\nbb", 3) == "aa\nbb"
+    assert tokenized.firsts == []
+
+
+def test_string_spans_cover_double_quoted_strings() -> None:
+    assert _string_token_spans('x = "a"') == [(4, 7)]
+
+
+def test_pprint_writes_a_colored_render_and_a_newline() -> None:
+    forced = StringIO()
+
+    pprint({"value": 2}, stream=forced, color=True)
+
+    assert forced.getvalue() == color_config("{'value': 2}") + "\n"
+
+
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True, repr=False)
+class _Wraps:
+    fn: Callable[[], int]
+
+    @override
+    def __repr__(self) -> str:
+        return f"_Wraps({self.fn!r})"
+
+
+def test_a_function_is_qualified_outside_a_render_and_inside_a_partial() -> None:
+    # Its own repr embeds the function's, so only qualifying the text names it.
+    assert FigPrinter().format(_Wraps(fn=_module_level), {}, 0, 0)[0] == (
+        f"_Wraps({__name__}._module_level)"
+    )
+    assert pformat(functools.partial(_module_level, 1)) == (
+        f"functools.partial({__name__}._module_level, 1)"
+    )
+
+
+class _LeafCounting(FigPrinter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.leaves: list[object] = []
+
+    @override
+    def _leaf_repr(self, node: object) -> str:
+        self.leaves.append(node)
+        return super()._leaf_repr(node)
+
+
+def test_a_container_shared_by_two_partials_is_written_once_per_render() -> None:
+    shared = [_module_level]
+    printer = _LeafCounting()
+
+    printer.pformat([functools.partial(max, shared), functools.partial(min, shared)])
+
+    assert printer.leaves.count(_module_level) == 1
+
+
+def test_an_inline_call_counts_each_nesting_toward_the_depth() -> None:
+    triple = PartialConfig(max, PartialConfig(min, PartialConfig(abs, 1)))
+
+    assert FigPrinter(depth=2).format(triple, {}, 2, 0)[0] == (
+        "PartialConfig(<built-in function max>, "
+        "PartialConfig(<built-in function min>, PartialConfig(...)))"
+    )
 
 
 def _identity_function(
@@ -581,6 +960,240 @@ def test_pprint_plain_format_stays_plain() -> None:
 def test_syntax_color_preserves_multiline_and_incomplete_reprs(text: str) -> None:
     colored = color_config(text)
     assert re.sub(r"\x1b\[[0-9;]*m", "", colored) == text
+
+
+def _three() -> list[object]:
+    """Return a baseline and two variants, each changing one end of it."""
+    return [
+        {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5},
+        {"a": 1, "b": 2, "c": 3, "d": 4, "e": 6},
+        {"a": 0, "b": 2, "c": 3, "d": 4, "e": 5},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("color", "expected"),
+    [
+        (
+            False,
+            (
+                "config[0] → config[1]\n--- \n+++ \n@@ -5 +5 @@\n-    'e': 5}\n+    'e': 6}"
+                "\n\nconfig[0] → config[2]\n--- \n+++ \n@@ -1 +1 @@\n-{   'a': 1,\n"
+                "+{   'a': 0,"
+            ),
+        ),
+        (
+            True,
+            (
+                "config[0] → config[1]\n--- \n+++ \n\x1b[36m@@ -5 +5 @@\x1b[0m\n"
+                "\x1b[31m-    'e': 5}\x1b[0m\n\x1b[32m+    'e': 6}\x1b[0m\n\n"
+                "config[0] → config[2]\n--- \n+++ \n\x1b[36m@@ -1 +1 @@\x1b[0m\n"
+                "\x1b[31m-{   'a': 1,\x1b[0m\n\x1b[32m+{   'a': 0,\x1b[0m"
+            ),
+        ),
+    ],
+)
+def test_unified_diff_renders_each_variant_exactly(color: bool, expected: str) -> None:
+    assert (
+        pprinting.format_diff(
+            _three(),
+            mode="diff",
+            n=0,
+            color=color,
+            options={"width": 12},
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "color", "expected"),
+    [
+        (
+            "sxs",
+            False,
+            (
+                "config[0]   │ config[1]   │ config[2]\n"
+                "{   'a': 1, │ {   'a': 1, │ {   'a': 0,\n"
+                "    'b': 2, │     'b': 2, │     'b': 2,\n"
+                "    'd': 4, │     'd': 4, │     'd': 4,\n"
+                "    'e': 5} │     'e': 6} │     'e': 5}"
+            ),
+        ),
+        (
+            "sxs",
+            True,
+            (
+                "config[0]   │ config[1]   │ config[2]\n"
+                "\x1b[31m{   'a': 1,\x1b[0m │ {   'a': 1, │ \x1b[32m{   'a': 0,\x1b[0m\n"
+                "    'b': 2, │     'b': 2, │     'b': 2,\n"
+                "    'd': 4, │     'd': 4, │     'd': 4,\n"
+                "\x1b[31m    'e': 5}\x1b[0m │ \x1b[32m    'e': 6}\x1b[0m │     'e': 5}"
+            ),
+        ),
+        (
+            "sxs-full",
+            False,
+            (
+                "config[0]   │ config[1]   │ config[2]\n"
+                "{   'a': 1, │ {   'a': 1, │ {   'a': 0,\n"
+                "    'b': 2, │     'b': 2, │     'b': 2,\n"
+                "    'c': 3, │     'c': 3, │     'c': 3,\n"
+                "    'd': 4, │     'd': 4, │     'd': 4,\n"
+                "    'e': 5} │     'e': 6} │     'e': 5}"
+            ),
+        ),
+    ],
+)
+def test_side_by_side_renders_each_mode_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: Literal["sxs", "sxs-full"],
+    color: bool,
+    expected: str,
+) -> None:
+    # A terminal width other than the one asked for, so only ``width`` sets columns.
+    monkeypatch.setenv("COLUMNS", "200")
+
+    result = pprinting.format_diff(
+        _three(),
+        mode=mode,
+        n=1,
+        color=color,
+        options={"width": 40},
+    )
+
+    assert result == expected
+
+
+def test_format_diff_colors_a_terminal_stdout_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.stdout", _Terminal())
+
+    for mode in ("diff", "sxs", "fields"):
+        result = pprinting.format_diff(
+            [1, 2],
+            mode=mode,
+            n=0,
+            color=None,
+            options={"width": 40},
+        )
+        assert "\x1b[31m" in result
+        assert "\x1b[32m" in result
+
+
+class _Inner(Fig):
+    first: list[str] | None = None
+    second: list[int] | None = None
+
+
+class _Outer(Fig):
+    short: object = None
+    middle: object = None
+    long: object = None
+    inner: _Inner | None = None
+
+
+def _sized(tail: int) -> _Outer:
+    outer = _Outer()
+    outer.short = {"k": [1, tail]}  # 13 characters: fits a 13-wide leaf.
+    outer.middle = {"key": [1, 2, tail]}  # 18: fits a 26-wide leaf, not a 13-wide one.
+    outer.long = {"key": [1, 2, 3, 4, 5, tail]}  # 27: fits only a 27-wide one.
+    inner = _Inner()
+    inner.first = ["a" * 30, "b" * 30, str(tail)]
+    inner.second = [4, 5, 6, tail]
+    outer.inner = inner
+    return outer
+
+
+@pytest.mark.parametrize(
+    ("options", "middle"),
+    [
+        (
+            {"width": 39, "depth": 1},
+            "middle │ {   'key': [1, 2, 2]}                         │ {   'key': [1, 2, 3]}\n",
+        ),
+        (
+            {"depth": 1},
+            "middle │ {'key': [1, 2, 2]}                            │ {'key': [1, 2, 3]}\n",
+        ),
+    ],
+)
+def test_fields_renders_each_leaf_at_its_column_width(
+    options: PformatOptions,
+    middle: str,
+) -> None:
+    # Two configs and the path take 3 columns, so a leaf is 39 // 3 = 13 wide, or by
+    # default 80 // 3 = 26: only the 18-character value lays out differently. A
+    # nested multiline value gets no continuation pipes.
+    result = pprinting.format_diff(
+        [_sized(2), _sized(3)],
+        mode="fields",
+        n=0,
+        color=False,
+        options=options,
+    )
+
+    assert result == (
+        "field  │ config[0]                                     │ config[1]\n"
+        "short  │ {'k': [1, 2]}                                 │ {'k': [1, 3]}\n"
+        f"{middle}"
+        "long   │ {   'key': [1, 2, 3, 4, 5, 2]}                │ {   'key': [1, 2, 3, 4, 5, 3]}\n"
+        "inner  │ _Inner(                                       │ _Inner(\n"
+        "       │         first=[                               │         first=[\n"
+        "       │             'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', │             'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',\n"
+        "       │             'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', │             'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',\n"
+        "       │             '2'                               │             '3'\n"
+        "       │         ],                                    │         ],\n"
+        "       │         second=[4, 5, 6, 2]                   │         second=[4, 5, 6, 3]\n"
+        "       │     )                                         │     )"
+    )
+
+
+def test_fields_names_a_changed_root_class() -> None:
+    assert pprinting.format_diff(
+        [_Inner(), _Outer()],
+        mode="fields",
+        n=0,
+        color=False,
+        options={},
+    ).splitlines()[:2] == [
+        "field   │ config[0] │ config[1]",
+        f"(class) │ {_Inner.__qualname__}    │ {_Outer.__qualname__}",
+    ]
+
+
+def test_a_diff_row_wraps_pads_and_colors_each_cell() -> None:
+    assert pprinting._render_diff_row(("abcdef", "ab", None), width=4, color=True) == [
+        "\x1b[31mabcd\x1b[0m │ \x1b[32mab  \x1b[0m │",
+        "\x1b[31mef  \x1b[0m │      │",
+    ]
+    assert pprinting._render_diff_row(("ab", "ab"), width=4, color=True) == [
+        "ab   │ ab",
+    ]
+    assert pprinting._render_diff_row(("", "x"), width=4, color=False) == ["     │ x"]
+    # A blank line inside a value is one empty chunk, even one character wide.
+    assert pprinting._render_diff_row(("a\n\nb",), width=1, color=False) == [
+        "a",
+        "",
+        "b",
+    ]
+
+
+def test_a_variant_aligns_to_the_baseline_lines_and_the_gaps_between() -> None:
+    assert pprinting._align_diff_column(["a", "b", "c"], ["x", "a", "c", "d", "e"]) == (
+        ["a", None, "c"],
+        [["x"], [], [], ["d", "e"]],
+    )
+
+
+def test_a_line_repeated_hundreds_of_times_still_aligns() -> None:
+    # ``SequenceMatcher`` would otherwise skip a line this common as junk.
+    baseline = ["x"] * 200
+    lines, gaps = pprinting._align_diff_column(baseline, ["y", *baseline])
+
+    assert lines == baseline
+    assert gaps[0] == ["y"]
 
 
 def test_side_by_side_aligns_insertions_deletions_and_unequal_columns() -> None:

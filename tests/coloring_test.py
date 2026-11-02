@@ -37,6 +37,27 @@ def test_continuation_guides_are_dim_but_quoted_pipes_are_not() -> None:
     assert re.sub(r"\x1b\[[0-9;]*m", "", rendered) == text
 
 
+def test_a_pipe_after_text_on_its_line_is_no_guide() -> None:
+    assert color_config("X │") == "X │"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # An unterminated string ends the token stream at whatever came before it.
+        ("f 'b", "f 'b"),
+        ("x. 'b", "x. 'b"),
+        ("f( 'b", "\x1b[96mf\x1b[0m( 'b"),
+        ("x.y( 'b", "\x1b[96mx.y\x1b[0m( 'b"),
+    ],
+)
+def test_a_cut_short_token_stream_colors_what_it_holds(
+    text: str,
+    expected: str,
+) -> None:
+    assert color_config(text) == expected
+
+
 def test_multiline_literal_offsets() -> None:
     assert color_config("Config(\n  value=2,\n  text='hi'\n)") == (
         "\x1b[96mConfig\x1b[0m(\n  value=\x1b[95m2\x1b[0m,\n  text=\x1b[95m'hi'\x1b[0m\n)"

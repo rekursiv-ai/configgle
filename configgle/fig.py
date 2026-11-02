@@ -403,13 +403,8 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         # silently build from underived defaults.
         try:
             fields = dict(attributes(self))
-            finalized_values = finalize_value(tuple(fields.values()))
-            for (name, value), new in zip(
-                fields.items(),
-                finalized_values,
-                strict=True,
-            ):
-                if new is not value:
+            for name, new in finalize_value(dict(fields)).items():
+                if new is not fields[name]:
                     object.__setattr__(self, name, new)
         except Exception:
             object.__setattr__(self, "_finalized", False)
@@ -634,7 +629,9 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
             raise ValueError("udiff requires at least one comparison config")
         if n < 0:
             raise ValueError("n must be nonnegative")
+        # pragma: no mutate start -- ``pformat`` reads it for truth; None hides none too.
         options = PformatOptions(hide_default_values=False)
+        # pragma: no mutate end
         options.update(format_options)
         return format_diff(
             [self, *others],
@@ -1179,11 +1176,8 @@ def update[MakerT: Maker[Any]](
     """
     # ``_finalized`` is lifecycle state, not a field: only ``finalize`` sets it.
     valid_keys = set(attribute_names(config)) if skip_missing else None
-    updates = (
-        {name: value for name, value in attributes(source) if name not in kwargs}
-        if source is not None
-        else {}
-    )
+    # ``None``, the default source, has no attributes, so it adds nothing.
+    updates = {name: value for name, value in attributes(source) if name not in kwargs}
     updates.update(kwargs)
     for key, value in updates.items():
         if key == "_finalized" or (valid_keys is not None and key not in valid_keys):

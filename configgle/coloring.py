@@ -59,10 +59,8 @@ def color_diff(line: str) -> str:
     """
     if line.startswith("@@"):
         return _styled(line, style="36")
-    if line.startswith("-") and not line.startswith("---"):
-        return color_change(line, baseline=True)
-    if line.startswith("+") and not line.startswith("+++"):
-        return color_change(line, baseline=False)
+    if line.startswith(("-", "+")) and not line.startswith(("---", "+++")):
+        return color_change(line, baseline=line.startswith("-"))
     return line
 
 
@@ -87,7 +85,8 @@ def _token_style(tokens: list[tokenize.TokenInfo], *, index: int) -> tuple[int, 
         return index, "95"
     stop = index
     while (
-        stop + 2 < len(tokens)
+        # A name is grouped to style it, which takes a ``(`` after it: one more token.
+        stop + 2 < len(tokens)  # pragma: no mutate -- see above.
         and tokens[stop + 1].string == "."
         and tokens[stop + 2].type == tokenize.NAME
     ):
