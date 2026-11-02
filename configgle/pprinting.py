@@ -942,7 +942,9 @@ def _align_diff_column(
     """Align a variant to baseline lines and insertion gaps."""
     lines: list[str | None] = [None] * len(baseline)
     gaps: list[list[str]] = [[] for _ in range(len(baseline) + 1)]
+    # pragma: no mutate start -- ``autojunk`` is read for truth; ``None`` is falsy too.
     matcher = SequenceMatcher(a=baseline, b=variant, autojunk=False)
+    # pragma: no mutate end
     for _, start, stop, other_start, other_stop in matcher.get_opcodes():
         incoming = variant[other_start:other_stop]
         count = min(stop - start, len(incoming))
@@ -1108,11 +1110,10 @@ def _function_bindings(function: types.FunctionType) -> list[tuple[str, object]]
     ]
     defaults = function.__defaults__ or ()
     positional = code.co_varnames[: code.co_argcount]
-    bindings.extend(
-        # pragma: no mutate start -- the slice is cut to the defaults' own length.
-        zip(positional[len(positional) - len(defaults) :], defaults, strict=True),
-        # pragma: no mutate end
-    )
+    # pragma: no mutate start -- the slice is cut to the defaults' own length.
+    named = zip(positional[len(positional) - len(defaults) :], defaults, strict=True)
+    # pragma: no mutate end
+    bindings.extend(named)
     bindings.extend((function.__kwdefaults__ or {}).items())
     return bindings
 
@@ -1224,7 +1225,8 @@ def _subtree_functions(
                     return tuple(functions)
                 stack.append((child, None))
             continue
-        _ = stack.pop()
+        # A node left on the stack pops next turn, on its memo hit.
+        _ = stack.pop()  # pragma: no mutate -- see above.
         path.discard(id(node))
         memo[id(node)] = (
             node,

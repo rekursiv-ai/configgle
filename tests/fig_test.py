@@ -32,6 +32,7 @@ from configgle.fig import (
     Makes,
     _DataclassParams,
     _Default,
+    _inherited_state_methods,
 )
 
 
@@ -1343,6 +1344,46 @@ def test_maker_meta_passes_class_creation_on_to_the_next_metaclass() -> None:
 
     assert seen == [("Made", (), frozenset({"x"}), {"flag": True})]
     assert made.__name__ == "Made"
+
+
+def test_inherited_state_methods_are_only_a_bases_custom_ones() -> None:
+    class Plain:
+        pass
+
+    class Stateful:
+        @override
+        def __getstate__(self) -> object:
+            return None
+
+        def __setstate__(self, state: object) -> None:
+            del state
+
+    class Inheriting(Stateful):
+        pass
+
+    class Own(Stateful):
+        @override
+        def __getstate__(self) -> object:
+            return None
+
+    assert _inherited_state_methods(Plain) == {}
+    assert _inherited_state_methods(Stateful) == {}
+    assert _inherited_state_methods(Inheriting) == {
+        "__getstate__": Stateful.__getstate__,
+        "__setstate__": Stateful.__setstate__,
+    }
+    assert _inherited_state_methods(Own) == {"__setstate__": Stateful.__setstate__}
+
+
+def test_a_root_maker_reports_no_parent_and_its_subclass_shares_it() -> None:
+    """Only the first class of a hierarchy binds the None default."""
+    # Built here, not at import, so a mutation run attributes the build to this test.
+    root = MakerMeta("Root", (), {})
+    child = MakerMeta("Child", (root,), {})
+
+    assert "_parent_class" in vars(root)
+    assert "_parent_class" not in vars(child)
+    assert root._parent_class() is None
 
 
 def test_udiff_colors_only_on_request_or_a_terminal() -> None:
