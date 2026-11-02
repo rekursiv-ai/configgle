@@ -317,6 +317,46 @@ def test_copy_tree_runs_the_override_of_a_class_merely_named_maker() -> None:
     assert named.calls == 1
 
 
+def test_copy_tree_returns_what_the_root_override_returns() -> None:
+    named = Maker()
+
+    assert copy_tree(named) is named
+    assert named.calls == 1
+
+
+class _Recording:
+    """Records the ``visited`` its ``copy_tree`` override receives."""
+
+    __slots__ = ("received",)
+
+    def __init__(self) -> None:
+        self.received: dict[int, object] | None = None
+
+    def copy_tree(self, visited: dict[int, object] | None = None) -> Self:
+        self.received = visited
+        return self
+
+
+def test_copy_tree_hands_the_callers_visited_to_the_root_override() -> None:
+    recording = _Recording()
+    visited: dict[int, object] = {}
+
+    copy_tree(recording, visited)
+
+    assert recording.received is visited
+
+
+def test_copy_tree_reuses_a_copy_recorded_in_the_callers_visited() -> None:
+    config = _Child.Config()
+    visited: dict[int, object] = {}
+
+    first = copy_tree([config], visited)
+    second = copy_tree([config], visited)
+
+    assert first[0] is second[0]
+    assert first[0] is not config
+
+
 def test_copy_tree_threads_visited_into_a_nested_custom_method() -> None:
     shared: list[int] = [1]
 
@@ -551,6 +591,43 @@ def test_bind_late_walks_a_torch_module_through_modules():
     root = Net()
     bind_late(root)
     assert seen == [root]
+
+
+def test_bind_late_needs_both_torch_module_path_and_name() -> None:
+    """A class named ``Module`` elsewhere, or another class at torch's path, is data."""
+    seen: list[object] = []
+
+    class Late(LateBound):
+        @override
+        def bind(self, root: object) -> None:
+            seen.append(root)
+
+    class Module:
+        def __init__(self) -> None:
+            self.late = Late()
+
+        def modules(self) -> Iterator[object]:
+            raise AssertionError("bind_late must not call a foreign Module.modules")
+
+    class Other(Module):
+        pass
+
+    Other.__module__ = "torch.nn.modules.module"
+    Other.__qualname__ = "Other"
+    root = [Module(), Other()]
+    bind_late(root)
+    assert seen == [root, root]
+
+
+def test_built_parts_trusts_the_known_answer_for_a_type() -> None:
+    """``torch_module_types`` caches the verdict by type; a cached ``True`` is used."""
+
+    class Net:
+        def modules(self) -> Iterator[object]:
+            yield "from modules"
+
+    parts = _built_parts(Net(), torch_module_types={Net: True})
+    assert list(parts) == ["from modules"]
 
 
 def test_bind_late_does_not_call_a_foreign_modules_method():
@@ -1158,6 +1235,35 @@ def test_make_value_reuses_an_existing_tuple_cache_entry() -> None:
     cached = object()
     result = make_value((config,), made={id(config): cached})
     assert result == (cached,)
+
+
+def test_make_value_records_each_build_in_the_callers_made() -> None:
+    config = _Child.Config(v=6)
+    made: dict[int, object] = {}
+
+    first = make_value(config, made=made)
+    second = make_value([config], made=made)
+
+    assert second[0] is first
+    assert first.v == 6
+
+
+def test_make_value_leaves_a_data_object_holding_a_makeable_alone() -> None:
+    """Only lists, tuples, and mappings are walked; other objects are leaves."""
+
+    class Holder:
+        __slots__ = ("child",)
+
+        def __init__(self, child: _Child.Config) -> None:
+            self.child = child
+
+    child = _Child.Config()
+    holder = Holder(child)
+
+    result = make_value(holder)
+
+    assert result is holder
+    assert holder.child is child
 
 
 def test_make_value_reuses_a_made_mapping_key_and_value() -> None:

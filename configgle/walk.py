@@ -114,8 +114,8 @@ class Match[ConfigT]:
 
         """
         TreeMatch(
-            fqn=self.fqn,
-            node=self.config,
+            fqn=self.fqn,  # pragma: no mutate -- unread by tree.Match.replace.
+            node=self.config,  # pragma: no mutate -- unread by tree.Match.replace.
             parent=self.parent,
             attr=self.attr,
         ).replace(new)

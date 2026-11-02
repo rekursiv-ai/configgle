@@ -315,7 +315,7 @@ def tree_map[T](
 class _Frame:
     """A node whose parts are being rebuilt."""
 
-    __slots__ = ("built", "first", "index", "names", "node", "parts", "target")
+    __slots__ = ("built", "index", "names", "node", "parts", "target")
 
     def __init__(
         self,
@@ -331,7 +331,6 @@ class _Frame:
         self.names = names
         self.built: list[object] = []
         self.index = 0
-        self.first = False
 
 
 class _TreeMap:
@@ -389,8 +388,8 @@ class _TreeMap:
             self._record(node, node)
             return node
         if frame.target is _UNSET:
-            self.pending[key] = len(self.done)
-            frame.first = True
+            # None would only delay the same refusal ``_reopen`` makes by one reopen.
+            self.pending[key] = len(self.done)  # pragma: no mutate -- see above.
         else:
             self._record(node, frame.target)
         return frame
@@ -408,8 +407,6 @@ class _TreeMap:
         node, parts, built, target = frame.node, frame.parts, frame.built, frame.target
         if target is _UNSET:
             assembled = _assembled(node, parts, built)
-            if frame.first:
-                del self.pending[id(node)]
             self._record(node, assembled)
             return assembled
         if isinstance(target, list):
@@ -419,7 +416,10 @@ class _TreeMap:
         elif isinstance(target, dict):
             cast("dict[object, object]", target).update(_pairs(built))
         else:
-            for name, part, new in zip(frame.names, parts, built, strict=True):
+            # pragma: no mutate start -- one name and rebuilt part per part; B905 wants strict.
+            rebuilt = zip(frame.names, parts, built, strict=True)
+            # pragma: no mutate end
+            for name, part, new in rebuilt:
                 if new is not part:
                     object.__setattr__(target, name, new)
         return frame.target
@@ -434,7 +434,8 @@ class _TreeMap:
         key = id(node)
         if self.pending[key] == len(self.done):
             raise ValueError(f"cannot walk a cycle through a {type(node).__name__}")
-        self.pending[key] = len(self.done)
+        # Unread: a cycle through a copied container returns that copy first.
+        self.pending[key] = len(self.done)  # pragma: no mutate -- see above.
         return _built_after(node)
 
     def _frame(self, value: object) -> _Frame | None:
@@ -444,7 +445,9 @@ class _TreeMap:
         if kind is list or kind is set:
             parts = list(cast("Iterable[object]", node))
             empty: object = list[object]() if kind is list else set[object]()
+            # pragma: no mutate start -- ``finish`` reads ``node`` only for build-after frames.
             return _Frame(node=node, parts=parts, target=empty)
+            # pragma: no mutate end
         if isinstance(node, Mapping):
             mapping = cast("Mapping[object, object]", node)
             pairs: list[object] = [item for pair in mapping.items() for item in pair]
@@ -459,7 +462,9 @@ class _TreeMap:
             names.append(name)
             parts.append(part)
         target = node if self.in_place else copy.copy(node)
+        # pragma: no mutate start -- ``finish`` reads ``node`` only for build-after frames.
         return _Frame(node=node, parts=parts, target=target, names=tuple(names))
+        # pragma: no mutate end
 
 
 def _replace_at(parent: object, attr: str | int | object | None, new: object) -> None:
@@ -556,7 +561,8 @@ def _built_after(node: object) -> _Frame:
 # ``copy.copy``; its constructor need not take a mapping.
 def _emptied(mapping: Mapping[object, object]) -> object:
     """Return an empty dict of ``mapping``'s class to fill, else ``_UNSET``."""
-    if type(mapping) is dict:
+    # A shortcut: a plain dict copied and cleared below is the same empty dict.
+    if type(mapping) is dict:  # pragma: no mutate -- see above.
         return dict[object, object]()
     if not isinstance(mapping, dict):
         return _UNSET
@@ -582,7 +588,8 @@ def _assembled(node: object, parts: list[object], built: list[object]) -> object
 
 def _pairs(flat: list[object]) -> Iterator[tuple[object, object]]:
     """Return a flat ``[key, value, ...]`` list's pairs."""
-    return zip(flat[::2], flat[1::2], strict=True)
+    # Built from whole pairs, so the halves match; ``strict`` is for Ruff's B905.
+    return zip(flat[::2], flat[1::2], strict=True)  # pragma: no mutate -- see above.
 
 
 def _holds_data(value: object) -> bool:

@@ -528,6 +528,29 @@ def test_traverse_visits_a_shared_node_once() -> None:
     assert sum(m is shared for m in matched) == 1
 
 
+def test_traverse_goes_on_past_a_leaf_a_repeat_and_a_match() -> None:
+    first, second = Box(), Box()
+
+    matched = [m.node for m in traverse([1, "s", first, first, [second]], Box)]
+
+    assert matched == [first, second]
+
+
+def test_tree_map_visits_a_shared_plain_object_once() -> None:
+    shared = _Leaf("shared")
+    visited: list[object] = []
+
+    def visit(node: object) -> object:
+        visited.append(node)
+        return ABSENT
+
+    copied = tree_map([shared, [shared]], visit=visit)
+
+    assert sum(node is shared for node in visited) == 1
+    assert copied[0] is shared
+    assert cast("list[object]", copied[1])[0] is shared
+
+
 def test_traverse_survives_a_cycle() -> None:
     a, b = Box(), Box()
     a.item, b.item = b, a
@@ -627,6 +650,69 @@ class TestDrive:
     def test_work_deeper_than_the_headroom_runs(self) -> None:
         with recursion_headroom(100):
             assert drive(_depth(200)) == 200
+
+
+class _SubBox(Box):
+    """A dataclass's subclass: data by its fields, though it declares no slots."""
+
+
+def test_a_dataclass_subclass_without_its_own_slots_is_copied_as_data() -> None:
+    source = _SubBox(item=[1])
+
+    copied = tree_map(source)
+
+    assert copied is not source
+    assert copied.item == [1]
+    assert copied.item is not source.item
+
+
+def test_a_mapping_of_several_entries_keeps_each_key_with_its_value() -> None:
+    source = {"a": 1, "b": 2, "c": 3}
+
+    assert tree_map(source) == source
+
+
+def test_walk_goes_on_past_a_leaf() -> None:
+    box = Box()
+
+    assert list(walk([box, 1])) == [[box, 1], box]
+
+
+def _box_items(node: object) -> list[object]:
+    return [node.item] if isinstance(node, Box) else []
+
+
+def test_walk_hands_each_node_to_its_parts_callable() -> None:
+    inner = Box()
+    root = Box(item=inner)
+
+    assert list(walk(root, parts=_box_items)) == [root, inner]
+
+
+def test_visit_sees_a_replaced_node_once_however_often_it_is_reached() -> None:
+    box = Box()
+    seen: list[object] = []
+
+    def boxed(node: object) -> object:
+        seen.append(node)
+        return _boxed(node)
+
+    assert tree_map([box, box], visit=boxed) == ["boxed", "boxed"]
+    assert sum(node is box for node in seen) == 1
+
+
+def test_a_node_reached_twice_reads_as_its_one_result() -> None:
+    box, opaque, held = Box(), _Leaf("o"), (Box(),)
+
+    replaced = tree_map([box, box], visit=_boxed)
+    kept = tree_map([opaque, opaque])
+    rebuilt = tree_map([held, held])
+
+    assert replaced == ["boxed", "boxed"]
+    assert kept[0] is opaque
+    assert kept[1] is opaque
+    assert rebuilt[0] is rebuilt[1]
+    assert rebuilt[0] is not held
 
 
 if __name__ == "__main__":

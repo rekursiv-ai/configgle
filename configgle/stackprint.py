@@ -26,7 +26,6 @@ from typing import IO, TYPE_CHECKING, ClassVar, Final, Protocol, cast, override
 import dataclasses
 import functools
 import re
-import sys
 
 from configgle.tree import Work, drive
 
@@ -139,14 +138,15 @@ class StackPrinter(PrettyPrinter):
         )
         # The base class sets these as well; typeshed does not declare them. Read
         # them back off the base rather than restating its ``int``/``bool``
-        # coercion, so ``indent=2.0`` lays out exactly as ``PrettyPrinter``.
+        # coercion and stream default, so ``indent=2.0`` lays out exactly as
+        # ``PrettyPrinter``.
         self._indent_per_level: int = vars(self)["_indent_per_level"]
         self._width: int = vars(self)["_width"]
-        self._depth = depth
-        self._stream: IO[str] = sys.stdout if stream is None else stream
+        self._depth: int | None = vars(self)["_depth"]
+        self._stream: IO[str] = vars(self)["_stream"]
         self._compact: bool = vars(self)["_compact"]
-        self._sort_dicts = sort_dicts
-        self._underscore_numbers = underscore_numbers
+        self._sort_dicts: bool = vars(self)["_sort_dicts"]
+        self._underscore_numbers: bool = vars(self)["_underscore_numbers"]
         self._reprs: ReprMemo | None = None
         """Set by a subclass for one render, so a node's repr is built once."""
 
@@ -229,11 +229,11 @@ class StackPrinter(PrettyPrinter):
             return "{...}", False, objid in context
         if objid in context:
             return _recursion(obj), False, True
-        context[objid] = 1
+        context[objid] = 1  # pragma: no mutate -- context is read for membership only.
         readable, recursive = True, False
         components: list[str] = []
         items = (
-            sorted(mapping.items(), key=_safe_tuple)
+            sorted(mapping.items(), key=_safe_item_key)
             if self._sort_dicts
             else list(mapping.items())
         )
@@ -276,7 +276,7 @@ class StackPrinter(PrettyPrinter):
             return f"{opener}...{closer}", False, objid in context
         if objid in context:
             return _recursion(obj), False, True
-        context[objid] = 1
+        context[objid] = 1  # pragma: no mutate -- context is read for membership only.
         readable, recursive = True, False
         components: list[str] = []
         for item in items:
@@ -321,7 +321,7 @@ class StackPrinter(PrettyPrinter):
         layout = self._kind_layout(type(obj))
         if layout is None and not _has_generated_repr(obj):
             return rep
-        context[objid] = 1
+        context[objid] = 1  # pragma: no mutate -- context is read for membership only.
         laid = (
             self._dataclass_block(obj, indent, allowance, context, level + 1)
             if layout is None
@@ -392,12 +392,10 @@ class StackPrinter(PrettyPrinter):
         level: int,
     ) -> Generator[Work, object, str]:
         mapping = cast("dict[object, object]", obj)
-        parts = ["{"]
-        if self._indent_per_level > 1:
-            parts.append((self._indent_per_level - 1) * " ")
+        parts = ["{", (self._indent_per_level - 1) * " "]
         if mapping:
             items = (
-                sorted(mapping.items(), key=_safe_tuple)
+                sorted(mapping.items(), key=_safe_item_key)
                 if self._sort_dicts
                 else list(mapping.items())
             )
@@ -523,12 +521,12 @@ class StackPrinter(PrettyPrinter):
             indent += 1
             allowance += 1
         max_width1 = max_width = self._width - indent
-        rep = ""
         for i, line in enumerate(lines):
             rep = repr(line)
             if i == len(lines) - 1:
                 max_width1 -= allowance
-            if len(rep) <= max_width1:
+            # A line that fits is the one literal ``_wrapped_line`` yields for it.
+            if len(rep) <= max_width1:  # pragma: no mutate -- see above.
                 chunks.append(rep)
             else:
                 chunks.extend(
@@ -539,7 +537,7 @@ class StackPrinter(PrettyPrinter):
                     ),
                 )
         if len(chunks) == 1:
-            return rep
+            return chunks[0]
         body = ("\n" + " " * indent).join(chunks)
         return f"({body})" if level == 1 else body
 
@@ -574,7 +572,9 @@ class StackPrinter(PrettyPrinter):
         level: int,
     ) -> str:
         data = bytes(cast(bytearray, obj))
+        # pragma: no mutate start -- ``_bytes_block`` drops context; only level 1 adds parentheses.
         body = self._bytes_block(data, indent + 10, allowance + 1, context, level + 1)
+        # pragma: no mutate end
         return f"bytearray({body})"
 
     def _mappingproxy_block(
@@ -636,7 +636,9 @@ class StackPrinter(PrettyPrinter):
         mapping = cast("defaultdict[object, object]", obj)
         if not mapping:
             return repr(mapping)
+        # pragma: no mutate start -- a callable factory is no container a depth cuts.
         factory = yield from self._repr_text(mapping.default_factory, context, level)
+        # pragma: no mutate end
         name = type(mapping).__name__
         indent += len(name) + 1
         body = yield from self._dict_block(
@@ -660,7 +662,7 @@ class StackPrinter(PrettyPrinter):
         if not counter:
             return repr(counter)
         name = type(counter).__name__
-        pad = (self._indent_per_level - 1) * " " if self._indent_per_level > 1 else ""
+        pad = (self._indent_per_level - 1) * " "
         body = yield from self._dict_items_block(
             counter.most_common(),
             indent + len(name) + 1,
@@ -726,7 +728,9 @@ class StackPrinter(PrettyPrinter):
             )
             return f"{name}([{body}])"
         body = yield from self._items_block(items, indent, 2, context, level)
+        # pragma: no mutate start -- an int's text reads no level.
         maxlen = yield from self._repr_text(items.maxlen, context, level)
+        # pragma: no mutate end
         return f"{name}([{body}],\n{' ' * indent}maxlen={maxlen})"
 
     def _wrapped_data_block(
@@ -818,9 +822,7 @@ class StackPrinter(PrettyPrinter):
     ) -> Generator[Work, object, str]:
         """Lay out items one per line, or several per line when compact."""
         indent += self._indent_per_level
-        parts: list[str] = (
-            [(self._indent_per_level - 1) * " "] if self._indent_per_level > 1 else []
-        )
+        parts: list[str] = [(self._indent_per_level - 1) * " "]
         newline = ",\n" + " " * indent
         delim = ""
         width = max_width = self._width - indent + 1
@@ -878,16 +880,22 @@ class _SafeKey:
 
     def __lt__(self, other: _SafeKey) -> bool:
         try:
+            # pragma: no mutate start -- distinct members never compare equal.
             return cast(_Comparable, self.obj) < other.obj
+            # pragma: no mutate end
         except TypeError:
+            # pragma: no mutate start -- see above.
             return (str(type(self.obj)), id(self.obj)) < (
                 str(type(other.obj)),
                 id(other.obj),
             )
+            # pragma: no mutate end
 
 
-def _safe_tuple(pair: tuple[object, object]) -> tuple[_SafeKey, _SafeKey]:
-    return _SafeKey(pair[0]), _SafeKey(pair[1])
+# ``pprint`` sorts by a (key, value) pair, but no two ``_SafeKey``s are equal, so
+# the value never decides.
+def _safe_item_key(pair: tuple[object, object]) -> _SafeKey:
+    return _SafeKey(pair[0])
 
 
 def _recursion(obj: object) -> str:
@@ -896,14 +904,15 @@ def _recursion(obj: object) -> str:
 
 def _has_generated_repr(obj: object) -> bool:
     """Return whether ``PrettyPrinter`` lays ``obj`` out as a dataclass."""
-    if not dataclasses.is_dataclass(obj) or isinstance(obj, type):
-        return False
+    # A class, or any non-dataclass, has no ``__dataclass_params__`` on its type.
     params = cast(object, getattr(type(obj), "__dataclass_params__", None))
     wrapped = cast(object, getattr(type(obj).__repr__, "__wrapped__", None))
+    # pragma: no mutate start -- any falsy default, or one without the marker, reads the same.
     return bool(getattr(params, "repr", False)) and "__create_fn__" in cast(
         str,
         getattr(wrapped, "__qualname__", ""),
     )
+    # pragma: no mutate end
 
 
 def _wrapped_line(line: str, *, max_width: int, allowance: int) -> Iterator[str]:
@@ -953,7 +962,9 @@ class _ReprFrame:
     opener: str
     closer: str
     children: list[object]
-    labels: list[str]
+    labels: list[str] = dataclasses.field(default_factory=list[str])
+    """Each child's prefix, as ``name=``; empty for ``pairs``."""
+
     pairs: bool = False
     parts: list[str] = dataclasses.field(default_factory=list[str])
     recursive: bool = False
@@ -966,6 +977,7 @@ class _ReprFrame:
           text: The opener, each part's text joined by commas, then the closer.
 
         """
+        # pragma: no mutate start -- parts pair up, one per label, so ``strict`` never fires.
         if self.pairs:
             items = [
                 f"{key}: {value}"
@@ -976,6 +988,7 @@ class _ReprFrame:
                 label + part
                 for label, part in zip(self.labels, self.parts, strict=True)
             ]
+        # pragma: no mutate end
         return self.opener + ", ".join(items) + self.closer
 
 
@@ -1004,7 +1017,6 @@ def _opened(
                 opener=opener,
                 closer=closer,
                 children=children,
-                labels=[],
                 pairs=True,
             )
         if kind is tuple and len(container) == 1:
@@ -1019,7 +1031,11 @@ def _opened(
             labels=[""] * len(container),
         )
     generated = cast(object, getattr(vars(kind).get("__repr__"), "__wrapped__", None))
-    if "__create_fn__" not in cast(str, getattr(generated, "__qualname__", "")):
+    if not dataclasses.is_dataclass(kind) or "__create_fn__" not in cast(
+        str,
+        getattr(generated, "__qualname__", ""),  # pragma: no mutate -- markerless.
+    ):
+        # A class may borrow a dataclass's generated ``__repr__`` without fields.
         return leaf(node)
     if id(node) in active:
         return "..."
