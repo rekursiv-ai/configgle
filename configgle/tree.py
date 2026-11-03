@@ -39,6 +39,7 @@ __all__ = [
     "attributes",
     "children",
     "drive",
+    "replace_at",
     "traverse",
     "tree_map",
     "walk",
@@ -203,9 +204,25 @@ class Match[NodeT]:
           TypeError: The parent is a read-only container.
 
         """
-        if self.parent is None:
-            raise ValueError("The root of a traversal has no parent to replace it in.")
-        _replace_at(self.parent, self.attr, new)
+        replace_at(self.parent, self.attr, new)
+
+
+def replace_at(parent: object | None, attr: object | None, new: object) -> None:
+    """Write ``new`` at ``attr`` in ``parent``, as a :class:`Match` names its slot.
+
+    Args:
+      parent: The container or object holding the node; ``None`` at the root.
+      attr: An attribute name, a sequence index, or a mapping key.
+      new: The node to write in its place.
+
+    Raises:
+      ValueError: ``parent`` is ``None``: the root has no parent to write to.
+      TypeError: The parent is a read-only container.
+
+    """
+    if parent is None:
+        raise ValueError("The root of a traversal has no parent to replace it in.")
+    _replace_at(parent, attr, new)
 
 
 def traverse[NodeT](
@@ -313,16 +330,22 @@ def tree_map[T](
 
 
 class _Frame:
-    """A node whose parts are being rebuilt."""
+    """A node whose parts are being rebuilt.
+
+    Attributes:
+      node: The node, which ``finish`` rebuilds only when ``target`` is
+        ``_UNSET``; any other target is filled in place.
+
+    """
 
     __slots__ = ("built", "index", "names", "node", "parts", "target")
 
     def __init__(
         self,
         *,
-        node: object,
         parts: list[object],
         target: object,
+        node: object = None,
         names: tuple[str, ...] = (),
     ) -> None:
         self.node = node
@@ -434,8 +457,6 @@ class _TreeMap:
         key = id(node)
         if self.pending[key] == len(self.done):
             raise ValueError(f"cannot walk a cycle through a {type(node).__name__}")
-        # Unread: a cycle through a copied container returns that copy first.
-        self.pending[key] = len(self.done)  # pragma: no mutate -- see above.
         return _built_after(node)
 
     def _frame(self, value: object) -> _Frame | None:
@@ -445,9 +466,7 @@ class _TreeMap:
         if kind is list or kind is set:
             parts = list(cast("Iterable[object]", node))
             empty: object = list[object]() if kind is list else set[object]()
-            # pragma: no mutate start -- ``finish`` reads ``node`` only for build-after frames.
-            return _Frame(node=node, parts=parts, target=empty)
-            # pragma: no mutate end
+            return _Frame(parts=parts, target=empty)
         if isinstance(node, Mapping):
             mapping = cast("Mapping[object, object]", node)
             pairs: list[object] = [item for pair in mapping.items() for item in pair]
@@ -462,9 +481,7 @@ class _TreeMap:
             names.append(name)
             parts.append(part)
         target = node if self.in_place else copy.copy(node)
-        # pragma: no mutate start -- ``finish`` reads ``node`` only for build-after frames.
-        return _Frame(node=node, parts=parts, target=target, names=tuple(names))
-        # pragma: no mutate end
+        return _Frame(parts=parts, target=target, names=tuple(names))
 
 
 def _replace_at(parent: object, attr: str | int | object | None, new: object) -> None:

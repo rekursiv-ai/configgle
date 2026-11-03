@@ -33,8 +33,8 @@ from treekle.absent import ABSENT
 
 from configgle.custom_types import Finalizeable, LateBound, Makeable
 from configgle.tree import (
-    Match as TreeMatch,
     attributes,
+    replace_at,
     traverse as tree_traverse,
     tree_map,
     walk,
@@ -112,13 +112,12 @@ class Match[ConfigT]:
         Args:
           new: The node to write in place of ``config``.
 
+        Raises:
+          ValueError: The match is the root, which has no parent to write to.
+          TypeError: The parent is a read-only container.
+
         """
-        TreeMatch(
-            fqn=self.fqn,  # pragma: no mutate -- unread by tree.Match.replace.
-            node=self.config,  # pragma: no mutate -- unread by tree.Match.replace.
-            parent=self.parent,
-            attr=self.attr,
-        ).replace(new)
+        replace_at(self.parent, self.attr, new)
 
 
 def traverse[ConfigT](

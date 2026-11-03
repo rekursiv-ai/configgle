@@ -50,7 +50,7 @@ class PformatOptions(TypedDict, total=False, closed=True):
     finalize: bool
     mask_memory_addresses: bool
     extra_compact: bool
-    continuation_pipe: int
+    continuation_pipe: int | None
     hide_default_values: bool
     short_sequence_max_width: int
 

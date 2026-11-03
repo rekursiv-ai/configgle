@@ -1790,8 +1790,13 @@ class TestContinuationPipes:
         assert _should_add_continuation_pipes("a\nb", 2, 0) is True
 
     def test_should_not_add_pipes_disabled(self):
-        """With threshold -1, pipes are never added."""
-        assert _should_add_continuation_pipes("a\nb", 2, -1) is False
+        """With no threshold, pipes are never added."""
+        assert _should_add_continuation_pipes("a\nb", 2, None) is False
+
+    @pytest.mark.parametrize("threshold", [-1, -50])
+    def test_a_negative_threshold_is_refused(self, threshold: int) -> None:
+        with pytest.raises(ValueError, match=rf"got {threshold}\.$"):
+            FigPrinter(continuation_pipe=threshold)
 
     def test_should_not_add_pipes_single_item(self):
         """Single items never get pipes."""
@@ -2054,7 +2059,7 @@ class TestPprintDataclassWithPipes:
         result = pformat(
             obj,
             extra_compact=True,
-            continuation_pipe=-1,
+            continuation_pipe=None,
             hide_default_values=False,
             width=40,
         )
