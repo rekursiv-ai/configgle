@@ -59,7 +59,7 @@ from a child AFTER it (read its finalized value). Pushdown dominates, so
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from contextvars import ContextVar
 from types import CellType, MethodType
 from typing import (
@@ -170,6 +170,12 @@ class _MakesFromKwargs(Protocol[_ParentT_co]):
     def __call__(self, **kwargs: object) -> _ParentT_co: ...
 
 
+class _ParentClassBinding(Protocol):
+    """Zero-argument callable that reports a Maker's owning class."""
+
+    def __call__(self) -> type | None: ...
+
+
 def _no_parent_class(_: MakerMeta) -> type | None:
     """Report no parent for a Maker never nested in a class."""
     return None
@@ -196,8 +202,10 @@ class MakerMeta(type):
     # An attribute, not a ``def``: ``__set_name__`` rebinds it, and every checker
     # rejects assigning over a method. The None default is bound once, on the
     # first class in a hierarchy, so a Config subclassed outside any class body
-    # inherits its base's owner instead of shadowing it with None.
-    _parent_class: Callable[[], type | None]
+    # inherits its base's owner instead of shadowing it with None. A Protocol,
+    # not ``Callable``: pyright binds a ``Callable`` metaclass attribute read
+    # through a class object as a method, and the zero-argument binding fails.
+    _parent_class: _ParentClassBinding
 
     def __init__(
         cls,
