@@ -20,7 +20,7 @@ from collections import (
     deque,
 )
 from pprint import PrettyPrinter
-from types import MappingProxyType, SimpleNamespace
+from types import FunctionType, MappingProxyType, SimpleNamespace
 from typing import IO, TYPE_CHECKING, ClassVar, Final, Protocol, cast, override
 
 import dataclasses
@@ -907,12 +907,14 @@ def _has_generated_repr(obj: object) -> bool:
     # A class, or any non-dataclass, has no ``__dataclass_params__`` on its type.
     params = cast(object, getattr(type(obj), "__dataclass_params__", None))
     wrapped = cast(object, getattr(type(obj).__repr__, "__wrapped__", None))
-    # pragma: no mutate start -- any falsy default, or one without the marker, reads the same.
-    return bool(getattr(params, "repr", False)) and "__create_fn__" in cast(
-        str,
-        getattr(wrapped, "__qualname__", ""),
-    )
+    # pragma: no mutate start -- any falsy default reads the same; ``params`` has no public type.
+    asked = bool(getattr(params, "repr", False))
     # pragma: no mutate end
+    return (
+        asked
+        and isinstance(wrapped, FunctionType)
+        and "__create_fn__" in wrapped.__qualname__
+    )
 
 
 def _wrapped_line(line: str, *, max_width: int, allowance: int) -> Iterator[str]:
@@ -1031,9 +1033,10 @@ def _opened(
             labels=[""] * len(container),
         )
     generated = cast(object, getattr(vars(kind).get("__repr__"), "__wrapped__", None))
-    if not dataclasses.is_dataclass(kind) or "__create_fn__" not in cast(
-        str,
-        getattr(generated, "__qualname__", ""),  # pragma: no mutate -- markerless.
+    if not (
+        dataclasses.is_dataclass(kind)
+        and isinstance(generated, FunctionType)
+        and "__create_fn__" in generated.__qualname__
     ):
         # A class may borrow a dataclass's generated ``__repr__`` without fields.
         return leaf(node)

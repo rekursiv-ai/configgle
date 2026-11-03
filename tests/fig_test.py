@@ -1155,7 +1155,7 @@ def test_diff_format_options_and_context() -> None:
         finalize=False,
         mask_memory_addresses=False,
         extra_compact=True,
-        continuation_pipe=-1,
+        continuation_pipe=None,
         hide_default_values=False,
         short_sequence_max_width=9,
     )

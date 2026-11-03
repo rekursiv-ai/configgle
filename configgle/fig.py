@@ -559,7 +559,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         finalize: bool = True,
         mask_memory_addresses: bool = True,
         extra_compact: bool = True,
-        continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
+        continuation_pipe: int | None = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
         hide_default_values: bool = True,
         short_sequence_max_width: int = _SHORT_SEQUENCE_MAX_WIDTH,
     ) -> str:
@@ -575,7 +575,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
           finalize: Auto-finalize unfinalized configs before printing.
           mask_memory_addresses: Replace memory addresses with placeholder.
           extra_compact: Use extra compact formatting.
-          continuation_pipe: Lines threshold for continuation pipes (0=always, -1=never).
+          continuation_pipe: Lines threshold for continuation pipes (0=always, None=never).
           hide_default_values: Omit fields matching literal defaults. Factory-backed
             fields remain visible without executing their factories.
           short_sequence_max_width: Max width for single-line sequences.
@@ -663,7 +663,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
         finalize: bool = True,
         mask_memory_addresses: bool = True,
         extra_compact: bool = True,
-        continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
+        continuation_pipe: int | None = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
         hide_default_values: bool = True,
         short_sequence_max_width: int = _SHORT_SEQUENCE_MAX_WIDTH,
     ) -> None:
@@ -682,7 +682,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
           finalize: Auto-finalize unfinalized configs before printing.
           mask_memory_addresses: Replace memory addresses with placeholder.
           extra_compact: Use extra compact formatting.
-          continuation_pipe: Lines threshold for continuation pipes (0=always, -1=never).
+          continuation_pipe: Lines threshold for continuation pipes (0=always, None=never).
           hide_default_values: Omit fields matching literal defaults. Factory-backed
             fields remain visible without executing their factories.
           short_sequence_max_width: Max width for single-line sequences.

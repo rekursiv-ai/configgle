@@ -75,7 +75,7 @@ def pformat(
     finalize: bool = True,
     mask_memory_addresses: bool = True,
     extra_compact: bool = True,
-    continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
+    continuation_pipe: int | None = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
     hide_default_values: bool = True,
     short_sequence_max_width: int = _SHORT_SEQUENCE_MAX_WIDTH,
 ) -> str:
@@ -92,7 +92,7 @@ def pformat(
       finalize: Auto-finalize unfinalized configs before printing.
       mask_memory_addresses: Replace memory addresses with placeholder.
       extra_compact: Use extra compact formatting.
-      continuation_pipe: Lines threshold for continuation pipes (0=always, -1=never).
+      continuation_pipe: Lines threshold for continuation pipes (0=always, None=never).
       hide_default_values: Omit fields matching literal defaults. Factory-backed
         fields remain visible without executing their factories.
       short_sequence_max_width: Max width for single-line sequences.
@@ -133,7 +133,7 @@ def pprint(
     finalize: bool = True,
     mask_memory_addresses: bool = True,
     extra_compact: bool = True,
-    continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
+    continuation_pipe: int | None = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
     hide_default_values: bool = True,
     short_sequence_max_width: int = _SHORT_SEQUENCE_MAX_WIDTH,
 ) -> None:
@@ -153,7 +153,7 @@ def pprint(
       finalize: Auto-finalize unfinalized configs before printing.
       mask_memory_addresses: Replace memory addresses with placeholder.
       extra_compact: Use extra compact formatting.
-      continuation_pipe: Lines threshold for continuation pipes (0=always, -1=never).
+      continuation_pipe: Lines threshold for continuation pipes (0=always, None=never).
       hide_default_values: Omit fields matching literal defaults. Factory-backed
         fields remain visible without executing their factories.
       short_sequence_max_width: Max width for single-line sequences.
@@ -198,7 +198,7 @@ class FigPrinter(StackPrinter):
         finalize: bool = True,
         mask_memory_addresses: bool = True,
         extra_compact: bool = True,
-        continuation_pipe: int = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
+        continuation_pipe: int | None = _DEFAULT_CONTINUATION_PIPE_THRESHOLD,
         hide_default_values: bool = True,
         short_sequence_max_width: int = _SHORT_SEQUENCE_MAX_WIDTH,
     ):
@@ -216,6 +216,10 @@ class FigPrinter(StackPrinter):
             _mask_memory_addresses if mask_memory_addresses else None
         )
         self._extra_compact = extra_compact
+        if continuation_pipe is not None and continuation_pipe < 0:
+            raise ValueError(
+                f"continuation_pipe must be at least 0, or None for never; got {continuation_pipe}.",
+            )
         self._continuation_pipe = continuation_pipe
         self._hide_default_values = hide_default_values
         self._short_sequence_max_width = short_sequence_max_width
@@ -411,7 +415,7 @@ class FigPrinter(StackPrinter):
         # costs microseconds on each of a render's thousands of leaves.
         if type(obj) in (int, float, str, bool, bytes, type(None), list, dict, tuple):
             return False
-        # pragma: no mutate start -- read for truth only, so None is the same default.
+        # pragma: no mutate start -- a ``Finalizeable`` may lack the flag; any falsy default reads the same.
         finalized_flag = getattr(obj, "_finalized", False)
         # pragma: no mutate end
         return self._finalize and not finalized_flag and isinstance(obj, Finalizeable)
@@ -846,8 +850,7 @@ def _fields_diff(
     # pragma: no mutate start -- a float or a floor of 2 lays leaves out the same.
     leaf_options["width"] = max(1, options.get("width", 80) // (len(configs) + 1))
     # pragma: no mutate end
-    # Any negative threshold turns continuation pipes off.
-    leaf_options["continuation_pipe"] = -1  # pragma: no mutate -- see above.
+    leaf_options["continuation_pipe"] = None
     printer = FigPrinter(**leaf_options)
     trees = [
         printer.field_values(source, depth=options.get("depth")) for source in configs
@@ -1225,8 +1228,7 @@ def _subtree_functions(
                     return tuple(functions)
                 stack.append((child, None))
             continue
-        # A node left on the stack pops next turn, on its memo hit.
-        _ = stack.pop()  # pragma: no mutate -- see above.
+        # Left on the stack: the next turn pops it on this memo hit.
         path.discard(id(node))
         memo[id(node)] = (
             node,
@@ -1366,10 +1368,10 @@ def _add_pipes_to_lines(lines: list[str], pipe_column: int) -> list[str]:
 def _should_add_continuation_pipes(
     formatted_value: str,
     num_items: int,
-    continuation_pipe_threshold: int,
+    continuation_pipe_threshold: int | None,
 ) -> bool:
     """Determine if continuation pipes should be added to formatted value."""
-    if continuation_pipe_threshold < 0:
+    if continuation_pipe_threshold is None:
         return False
     if num_items <= 1:
         return False
