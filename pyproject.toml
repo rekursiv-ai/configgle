@@ -1,6 +1,6 @@
 # NEVER EDIT THIS FILE!
-# uv sync --all-groups --no-group jax --no-group tf --frozen  # cu132 aka "cuda"
-# uv sync --all-groups --no-group jax --no-group tf --frozen --no-group cuda --extra cpu
+# uv sync --all-groups --frozen  # cu132 aka "cuda"
+# uv sync --all-groups --frozen --no-group cuda --extra cpu
 
 [project]
 name = "configgle"
@@ -30,6 +30,60 @@ dependencies = [
     "treekle>=0.4.1",
     # 4.10 adds PEP 728 `TypedDict(closed=True)`; `PformatOptions` needs it.
     "typing_extensions>=4.16.0",
+]
+
+[project.scripts]
+configgle = "configgle.launch:main"
+
+[dependency-groups]
+
+# Requirements are floors; uv.lock fixes versions. Never cap a dependency.
+# Public package deltas replace project.dependencies; these groups are monorepo-only.
+
+cuda = [
+    "torch",
+    "torchao",
+    "torchvision",
+]
+
+lint = [
+    "codespell>=2.4.3",
+    "ruff>=0.17.3",
+]
+test = [
+    "pytest-timeout>=2.4.0",
+    "pytest-xdist>=3.8.0",
+    "pytest>=9.2.0",
+    "hypothesis>=6.170.14",
+    "pytest-cov>=7.1.0",
+    "nodejs-wheel-binaries>=24.19.0",
+    "cloudpickle>=3.1.2",
+]
+typecheck = [
+    "basedpyright>=1.40.2",
+    "pyrefly>=1.4.0",
+    "ty>=0.0.95",
+    "rekursiv-ai-typings>=0.1.11",
+    "typing_extensions>=4.16.0",
+]
+"pre-commit" = [
+    "pre-commit>=4.7.0",
+    {include-group = "lint"},
+    {include-group = "test"},
+    {include-group = "typecheck"},
+]
+dev = [
+    {include-group = "pre-commit"},
+    {include-group = "debug"},
+    {include-group = "publish"},
+]
+debug = [
+    "ipython>=9.18.0",
+    "tqdm>=4.70.1",
+]
+publish = [
+    "build>=1.6.1",
+    "twine",
 ]
 
 [project.optional-dependencies]
@@ -63,60 +117,6 @@ cu134 = [
     "torchao",
     "torchvision",
 ]
-
-[project.scripts]
-configgle = "configgle.launch:main"
-
-[dependency-groups]
-# NEVER ADD MORE DEPENDENCIES!
-
-cuda = [
-    "torch",
-    "torchao",
-    "torchvision",
-]
-
-debug = [
-    "ipython>=9.18.0",
-    "tqdm>=4.70.1",
-]
-lint = [
-    "codespell>=2.4.3",
-    "ruff>=0.17.3",
-]
-test = [
-    "pytest-timeout>=2.4.0",
-    "pytest-xdist>=3.8.0",
-    "pytest>=9.2.0",
-    "hypothesis>=6.170.14",
-    "pytest-cov>=7.1.0",
-    "nodejs-wheel-binaries>=24.19.0",
-    "cloudpickle>=3.1.2",
-]
-typecheck = [
-    "basedpyright>=1.40.2",
-    "pyrefly>=1.4.0",
-    "ty>=0.0.95",
-    "rekursiv-ai-typings>=0.1.11",
-    "typing_extensions>=4.16.0",
-]
-"pre-commit" = [
-    "pre-commit>=4.7.0",
-    {include-group = "lint"},
-    {include-group = "test"},
-    {include-group = "typecheck"},
-]
-dev = [
-    {include-group = "pre-commit"},
-    {include-group = "debug"},
-    {include-group = "publish"},
-]
-publish = [
-    "build>=1.6.1",
-    "twine",
-]
-
-# NEVER ADD OTHER DEPENDENCY GROUPS: A NEW GROUP SERVES A PROJECT, AS ABOVE.
 
 [project.urls]
 Homepage = "https://www.rekursiv.ai"
