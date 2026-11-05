@@ -1693,8 +1693,8 @@ wheels = [
 
 [[package]]
 name = "rekursiv-ai-typings"
-version = "0.1.12"
-source = { git = "https://github.com/rekursiv-ai/typings?branch=main#19b4d04d2a996de9ff4e30a43a955ebee5db46f3" }
+version = "0.1.13"
+source = { git = "https://github.com/rekursiv-ai/typings?branch=main#5ca13a5b53d14a67dbd89d40906a583d8ba37ed3" }
 
 [[package]]
 name = "requests"
