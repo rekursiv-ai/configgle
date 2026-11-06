@@ -368,6 +368,49 @@ def test_a_frozen_config_class_built_late_keeps_its_finalized_state_through_copy
     assert copied._finalized is True
 
 
+def test_copy_state_reads_each_present_attribute_once() -> None:
+    reads: list[str] = []
+
+    class Counting(Maker[object]):
+        __slots__ = ("value",)
+
+        def __init__(self) -> None:
+            self.value = 7
+
+        @override
+        def __getattribute__(self, name: str) -> object:
+            if name == "value":
+                reads.append(name)
+            return cast(object, object.__getattribute__(self, name))
+
+    config = Counting()
+    config.value = 7
+
+    assert config.__getstate__() == {"_finalized": False, "value": 7}
+    assert reads == ["value"]
+
+
+@pytest.mark.parametrize("config_type", [_MutableConfig, _FrozenConfig])
+def test_copy_state_omits_unset_slots_and_keeps_lifecycle_state(
+    config_type: type[Fig],
+) -> None:
+    config = config_type().finalize()
+    object.__delattr__(config, "x")
+
+    assert config.__getstate__() == {"_finalized": True}
+    copied = copy.copy(config)
+    assert copied.__getstate__() == {"_finalized": True}
+    assert not hasattr(copied, "x")
+
+
+def test_copy_state_keeps_instance_dictionary_attributes() -> None:
+    config = Mutable.Config()
+    vars(config)["extra"] = None
+
+    assert config.__getstate__() == {"_finalized": False, "a": 1, "extra": None}
+    assert copy.copy(config).__getstate__() == config.__getstate__()
+
+
 def test_finalized_copies_then_finalizes_a_pending_config() -> None:
     class TestConfig(Fig):
         x: int = 1

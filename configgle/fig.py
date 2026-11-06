@@ -304,11 +304,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
     @override
     def __getstate__(self) -> dict[str, object]:
         """Return every set slot by name, ``_finalized`` included."""
-        return {
-            name: cast(object, getattr(self, name))
-            for name in attribute_names(self)
-            if hasattr(self, name)
-        }
+        return dict(attributes(self))
 
     def __setstate__(self, state: dict[str, object]) -> None:
         """Restore slots from ``__getstate__``, bypassing frozen ``__setattr__``."""
