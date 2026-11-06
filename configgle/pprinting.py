@@ -9,6 +9,7 @@ from typing import (
     TYPE_CHECKING,
     Final,
     Literal,
+    TypeGuard,
     TypeVar,
     assert_never,
     cast,
@@ -334,7 +335,7 @@ class FigPrinter(StackPrinter):
     ) -> Generator[Work, object, tuple[str, bool, bool]]:
         """Render ``obj`` on one line, qualifying functions and masking addresses."""
         obj = self._try_to_finalize(obj)
-        if isinstance(obj, DefersCall):
+        if _implements_protocol(obj, DefersCall):
             return (
                 yield from self._inline_repr(
                     obj,
@@ -390,7 +391,7 @@ class FigPrinter(StackPrinter):
     ) -> Generator[Work, object, str]:
         """Lay ``obj`` out across lines as ``_block`` would, without the cache."""
         obj = self._try_to_finalize(obj)
-        if not isinstance(obj, DefersCall):
+        if not _implements_protocol(obj, DefersCall):
             return (yield from super()._block(obj, indent, allowance, context, level))
         inline = obj
         if id(inline) in context:
@@ -411,14 +412,14 @@ class FigPrinter(StackPrinter):
 
     def _finalize_pending(self, obj: object) -> bool:
         """Return whether ``_try_to_finalize`` would copy and finalize ``obj``."""
-        # An exact builtin type has no ``finalize``, and the runtime protocol check
-        # costs microseconds on each of a render's thousands of leaves.
-        if type(obj) in (int, float, str, bool, bytes, type(None), list, dict, tuple):
-            return False
         # pragma: no mutate start -- a ``Finalizeable`` may lack the flag; any falsy default reads the same.
         finalized_flag = getattr(obj, "_finalized", False)
         # pragma: no mutate end
-        return self._finalize and not finalized_flag and isinstance(obj, Finalizeable)
+        return (
+            self._finalize
+            and not finalized_flag
+            and _implements_protocol(obj, Finalizeable)
+        )
 
     def _inline_repr(
         self,
@@ -882,6 +883,13 @@ def _fields_diff(
     return "\n".join(output)
 
 
+def _implements_protocol[T](obj: object, protocol: type[T]) -> TypeGuard[T]:
+    """Check config protocols without inspecting exact builtin leaves."""
+    if type(obj) in (int, float, str, bool, bytes, type(None), list, dict, tuple):
+        return False
+    return isinstance(obj, protocol)
+
+
 def _rendered_inline_items(value: DefersCall) -> list[tuple[str, object]]:
     """Return a call's arguments in rendered order; positional keys are empty."""
     func, args, kwargs = value.deferred_call()
@@ -890,7 +898,7 @@ def _rendered_inline_items(value: DefersCall) -> list[tuple[str, object]]:
 
 def _field_children(value: object) -> list[tuple[str, object]]:
     """Expose config fields, including inline callable arguments."""
-    if isinstance(value, DefersCall):
+    if _implements_protocol(value, DefersCall):
         func, args, kwargs = value.deferred_call()
         return [
             ("func", func),
