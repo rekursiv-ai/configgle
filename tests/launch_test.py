@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import field
-from pathlib import Path
+from importlib.util import module_from_spec, spec_from_file_location
+from typing import TYPE_CHECKING
 
 import argparse
-import os
-import subprocess
 import sys
 import textwrap
 
@@ -13,6 +12,11 @@ import pytest
 
 from configgle import Fig, Makeable, launch
 from configgle.launch import resolve_config
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from types import ModuleType
 
 
 class Child:
@@ -126,13 +130,16 @@ def test_resolve_config_composes_with_overrides_and_make() -> None:
 
 # --- The module docstring's worked example, executed ---------------------------
 #
-# The docstring is the only place a new user learns the pattern, so it is run
-# rather than trusted: the indented block is extracted verbatim, written to a
-# module, and launched through the real CLI. A drifted example fails here.
+# The docstring is the only place a new user learns the pattern, so its block
+# is loaded verbatim and passed to the launcher. A drifted example fails here.
 
 
-def _docstring_example() -> str:
-    """Return the dedented `myproject/experiments.py` block from launch.__doc__."""
+def _docstring_example(
+    tmp_path: Path,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+) -> ModuleType:
+    """Load the `myproject/experiments.py` block from launch.__doc__."""
     doc = launch.__doc__ or ""
     body = doc.split("    # myproject/experiments.py\n", 1)[1]
     body = body.split("\nRun it,", 1)[0]
@@ -141,52 +148,54 @@ def _docstring_example() -> str:
     # byte-identical after the export rewrites `configgle` -> `configgle`;
     # a per-call `.replace` becomes a no-op whose line then re-wraps, and
     # `ruff format --check` fails in the exported tree.
-    return textwrap.dedent(body).replace(
+    source = textwrap.dedent(body).replace(
         "from configgle import",
         f"from {launch.__name__.rsplit('.', 1)[0]} import",
     )
+    path = tmp_path / "myexample.py"
+    path.write_text(source)
+    spec = spec_from_file_location("myexample", path)
+    assert spec is not None
+    assert spec.loader is not None
+    example = module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, example)
+    spec.loader.exec_module(example)
+    return example
 
 
-def test_docstring_example_is_runnable(tmp_path: Path) -> None:
+def test_docstring_example_is_runnable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """The documented example must import, resolve, override, and make."""
-    (tmp_path / "myexample.py").write_text(_docstring_example())
-
-    env = {**os.environ, "PYTHONPATH": f"{tmp_path}{os.pathsep}{Path.cwd()}"}
-    result = subprocess.run(
+    example = _docstring_example(tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.setattr(
+        sys,
+        "argv",
         [
-            sys.executable,
-            "-m",
             "configgle",
-            "myexample.baseline",
+            f"{example.__name__}.baseline",
             "--override",
             "lr=3e-4",
             "--override",
             "steps=5",
         ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
     )
-
-    assert result.returncode == 0, result.stderr
-    # The example's `run()` prints its resolved config; the overrides must land.
-    assert "training 5 steps at lr=0.0003" in result.stdout
+    assert launch.main() == 0
+    assert capsys.readouterr().out == "training 5 steps at lr=0.0003\n"
 
 
-def test_docstring_example_defaults_run_unchanged(tmp_path: Path) -> None:
+def test_docstring_example_defaults_run_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Without overrides the example runs on its declared defaults."""
-    (tmp_path / "myexample.py").write_text(_docstring_example())
-    env = {**os.environ, "PYTHONPATH": f"{tmp_path}{os.pathsep}{Path.cwd()}"}
-    result = subprocess.run(
-        [sys.executable, "-m", "configgle", "myexample.baseline"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "training 100 steps at lr=0.001" in result.stdout
+    example = _docstring_example(tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["configgle", f"{example.__name__}.baseline"])
+    assert launch.main() == 0
+    assert capsys.readouterr().out == "training 100 steps at lr=0.001\n"
 
 
 def test_main_applies_all_overrides_and_runs_result(
