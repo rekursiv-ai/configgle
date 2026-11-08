@@ -11,6 +11,7 @@ import types
 
 import pytest
 
+from configgle import walk
 from configgle.custom_types import LateBound
 from configgle.fig import Fig
 from configgle.lib.testing.resources import recursion_headroom
@@ -1123,6 +1124,75 @@ def test_finalize_value_skips_an_already_finalized_value() -> None:
 
     value = Finalized()
     assert finalize_value(value) is value
+
+
+class _ProbeLog:
+    """Stands in for a runtime protocol, recording the type of each node probed."""
+
+    def __init__(self) -> None:
+        self.types: list[type] = []
+
+    def __instancecheck__(self, instance: object) -> bool:
+        self.types.append(type(instance))
+        return False
+
+
+class _Shouting(str):
+    __slots__ = ()
+
+    def finalize(self) -> _Shouting:
+        return _Shouting(self + "!")
+
+
+def test_finalize_value_never_probes_a_plain_builtin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = _ProbeLog()
+    monkeypatch.setattr(walk, "Finalizeable", probe)
+
+    finalize_value(
+        {"a": [1, 2.5, "s", b"b", None, True, 3j], "b": ({1}, frozenset({2}))},
+    )
+
+    assert probe.types == []
+
+
+def test_finalize_value_probes_a_node_that_is_not_a_plain_builtin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = _ProbeLog()
+    monkeypatch.setattr(walk, "Finalizeable", probe)
+
+    finalize_value([_Leaf("x"), _Shouting("y")])
+
+    assert probe.types == [_Leaf, _Shouting]
+
+
+def test_finalize_value_finalizes_a_subclass_of_a_builtin() -> None:
+    assert finalize_value(["a", _Shouting("b")]) == ["a", "b!"]
+
+
+def test_make_value_never_probes_a_plain_builtin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = _ProbeLog()
+    monkeypatch.setattr(walk, "Makeable", probe)
+
+    made = make_value({"a": [1, 2.5, "s", None, True], "b": (b"b", {"c": 3j})})
+
+    assert probe.types == []
+    assert made == {"a": [1, 2.5, "s", None, True], "b": (b"b", {"c": 3j})}
+
+
+def test_make_value_probes_a_node_that_is_not_a_plain_builtin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = _ProbeLog()
+    monkeypatch.setattr(walk, "Makeable", probe)
+
+    make_value([_Leaf("x")])
+
+    assert probe.types == [_Leaf]
 
 
 def test_finalize_value_preserves_an_in_place_tuple() -> None:

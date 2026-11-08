@@ -27,7 +27,7 @@ from collections.abc import (
 from dataclasses import dataclass
 from functools import partial
 from types import FunctionType, ModuleType
-from typing import Protocol, TypeGuard, cast
+from typing import Final, Protocol, TypeGuard, cast
 
 from treekle.absent import ABSENT
 
@@ -49,6 +49,27 @@ __all__ = [
     "make_value",
     "traverse",
 ]
+
+
+# Exact types only, never ``isinstance``: a subclass may define ``finalize`` or
+# ``make``. These builtins define neither, and nearly every node of a config tree is
+# one, so the protocol probes below skip them: a probe costs far more than this lookup.
+_PLAIN_TYPES: Final = frozenset(
+    {
+        bool,
+        bytes,
+        complex,
+        dict,
+        float,
+        frozenset,
+        int,
+        list,
+        set,
+        str,
+        tuple,
+        type(None),
+    },
+)
 
 
 def copy_tree[ValueT](
@@ -254,7 +275,7 @@ def _built_parts(
 # the walk stops there, which also ends a cycle back to an already-finalized node.
 def _finalized(node: object) -> object:
     """Return a ``Finalizeable`` finalized once, else ``ABSENT`` to walk on."""
-    if not isinstance(node, Finalizeable):
+    if type(node) in _PLAIN_TYPES or not isinstance(node, Finalizeable):
         return ABSENT
     return node if getattr(node, "_finalized", None) else node.finalize()
 
@@ -311,7 +332,7 @@ def _own_copy(node: object, *, root: object, visited: dict[int, object]) -> obje
 
 def _made(node: object, *, made: dict[int, object], making: set[int]) -> object:
     """Return a Makeable built once, else walk a list, tuple, or mapping."""
-    if isinstance(node, Makeable):
+    if type(node) not in _PLAIN_TYPES and isinstance(node, Makeable):
         key = id(node)
         if key in made:
             return made[key]
