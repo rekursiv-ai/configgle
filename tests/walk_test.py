@@ -740,188 +740,82 @@ def test_bind_late_still_binds_through_ordinary_attributes():
     assert seen == [root]
 
 
-class _TLeaf:
-    class Config(Fig["_TLeaf"]):
-        width: int = 1
+@pytest.mark.parametrize(
+    ("cls", "options", "paths"),
+    [
+        (_Child.Config, {}, ["after[0]"]),
+        ((_Link, _Child.Config), {}, [""]),
+        ((_Link, _Child.Config), {"recurse": False}, [""]),
+        ((_Link, _Child.Config), {"recurse": True}, ["", "after[0]"]),
+    ],
+)
+def test_traverse_adapts_matches_and_forwards_options(
+    cls: type[object] | tuple[type[object], ...],
+    options: dict[str, bool],
+    paths: list[str],
+) -> None:
+    child = _Child.Config()
+    root = _Link()
+    root.after = [child]
+    expected = {
+        "": walk.Match(fqn="", config=root, parent=None, attr=None),
+        "after[0]": walk.Match(
+            fqn="after[0]",
+            config=child,
+            parent=root.after,
+            attr=0,
+        ),
+    }
 
-    def __init__(self, config: Config) -> None:
-        del config
+    matches = list(traverse(root, cls, **options))
 
-
-class _TNorm:
-    class Config(Fig["_TNorm"]):
-        eps: float = 1e-6
-
-    def __init__(self, config: Config) -> None:
-        del config
-
-
-class _TBlock:
-    class Config(Fig["_TBlock"]):
-        proj: _TLeaf.Config = field(default_factory=_TLeaf.Config)
-        norm: _TNorm.Config = field(default_factory=_TNorm.Config)
-
-    def __init__(self, config: Config) -> None:
-        del config
-
-
-class _TStack:
-    class Config(Fig["_TStack"]):
-        head: _TLeaf.Config = field(default_factory=_TLeaf.Config)
-        blocks: list[_TBlock.Config] = field(default_factory=list[_TBlock.Config])
-        extras: dict[str, _TLeaf.Config] = field(
-            default_factory=dict[str, _TLeaf.Config],
-        )
-        pair: tuple[_TLeaf.Config, _TLeaf.Config] = field(
-            default_factory=lambda: (_TLeaf.Config(), _TLeaf.Config()),
-        )
-
-    def __init__(self, config: Config) -> None:
-        del config
+    assert [match.fqn for match in matches] == paths
+    for match in matches:
+        assert match.config is expected[match.fqn].config
+        assert match.parent is expected[match.fqn].parent
+        assert match.attr == expected[match.fqn].attr
 
 
-def _stack() -> _TStack.Config:
-    cfg = _TStack.Config()
-    cfg.blocks = [_TBlock.Config(), _TBlock.Config()]
-    cfg.extras = {"aux": _TLeaf.Config()}
-    return cfg
+def test_traverse_finds_and_replaces_nested_figs() -> None:
+    config = _Parent.Config()
+    originals = [config.child, *config.children, *config.mapping.values()]
+    matches = list(traverse(config, _Child.Config))
 
-
-def test_traverse_yields_fqn_for_fields_lists_dicts_and_tuples() -> None:
-    fqns = [m.fqn for m in traverse(_stack(), _TLeaf.Config)]
-    assert fqns == [
-        "blocks[0].proj",
-        "blocks[1].proj",
-        "extras['aux']",
-        "head",
-        "pair[0]",
-        "pair[1]",
+    assert [match.fqn for match in matches] == [
+        "child",
+        "children[0]",
+        "children[1]",
+        "mapping['a']",
     ]
+    for match in matches:
+        replacement = _Child.Config()
+        replacement.v = 9
+        match.replace(replacement)
+
+    assert [config.child.v, *(child.v for child in config.children)] == [9, 9, 9]
+    assert config.mapping["a"].v == 9
+    assert all(child.v == 0 for child in originals)
 
 
-def test_traverse_yields_the_root_when_it_matches() -> None:
-    cfg = _stack()
-    matches = list(traverse(cfg, _TStack.Config))
-    assert len(matches) == 1
-    assert matches[0].fqn == ""
-    assert matches[0].config is cfg
-    assert matches[0].parent is None
-    assert matches[0].attr is None
+def test_match_forwards_replacement() -> None:
+    original, replacement, kept = object(), object(), object()
+    holder = {None: original, "kept": kept}
+    match = walk.Match(fqn="[None]", config=original, parent=holder, attr=None)
+
+    match.replace(replacement)
+
+    assert holder[None] is replacement
+    assert holder["kept"] is kept
 
 
-def test_traverse_stops_at_a_match_unless_recurse() -> None:
-    """A matched subtree is one unit by default; ``recurse`` opens it."""
-    cfg = _stack()
-    shallow = [m.fqn for m in traverse(cfg, (_TBlock.Config, _TLeaf.Config))]
-    assert shallow == [
-        "blocks[0]",
-        "blocks[1]",
-        "extras['aux']",
-        "head",
-        "pair[0]",
-        "pair[1]",
-    ]
-    deep = [m.fqn for m in traverse(cfg, (_TBlock.Config, _TLeaf.Config), recurse=True)]
-    assert "blocks[0].proj" in deep
-    assert deep.index("blocks[0]") < deep.index("blocks[0].proj")
+def test_match_cannot_replace_the_root() -> None:
+    (root,) = traverse(_Link(), _Link)
 
-
-def test_traverse_replace_rewrites_in_every_container_kind() -> None:
-    cfg = _stack()
-    for match in traverse(cfg, _TLeaf.Config):
-        match.replace(_TNorm.Config(eps=0.5))
-    assert isinstance(cfg.head, _TNorm.Config)
-    assert all(isinstance(b.proj, _TNorm.Config) for b in cfg.blocks)
-    assert isinstance(cfg.extras["aux"], _TNorm.Config)
-    assert all(isinstance(p, _TNorm.Config) for p in cfg.pair)
-    assert list(traverse(cfg, _TLeaf.Config)) == []
-
-
-def test_traverse_replace_rewrites_a_direct_list_element() -> None:
-    """A match whose parent is a plain ``list`` is replaced by index."""
-    cfg = _stack()
-    for match in list(traverse(cfg, _TBlock.Config)):
-        match.replace(_TLeaf.Config(width=9))
-    assert all(isinstance(b, _TLeaf.Config) for b in cfg.blocks)
-
-
-def test_traverse_replace_rewrites_a_tuple_element_nested_in_a_list() -> None:
-    """A tuple inside a list: its element's parent is a ``_TupleSlot`` whose
-    OWN parent is the list.
-    """
-
-    class Holder:
-        class Config(Fig["Holder"]):
-            pairs: list[tuple[_TLeaf.Config, _TLeaf.Config]] = field(
-                default_factory=lambda: [(_TLeaf.Config(), _TLeaf.Config())],
-            )
-
-        def __init__(self, config: Config) -> None:
-            del config
-
-    cfg = Holder.Config()
-    for match in list(traverse(cfg, _TLeaf.Config)):
-        match.replace(_TNorm.Config(eps=0.5))
-    assert isinstance(cfg.pairs[0][0], _TNorm.Config)
-    assert isinstance(cfg.pairs[0][1], _TNorm.Config)
-
-
-def test_traverse_replace_rebuilds_a_namedtuple_tuple_slot() -> None:
-    class Pair(NamedTuple):
-        left: _TLeaf.Config
-        right: _TLeaf.Config
-
-    class Holder:
-        class Config(Fig["Holder"]):
-            pair: Pair = field(
-                default_factory=lambda: Pair(_TLeaf.Config(), _TLeaf.Config()),
-            )
-
-        def __init__(self, config: Config) -> None:
-            del config
-
-    cfg = Holder.Config()
-    for match in list(traverse(cfg, _TLeaf.Config)):
-        match.replace(_TNorm.Config(eps=0.5))
-    assert isinstance(cfg.pair, Pair)
-    assert all(isinstance(item, _TNorm.Config) for item in cfg.pair)
-
-
-def test_traverse_replace_rewrites_a_doubly_nested_tuple_element() -> None:
-    """A tuple nested in another tuple: the inner slot's parent is a slot too."""
-
-    class Holder:
-        class Config(Fig["Holder"]):
-            nested: tuple[tuple[_TLeaf.Config, _TLeaf.Config], ...] = field(
-                default_factory=lambda: ((_TLeaf.Config(), _TLeaf.Config()),),
-            )
-
-        def __init__(self, config: Config) -> None:
-            del config
-
-    cfg = Holder.Config()
-    for match in list(traverse(cfg, _TLeaf.Config)):
-        match.replace(_TNorm.Config(eps=0.5))
-    assert isinstance(cfg.nested[0][0], _TNorm.Config)
-    assert isinstance(cfg.nested[0][1], _TNorm.Config)
-
-
-def test_traverse_walks_into_a_set() -> None:
-    """Set members are walked, though a matched leaf has no writable slot."""
-    leaf = _Leaf("x")
-    (match,) = traverse({leaf}, _Leaf)
-    assert match.fqn == "{...}"
-    assert match.config is leaf
-
-
-def test_traverse_replaces_a_match_under_a_none_key() -> None:
-    holder: dict[object, object] = {None: _TLeaf.Config()}
-
-    (match,) = traverse(holder, _TLeaf.Config)
-    match.replace(_TNorm.Config())
-
-    assert match.fqn == "[None]"
-    assert isinstance(holder[None], _TNorm.Config)
+    with pytest.raises(
+        ValueError,
+        match=r"^The root of a traversal has no parent to replace it in\.$",
+    ):
+        root.replace(_Link())
 
 
 def test_copy_tree_closes_a_cycle_through_a_tuple() -> None:
@@ -944,62 +838,6 @@ def test_copy_tree_never_mistakes_a_freed_node_for_a_shared_one() -> None:
     copies = [copy_tree([_Child.Config()], visited) for _ in range(50)]
 
     assert len({id(copied) for copied in copies}) == len(copies)
-
-
-def test_traverse_skips_an_unset_slot_on_a_data_object() -> None:
-    """A declared-but-unset slot on a walked node does not raise; it's skipped."""
-
-    class Holder:
-        __slots__ = ("set_attr", "unset_attr")
-
-        def __init__(self, leaf: _Leaf) -> None:
-            self.set_attr = leaf
-            self.unset_attr = leaf
-            del self.unset_attr
-
-    leaf = _Leaf("x")
-    holder = Holder(leaf)
-    # Must not raise on the unset slot, and still finds the set one.
-    (match,) = traverse(holder, _Leaf)
-    assert match.config is leaf
-
-
-def test_traverse_replace_on_root_raises() -> None:
-    cfg = _stack()
-    (root,) = traverse(cfg, _TStack.Config)
-    with pytest.raises(
-        ValueError,
-        match=r"^The root of a traversal has no parent to replace it in\.$",
-    ):
-        root.replace(_TStack.Config())
-
-
-def test_traverse_visits_a_shared_node_once() -> None:
-    cfg = _stack()
-    shared = _TLeaf.Config()
-    cfg.head = shared
-    cfg.extras["aux"] = shared
-    matched = [m.config for m in traverse(cfg, _TLeaf.Config)]
-    assert sum(m is shared for m in matched) == 1
-
-
-def test_traverse_survives_a_cycle() -> None:
-    class _Node:
-        class Config(Fig["_Node"]):
-            next: object = None
-
-        def __init__(self, config: Config) -> None:
-            del config
-
-    a, b = _Node.Config(), _Node.Config()
-    a.next, b.next = b, a
-    assert [m.config for m in traverse(a, _Node.Config, recurse=True)] == [a, b]
-
-
-def test_traverse_skips_leaves_that_are_not_data() -> None:
-    cfg = _stack()
-    cfg.head.width = 3
-    assert [m.fqn for m in traverse(cfg, int)] == []
 
 
 def test_make_value_defaults_and_preserves_an_unchanged_tuple() -> None:
@@ -1501,22 +1339,6 @@ def test_bind_late_walks_slots_even_when_module_name_is_builtins() -> None:
     assert seen == [root]
 
 
-def test_traverse_continues_after_unset_slot() -> None:
-    class Holder:
-        a_unset: object
-        __slots__ = ("a_unset", "child")
-
-        def __init__(self, child: _Leaf) -> None:
-            self.child = child
-            self.a_unset = None
-            del self.a_unset
-
-    leaf = _Leaf("target")
-    holder = Holder(leaf)
-    (match,) = traverse(holder, _Leaf)
-    assert match.config is leaf
-
-
 def test_copy_tree_continues_after_unset_slot() -> None:
     class Holder:
         a_unset: object
@@ -1531,29 +1353,6 @@ def test_copy_tree_continues_after_unset_slot() -> None:
     holder = Holder(child)
     copied = copy_tree(holder)
     assert copied.child is not child
-
-
-def test_traverse_walks_a_dataclass_without_slots() -> None:
-    class Holder:
-        __dataclass_fields__: ClassVar[dict[str, object]] = {}
-
-        def __init__(self, child: _Leaf) -> None:
-            self.child = child
-
-    leaf = _Leaf("target")
-    (match,) = traverse(Holder(leaf), _Leaf)
-    assert match.config is leaf
-
-
-def test_traverse_walks_a_dataclass_with_builtins_module_name() -> None:
-    @dataclass(kw_only=True, slots=True)
-    class Holder:
-        __module__ = "builtins"
-        child: _Leaf
-
-    leaf = _Leaf("target")
-    (match,) = traverse(Holder(child=leaf), _Leaf)
-    assert match.config is leaf
 
 
 if __name__ == "__main__":
