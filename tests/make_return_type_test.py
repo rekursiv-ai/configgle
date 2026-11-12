@@ -24,12 +24,12 @@ from typing_extensions import TypeVar
 from configgle.fig import Fig, Makes, Makes2
 
 
-_CWD: Final = Path(__file__).resolve().parent
+_CWD: Final[Path] = Path(__file__).resolve().parent
 
 # The source, not the installed copy ``import ty_extensions`` finds first: only the
 # source counts toward this package's coverage. Exported, the tests sit one level
 # below the package root.
-_POLYFILL: Final = next(
+_POLYFILL: Final[Path] = next(
     candidate
     for root in (_CWD, _CWD.parent)
     if (

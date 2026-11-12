@@ -408,8 +408,8 @@ def test_original_init_preserved():
             self.b = b
 
     baz = Baz(a=10, b="direct")  # pyright: ignore[reportCallIssue] -- The decorator test passes a runtime-only fixture argument.  # ty: ignore[unknown-argument] -- The decorator test passes a runtime-only fixture argument.
-    assert baz.a == 10  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType] -- The dynamic decorator fixture exposes members created at runtime.  # ty: ignore[unresolved-attribute] -- The dynamic decorator fixture exposes members created at runtime.
-    assert baz.b == "direct"  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType] -- The dynamic decorator fixture exposes members created at runtime.  # ty: ignore[unresolved-attribute] -- The dynamic decorator fixture exposes members created at runtime.
+    assert baz.a == 10  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType] -- The dynamic decorator fixture exposes members created at runtime.  # ty: ignore[missing-attribute] -- The dynamic decorator fixture exposes members created at runtime.
+    assert baz.b == "direct"  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType] -- The dynamic decorator fixture exposes members created at runtime.  # ty: ignore[missing-attribute] -- The dynamic decorator fixture exposes members created at runtime.
 
 
 def test_require_defaults():

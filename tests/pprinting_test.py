@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from configgle.custom_types import PformatOptions
 
 
-_THIS: Final = Path(__file__).resolve()
+_THIS: Final[Path] = Path(__file__).resolve()
 _CWD: Final = _THIS.parent
 
 
