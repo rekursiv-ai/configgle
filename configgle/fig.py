@@ -633,7 +633,7 @@ class Maker(Generic[_ParentT_co], metaclass=MakerMeta):
             raise ValueError("udiff requires at least one comparison config")
         if n < 0:
             raise ValueError("n must be nonnegative")
-        # pragma: no mutate start -- ``pformat`` reads it for truth; None hides none too.
+        # pragma: no mutate[truthiness] start
         options = PformatOptions(hide_default_values=False)
         # pragma: no mutate end
         options.update(format_options)

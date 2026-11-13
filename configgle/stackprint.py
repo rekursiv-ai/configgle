@@ -907,7 +907,7 @@ def _has_generated_repr(obj: object) -> bool:
     # A class, or any non-dataclass, has no ``__dataclass_params__`` on its type.
     params = cast(object, getattr(type(obj), "__dataclass_params__", None))
     wrapped = cast(object, getattr(type(obj).__repr__, "__wrapped__", None))
-    # pragma: no mutate start -- any falsy default reads the same; ``params`` has no public type.
+    # pragma: no mutate[truthiness] start
     asked = bool(getattr(params, "repr", False))
     # pragma: no mutate end
     return (
