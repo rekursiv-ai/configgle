@@ -412,7 +412,7 @@ class FigPrinter(StackPrinter):
 
     def _finalize_pending(self, obj: object) -> bool:
         """Return whether ``_try_to_finalize`` would copy and finalize ``obj``."""
-        # pragma: no mutate start -- a ``Finalizeable`` may lack the flag; any falsy default reads the same.
+        # pragma: no mutate[truthiness] start
         finalized_flag = getattr(obj, "_finalized", False)
         # pragma: no mutate end
         return (
@@ -875,7 +875,7 @@ def _fields_diff(
         )
         for i in range(len(header))
     ]
-    # pragma: no mutate start -- the header is uncolored; None is uncolored too.
+    # pragma: no mutate[truthiness] start
     output = _render_field_row(header, widths=widths, color=False)
     # pragma: no mutate end
     for row in rows:
@@ -953,7 +953,7 @@ def _align_diff_column(
     """Align a variant to baseline lines and insertion gaps."""
     lines: list[str | None] = [None] * len(baseline)
     gaps: list[list[str]] = [[] for _ in range(len(baseline) + 1)]
-    # pragma: no mutate start -- ``autojunk`` is read for truth; ``None`` is falsy too.
+    # pragma: no mutate[truthiness] start
     matcher = SequenceMatcher(a=baseline, b=variant, autojunk=False)
     # pragma: no mutate end
     for _, start, stop, other_start, other_stop in matcher.get_opcodes():
@@ -997,7 +997,7 @@ def _side_by_side_diff(
         else range(len(rows))
     )
     header = tuple(f"config[{i}]" for i in range(len(columns)))
-    # pragma: no mutate start -- the header is uncolored; None is uncolored too.
+    # pragma: no mutate[truthiness] start
     output = _render_diff_row(header, width=width, color=False)
     # pragma: no mutate end
     for index in visible:
