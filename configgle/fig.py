@@ -258,7 +258,7 @@ class MakerMeta(type):
             # (`typings/basedpyright.d`, `Intersection[A, B] = A`) and accepts the
             # return; ty resolves its real `ty_extensions` from the house typeshed
             # and cannot prove the second half. See the module docstring.
-            return cls  # ty: ignore[invalid-return-type] -- `cls` is only `_T` at source level; ty's real Intersection cannot prove the `& type[Maker[_ParentT_co]]` half.
+            return cls  # ty: ignore[invalid-explicit-return] -- `cls` is only `_T` at source level; ty's real Intersection cannot prove the `& type[Maker[_ParentT_co]]` half.
 
 
 class Maker(Generic[_ParentT_co], metaclass=MakerMeta):

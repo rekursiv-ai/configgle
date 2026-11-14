@@ -37,7 +37,7 @@ def process(value: _T) -> _T:
 On 0.0.65: `warning[invalid-return-type] Return type does not match returned
 value: expected _T@process, found Self@finalize`.
 
-**Workaround:** `# ty: ignore[invalid-return-type]` on the affected return.
+**Workaround:** `# ty: ignore[invalid-explicit-return]` on the affected return.
 
 ### 2. `hasattr()` does not narrow type
 
@@ -171,7 +171,7 @@ that dependency.
 
 | Limitation | Severity | Workaround |
 |---|---|---|
-| TypeIs intersection | Medium | Suppress `invalid-return-type` |
+| TypeIs intersection | Medium | Suppress `invalid-explicit-return` |
 | `hasattr` narrowing | Medium | `isinstance` + runtime_checkable Protocol |
 | Generic proxy subscript | Medium | Suppress `not-subscriptable` |
 | Protocol + `@dataclass` | Low | Declare `__dataclass_fields__` explicitly |
