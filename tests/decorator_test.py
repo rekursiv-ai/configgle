@@ -314,9 +314,9 @@ def test_basic_decorator():
 
     assert Foo.Config.__bases__ == (Fig,)  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
     assert issubclass(Foo.Config, Fig)  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
-    assert Foo.Config.parent_class == Foo  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
+    assert Foo.Config.parent_class == Foo
 
-    config = Foo.Config(x=42, y="hello", z=3.14)  # pyrefly: ignore[not-callable] -- pyrefly#1180: autofig Config.
+    config = Foo.Config(x=42, y="hello", z=3.14)  # pyrefly: ignore[unexpected-keyword] -- pyrefly#1180: autofig Config; the `issubclass` assert narrows it to the field-less `Fig`.
     assert _field(config, "x") == 42
     assert _field(config, "y") == "hello"
     assert _field(config, "z") == 3.14
@@ -387,9 +387,9 @@ def test_with_defaults():
             self.count = count
 
     assert issubclass(Bar.Config, Fig)  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
-    assert Bar.Config.parent_class == Bar  # pyrefly: ignore[missing-attribute] -- pyrefly#1180: autofig Config.
+    assert Bar.Config.parent_class == Bar
 
-    config = Bar.Config(items=[1, 2, 3], name="test")  # pyrefly: ignore[not-callable] -- pyrefly#1180: autofig Config.
+    config = Bar.Config(items=[1, 2, 3], name="test")  # pyrefly: ignore[unexpected-keyword] -- pyrefly#1180: autofig Config; the `issubclass` assert narrows it to the field-less `Fig`.
     assert _field(config, "items") == [1, 2, 3]
     assert _field(config, "name") == "test"
     assert _field(config, "count") == 5

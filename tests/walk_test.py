@@ -223,15 +223,13 @@ def test_copy_tree_skips_an_unset_slot():
 
         def __init__(self) -> None:
             self.set_attr = 1
-            # Assigned then deleted, not left off entirely: the checker's
-            # unset-slot analysis reads __init__'s assignments, not runtime
-            # state, so a slot never assigned at all is a checker error
-            # (reportUninitializedInstanceVariable) rather than the declared-
-            # but-unset condition this test targets.
             self.unset_attr = 0
-            del self.unset_attr
 
-    copied = copy_tree(HasUnset())
+    # Deleted after construction: basedpyright rejects a slot ``__init__`` never
+    # assigns, and pyrefly one ``__init__`` deletes.
+    original = HasUnset()
+    del original.unset_attr
+    copied = copy_tree(original)
     assert copied.set_attr == 1
     assert not hasattr(copied, "unset_attr")
 
@@ -555,9 +553,10 @@ def test_bind_late_skips_an_unset_slot():
         def __init__(self) -> None:
             self.set_attr = 1
             self.unset_attr = 0
-            del self.unset_attr
 
-    bind_late(Holder())  # Must not raise despite the unset slot.
+    holder = Holder()
+    del holder.unset_attr
+    bind_late(holder)  # Must not raise despite the unset slot.
 
 
 class _TorchModule:
@@ -1111,9 +1110,9 @@ def test_finalize_value_continues_after_unset_slot() -> None:
         def __init__(self, child: ReplacingForSlot) -> None:
             self.child = child
             self.a_unset = None
-            del self.a_unset
 
     holder = Holder(ReplacingForSlot())
+    del holder.a_unset
     finalize_value(holder)
     assert holder.child.finalized
 
@@ -1232,9 +1231,9 @@ def test_bind_late_continues_after_unset_slot() -> None:
         def __init__(self) -> None:
             self.child = Late()
             self.a_unset = None
-            del self.a_unset
 
     holder = Holder()
+    del holder.a_unset
     bind_late(holder)
     assert seen == [holder]
 
@@ -1347,10 +1346,10 @@ def test_copy_tree_continues_after_unset_slot() -> None:
         def __init__(self, child: _Child.Config) -> None:
             self.child = child
             self.a_unset = None
-            del self.a_unset
 
     child = _Child.Config()
     holder = Holder(child)
+    del holder.a_unset
     copied = copy_tree(holder)
     assert copied.child is not child
 

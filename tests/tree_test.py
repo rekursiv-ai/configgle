@@ -55,7 +55,12 @@ class Unset:
     def __init__(self) -> None:
         self.kept = 1
         self.unset = 2
-        del self.unset
+
+
+def _unset() -> Unset:
+    value = Unset()
+    del value.unset
+    return value
 
 
 def _boxed(node: object) -> object:
@@ -295,7 +300,7 @@ class TestChildren:
             ({"k": 5}, [("k", 5)]),
             ({5}, [(None, 5)]),
             (Box(item=5), [("item", 5)]),
-            (Unset(), [("kept", 1)]),
+            (_unset(), [("kept", 1)]),
             (Bare(), []),
             ("text", []),
             (5, []),
@@ -500,10 +505,10 @@ def test_traverse_skips_an_unset_slot_on_a_data_object() -> None:
         def __init__(self, leaf: _Leaf) -> None:
             self.set_attr = leaf
             self.unset_attr = leaf
-            del self.unset_attr
 
     leaf = _Leaf("x")
     holder = Holder(leaf)
+    del holder.unset_attr
     # Must not raise on the unset slot, and still finds the set one.
     (match,) = traverse(holder, _Leaf)
     assert match.node is leaf
@@ -595,10 +600,10 @@ def test_traverse_continues_after_unset_slot() -> None:
         def __init__(self, child: _Leaf) -> None:
             self.child = child
             self.a_unset = None
-            del self.a_unset
 
     leaf = _Leaf("target")
     holder = Holder(leaf)
+    del holder.a_unset
     (match,) = traverse(holder, _Leaf)
     assert match.node is leaf
 
